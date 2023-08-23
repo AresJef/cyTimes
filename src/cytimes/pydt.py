@@ -17,9 +17,9 @@ np.import_array()
 datetime.import_datetime()
 
 # Python imports
-import datetime, zoneinfo, numpy as np
+import datetime, zoneinfo
 from typing import Union, Type, Literal
-from pandas import Timestamp
+import numpy as np, pandas as pd
 from dateutil.parser._parser import parserinfo
 from dateutil.relativedelta import relativedelta
 from cytimes import cydatetime as cydt
@@ -203,9 +203,9 @@ class pydt:
         return cydt.time_to_isoformat_tz(cydt.time_fr_dt_tz(self._dt))
 
     @property
-    def ts(self) -> Timestamp:
+    def ts(self) -> pd.Timestamp:
         "Access as `pandas.Timestamp`."
-        return Timestamp(self._dt)
+        return pd.Timestamp(self._dt)
 
     @property
     def dt64(self) -> np.datetime64:

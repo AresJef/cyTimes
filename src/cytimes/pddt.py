@@ -16,9 +16,9 @@ np.import_array()
 datetime.import_datetime()
 
 # Python imports
-import datetime, zoneinfo, numpy as np
+import datetime, zoneinfo
 from typing import Union, Literal, Iterator
-import pandas as pd
+import numpy as np, pandas as pd
 from pandas.tseries import offsets
 from cytimes.pydt import pydt
 from cytimes import cydatetime as cydt

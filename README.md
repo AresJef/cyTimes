@@ -15,8 +15,8 @@ Only support for python 3.10 and above.
 
 ### Acknowledgements
 cyTimes is based on several open-source repositories.
-- [pandas](https://github.com/pandas-dev/pandas)
 - [numpy](https://github.com/numpy/numpy)
+- [pandas](https://github.com/pandas-dev/pandas)
 
 cyTimes makes modification of the following open-source repositories:
 - [dateutil](https://github.com/dateutil/dateutil)
