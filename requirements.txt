@@ -1,0 +1,4 @@
+Cython>=3.0.0
+pandas>=2.0.3
+numpy>=1.25.2
+python-dateutil>=2.8.2

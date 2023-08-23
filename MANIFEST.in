@@ -1,0 +1,7 @@
+include LICENSE
+include README.md
+
+include src/cytimes/*.c
+include src/cytimes/*.pxd
+include src/cytimes/*.py
+include src/cytimes/*.pyx
