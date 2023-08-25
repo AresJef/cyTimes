@@ -38,7 +38,7 @@ jobs:
           CIBW_ARCHS_LINUX: ${{matrix.arch}}
         run: |
           python -m cibuildwheel --output-dir wheelhouse
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         with:
           path: ./wheelhouse/*.whl
           retention-days: 1
