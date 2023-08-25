@@ -13,6 +13,7 @@ from cython.cimports.cytimes import cydatetime as cydt  # type: ignore
 from cython.cimports.cytimes.cyparser import DEFAULT_PARSERINFO  # type: ignore
 
 np.import_array()
+np.import_umath()
 datetime.import_datetime()
 
 # Python imports
@@ -217,16 +218,12 @@ class pddt:
     @property
     def ordinal(self) -> pd.Series[int]:
         "Access date in ordinal as `Series[int]`."
-        return self._np_to_series(
-            self._get_naive().values.astype("<M8[D]").astype(np.int64) + cydt.EPOCH_DAY
-        )
+        return cydt.seriesdt64_to_ordinal(self._get_naive())
 
     @property
     def seconds(self) -> pd.Series[float]:
         "Access datetime in total seconds (naive) after EPOCH as `Series[float]`."
-        return self._np_to_series(
-            self._get_naive().values.astype("<M8[us]").astype(np.int64) / cydt.US_SECOND
-        )
+        return cydt.seriesdt64_to_seconds(self._get_naive())
 
     @property
     def seconds_utc(self) -> pd.Series[float]:
@@ -238,16 +235,12 @@ class pddt:
         This should `NOT` be treated as timestamp, but rather adjustment of the
         total seconds of the datetime from utcoffset.
         """
-        return self._np_to_series(
-            self._series.values.astype("<M8[us]").astype(np.int64) / cydt.US_SECOND
-        )
+        return cydt.seriesdt64_to_seconds(self._series)
 
     @property
     def microseconds(self) -> pd.Series[int]:
         "Access datetime in total microseconds (naive) after EPOCH as `Series[int]`."
-        return self._np_to_series(
-            self._get_naive().values.astype("<M8[us]").astype(np.int64)
-        )
+        return cydt.seriesdt64_to_microseconds(self._get_naive())
 
     @property
     def microseconds_utc(self) -> pd.Series[int]:
@@ -259,16 +252,12 @@ class pddt:
         This should `NOT` be treated as timestamp, but rather adjustment of the
         total microseconds of the datetime from utcoffset.
         """
-        return self._np_to_series(
-            self._series.values.astype("<M8[us]").astype(np.int64)
-        )
+        return cydt.seriesdt64_to_microseconds(self._series)
 
     @property
     def timestamp(self) -> pd.Series[float]:
         "Access datetime in timestamp as `Series[float]`."
-        return self._np_to_series(
-            self._series.values.astype("<M8[us]").astype(np.int64) / cydt.US_SECOND
-        )
+        return cydt.seriesdt64_to_seconds(self._series)
 
     # Absolute
     @property
@@ -1044,21 +1033,14 @@ class pddt:
             cache=True,
         )
         if isinstance(res, pd.Series):
-            dtype_str = res.dtype.str
-            if dtype_str.endswith("M8[ns]"):
-                return self._fill_default(res)
-            elif dtype_str.startswith("<M8"):
-                return self._fill_default(res.astype("<M8[ns]"))
-            elif dtype_str.startswith("|M8"):
-                tzinfo = res.dt.tz
-                return self._fill_default(
-                    res.dt.tz_localize(None).astype("<M8[ns]").dt.tz_localize(tzinfo)
-                )
-            else:
+            try:
+                res = cydt.seriesdt64_adjust_to_ns(res)
+            except Exception as err:
                 raise PddtValueError(
-                    "<pddt> Can't fully convert 'timeobj' to `<pandas.Timestamp>`:\n%s"
-                    % res
-                )
+                    "<pddt> Can't fully convert 'timeobj' to `<pandas.Timestamp>`:\n%s\nError: %s"
+                    % (res, err)
+                ) from err
+            return self._fill_default(res)
         elif isinstance(res, pd.DatetimeIndex):
             return self._fill_default(pd.Series(res))
         else:
@@ -1652,7 +1634,7 @@ class pddt:
     @cython.cfunc
     @cython.inline(True)
     def _between_pddt(self, pt: pddt, unit: str, inclusive: cython.bint) -> object:
-        return self._between(pt._series, unit, inclusive)
+        return self._between_series(pt._series, unit, inclusive)
 
     @cython.cfunc
     @cython.inline(True)

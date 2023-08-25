@@ -2052,6 +2052,17 @@ def pddt_demo() -> None:
     print("le series <= pddt:\n", x := pt1.dt <= pt2, type(x), x.equals(b))
     print()
 
+    # Difference time unit
+    print(" Frequency manipulation ".center(80, "="))
+    # fmt: off
+    s = pd.Series([gen_dt(i, 3, 10, 12, 30, 30, 555555) for i in range(2023, 2250)])
+    s = s.astype("<M8[s]")
+    print("Reference:\n", s)
+    print("Series[s]:\n", pddt(s))
+    s = s.dt.tz_localize(tzinfo)
+    print("Series[s+tz]:\n", pddt(s))
+    # fmt: on
+
 
 if __name__ == "__main__":
     validate_cytimedelta_relative()

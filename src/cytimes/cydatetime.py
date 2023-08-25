@@ -23,9 +23,11 @@ from cython.cimports.cytimes import cymath  # type: ignore
 from cython.cimports.cytimes import cytime  # type: ignore
 
 np.import_array()
+np.import_umath()
 datetime.import_datetime()
 
 # Python imports
+import numpy as np, pandas as pd
 from cytimes import cymath
 
 
@@ -65,10 +67,23 @@ US_SECOND: cython.longlong = 1000000
 US_MILLISECOND: cython.longlong = 1000
 US_MICROSECOND: cython.longlong = 1
 
+MS_DAY: cython.longlong = 86400000
+MS_HOUR: cython.longlong = 3600000
+MS_MINUTE: cython.longlong = 60000
+MS_SECOND: cython.longlong = 1000
+MS_MILLISECOND: cython.longlong = 1
+
 SEC_DAY: cython.longlong = 86400
 SEC_HOUR: cython.longlong = 3600
 SEC_MINUTE: cython.longlong = 60
 SEC_SECOND: cython.longlong = 1
+
+MIN_DAY: cython.longlong = 1440
+MIN_HOUR: cython.longlong = 60
+MIN_MINUTE: cython.longlong = 1
+
+HOUR_DAY: cython.longlong = 24
+HOUR_HOUR: cython.longlong = 1
 # fmt: on
 
 # Struct -----------------------------------------------------------------------------------------------
@@ -1572,7 +1587,7 @@ def time_fr_microseconds(
     fold: cython.int = 0,
 ) -> datetime.time:
     # Add back epoch seconds
-    if not 0 <= microseconds < US_DAY:
+    if microseconds < 0:
         microseconds += EPOCH_US
     # Clip microseconds
     microseconds = cymath.clip(microseconds, 0, DT_MAX_US)
@@ -1933,39 +1948,395 @@ def dt64_to_isoformat(dt64: object) -> str:
 
 @cython.cfunc
 @cython.inline(True)
-def dt64_to_microseconds(dt64: object) -> cython.longlong:
-    "Convert `numpy.datetime64` to total microseconds. Only support units from `'D'` to `'ns'`."
+def dt64_to_int(dt64: object, unit: str) -> cython.longlong:
+    """Convert numpy.datetime64 to integer based on time unit.
+
+    - Support units from `'D'` to `'ns'`.
+    - Percision will be lost if the original datetime64 unit is smaller than 'unit'.
+    """
     # Validate
-    if not is_dt64(dt64):
+    if not _is_datetime64_object(dt64):
         raise TypeError("Expected a `numpy.datetime64` object, got '%s'" % type(dt64))
+
     # Get val & unit
-    unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(dt64)
-    val: np.npy_datetime = _get_datetime64_value(dt64)
-    # Unit - nanosecond
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-        return val // NS_MICROSECOND
-    # Unit - microsecond
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
-        return val
-    # Unit - second
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_s:
-        return val * US_SECOND
-    # Unit - day
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_D:
-        return val * US_DAY
-    # Unit - millisecond
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-        return val * US_MILLISECOND
-    # Unit - minute
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_m:
-        return val * US_MINUTE
-    # Unit - hour
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_h:
-        return val * US_HOUR
+    dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(dt64)
+    value: np.npy_datetime = _get_datetime64_value(dt64)
+
+    # Convert from [ns] to desired [unit]
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        if unit == "ns":
+            return value
+        elif unit == "us":
+            return value // NS_MICROSECOND
+        elif unit == "ms":
+            return value // NS_MILLISECOND
+        elif unit == "s":
+            return value // NS_SECOND
+        elif unit == "m":
+            return value // NS_MINUTE
+        elif unit == "h":
+            return value // NS_HOUR
+        elif unit == "D":
+            return value // NS_DAY
+
+    # Convert from [us] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        if unit == "ns":
+            return value * NS_MICROSECOND
+        elif unit == "us":
+            return value
+        elif unit == "ms":
+            return value // US_MILLISECOND
+        elif unit == "s":
+            return value // US_SECOND
+        elif unit == "m":
+            return value // US_MINUTE
+        elif unit == "h":
+            return value // US_HOUR
+        elif unit == "D":
+            return value // US_DAY
+
+    # Convert from [ms] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        if unit == "ns":
+            return value * NS_MILLISECOND
+        elif unit == "us":
+            return value * US_MILLISECOND
+        elif unit == "ms":
+            return value
+        elif unit == "s":
+            return value // MS_SECOND
+        elif unit == "m":
+            return value // MS_MINUTE
+        elif unit == "h":
+            return value // MS_HOUR
+        elif unit == "D":
+            return value // MS_DAY
+
+    # Convert from [s] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        if unit == "ns":
+            return value * NS_SECOND
+        elif unit == "us":
+            return value * US_SECOND
+        elif unit == "ms":
+            return value * MS_SECOND
+        elif unit == "s":
+            return value
+        elif unit == "m":
+            return value // SEC_MINUTE
+        elif unit == "h":
+            return value // SEC_HOUR
+        elif unit == "D":
+            return value // SEC_DAY
+
+    # Convert from [m] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        if unit == "ns":
+            return value * NS_MINUTE
+        elif unit == "us":
+            return value * US_MINUTE
+        elif unit == "ms":
+            return value * MS_MINUTE
+        elif unit == "s":
+            return value * SEC_MINUTE
+        elif unit == "m":
+            return value
+        elif unit == "h":
+            return value // MIN_HOUR
+        elif unit == "D":
+            return value // MIN_DAY
+
+    # Convert from [h] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        if unit == "ns":
+            return value * NS_HOUR
+        elif unit == "us":
+            return value * US_HOUR
+        elif unit == "ms":
+            return value * MS_HOUR
+        elif unit == "s":
+            return value * SEC_HOUR
+        elif unit == "m":
+            return value * MIN_HOUR
+        elif unit == "h":
+            return value
+        elif unit == "D":
+            return value // HOUR_DAY
+
+    # Convert from [D] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        if unit == "ns":
+            return value * NS_DAY
+        elif unit == "us":
+            return value * US_DAY
+        elif unit == "ms":
+            return value * MS_DAY
+        elif unit == "s":
+            return value * SEC_DAY
+        elif unit == "m":
+            return value * MIN_DAY
+        elif unit == "h":
+            return value * HOUR_DAY
+        elif unit == "D":
+            return value
+
     # Unsupported unit
     raise ValueError(
-        "Unsupported datetime64 '%s' - (val: %s, unit: %s)" % (dt64, val, unit)
+        "Unsupported datetime64 '%s' - (val: %s, unit: %s)" % (dt64, value, unit)
     )
+
+
+@cython.cfunc
+@cython.inline(True)
+def dt64_to_days(dt64: object) -> cython.longlong:
+    """Convert `numpy.datetime64` to integer (days).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'days'.
+    """
+    # Validate
+    if not _is_datetime64_object(dt64):
+        raise TypeError("Expected a `numpy.datetime64` object, got '%s'" % type(dt64))
+
+    # Get val & unit
+    dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(dt64)
+    value: np.npy_datetime = _get_datetime64_value(dt64)
+
+    # Converstion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return value // NS_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return value // US_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return value // MS_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return value // SEC_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return value // MIN_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return value // HOUR_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return value
+    else:
+        raise ValueError(
+            "Unsupported datetime64 '%s' - (val: %s, unit: %s)" % (dt64, value, dt_unit)
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def dt64_to_hours(dt64: object) -> cython.longlong:
+    """Convert `numpy.datetime64` to integer (hours).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'hours'.
+    """
+    # Validate
+    if not _is_datetime64_object(dt64):
+        raise TypeError("Expected a `numpy.datetime64` object, got '%s'" % type(dt64))
+
+    # Get val & unit
+    dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(dt64)
+    value: np.npy_datetime = _get_datetime64_value(dt64)
+
+    # Converstion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return value // NS_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return value // US_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return value // MS_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return value // SEC_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return value // MIN_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return value
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return value * HOUR_DAY
+    else:
+        raise ValueError(
+            "Unsupported datetime64 '%s' - (val: %s, unit: %s)" % (dt64, value, dt_unit)
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def dt64_to_minutes(dt64: object) -> cython.longlong:
+    """Convert `numpy.datetime64` to integer (minutes).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'minutes'.
+    """
+    # Validate
+    if not _is_datetime64_object(dt64):
+        raise TypeError("Expected a `numpy.datetime64` object, got '%s'" % type(dt64))
+
+    # Get val & unit
+    dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(dt64)
+    value: np.npy_datetime = _get_datetime64_value(dt64)
+
+    # Converstion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return value // NS_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return value // US_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return value // MS_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return value // SEC_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return value
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return value * MIN_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return value * MIN_DAY
+    else:
+        raise ValueError(
+            "Unsupported datetime64 '%s' - (val: %s, unit: %s)" % (dt64, value, dt_unit)
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def dt64_to_seconds(dt64: object) -> cython.longlong:
+    """Convert `numpy.datetime64` to integer (seconds).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'seconds'.
+    """
+    # Validate
+    if not _is_datetime64_object(dt64):
+        raise TypeError("Expected a `numpy.datetime64` object, got '%s'" % type(dt64))
+
+    # Get val & unit
+    dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(dt64)
+    value: np.npy_datetime = _get_datetime64_value(dt64)
+
+    # Converstion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return value // NS_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return value // US_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return value // MS_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return value
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return value * SEC_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return value * SEC_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return value * SEC_DAY
+    else:
+        raise ValueError(
+            "Unsupported datetime64 '%s' - (val: %s, unit: %s)" % (dt64, value, dt_unit)
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def dt64_to_miliseconds(dt64: object) -> cython.longlong:
+    """Convert `numpy.datetime64` to integer (miliseconds).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'miliseconds'.
+    """
+    # Validate
+    if not _is_datetime64_object(dt64):
+        raise TypeError("Expected a `numpy.datetime64` object, got '%s'" % type(dt64))
+
+    # Get val & unit
+    dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(dt64)
+    value: np.npy_datetime = _get_datetime64_value(dt64)
+
+    # Converstion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return value // NS_MILLISECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return value // US_MILLISECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return value
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return value * MS_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return value * MS_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return value * MS_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return value * MS_DAY
+    else:
+        raise ValueError(
+            "Unsupported datetime64 '%s' - (val: %s, unit: %s)" % (dt64, value, dt_unit)
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def dt64_to_microseconds(dt64: object) -> cython.longlong:
+    """Convert `numpy.datetime64` to integer (microseconds).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'microseconds'.
+    """
+    # Validate
+    if not _is_datetime64_object(dt64):
+        raise TypeError("Expected a `numpy.datetime64` object, got '%s'" % type(dt64))
+
+    # Get val & unit
+    dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(dt64)
+    value: np.npy_datetime = _get_datetime64_value(dt64)
+
+    # Converstion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return value // NS_MICROSECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return value
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return value * US_MILLISECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return value * US_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return value * US_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return value * US_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return value * US_DAY
+    else:
+        raise ValueError(
+            "Unsupported datetime64 '%s' - (val: %s, unit: %s)" % (dt64, value, dt_unit)
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def dt64_to_nanoseconds(dt64: object) -> cython.longlong:
+    """Convert `numpy.datetime64` to integer (nanoseconds).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'nanoseconds'.
+    """
+    # Validate
+    if not _is_datetime64_object(dt64):
+        raise TypeError("Expected a `numpy.datetime64` object, got '%s'" % type(dt64))
+
+    # Get val & unit
+    dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(dt64)
+    value: np.npy_datetime = _get_datetime64_value(dt64)
+
+    # Converstion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return value
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return value * NS_MICROSECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return value * NS_MILLISECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return value * NS_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return value * NS_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return value * NS_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return value * NS_DAY
+    else:
+        raise ValueError(
+            "Unsupported datetime64 '%s' - (val: %s, unit: %s)" % (dt64, value, dt_unit)
+        )
 
 
 @cython.cfunc
@@ -1979,7 +2350,7 @@ def dt64_to_date(dt64: object) -> datetime.date:
     - Lower limit: numpy.datetime64 `<0000-01-01T00:00:00>`
       will clip to date `<0001-01-01>`.
     """
-    return date_fr_microseconds(dt64_to_microseconds(dt64))
+    return date_fr_ordinal(dt64_to_days(dt64) + EPOCH_DAY)
 
 
 @cython.cfunc
@@ -2014,41 +2385,425 @@ def is_delta64(obj: object) -> cython.bint:
 
 @cython.cfunc
 @cython.inline(True)
-def delta64_to_microseconds(delta64: object) -> cython.longlong:
-    "Convert `numpy.timedelta64` to total microseconds. Only support units from `'D'` to `'ns'`."
+def delta64_to_int(delta64: object, unit: str) -> cython.longlong:
+    """Convert `numpy.timedelta64` to integer based on time unit.
+
+    - Support units from `'D'` to `'ns'`.
+    - Percision will be lost if the original timedelta64 unit is smaller than 'unit'.
+    """
     # Validate
-    if not is_delta64(delta64):
+    if not _is_timedelta64_object(delta64):
         raise TypeError(
             "Expected a `numpy.timedelta64` object, got '%s'" % type(delta64)
         )
+
     # Get val & unit
-    unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(delta64)
-    val: np.npy_datetime = _get_timedelta64_value(delta64)
-    # Unit - nanosecond
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-        return val // NS_MICROSECOND
-    # Unit - microsecond
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
-        return val
-    # Unit - second
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_s:
-        return val * US_SECOND
-    # Unit - day
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_D:
-        return val * US_DAY
-    # Unit - millisecond
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-        return val * US_MILLISECOND
-    # Unit - minute
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_m:
-        return val * US_MINUTE
-    # Unit - hour
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_h:
-        return val * US_HOUR
+    dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(delta64)
+    value: np.npy_timedelta = _get_timedelta64_value(delta64)
+
+    # Convert from [ns] to desired [unit]
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        if unit == "ns":
+            return value
+        elif unit == "us":
+            return value // NS_MICROSECOND
+        elif unit == "ms":
+            return value // NS_MILLISECOND
+        elif unit == "s":
+            return value // NS_SECOND
+        elif unit == "m":
+            return value // NS_MINUTE
+        elif unit == "h":
+            return value // NS_HOUR
+        elif unit == "D":
+            return value // NS_DAY
+
+    # Convert from [us] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        if unit == "ns":
+            return value * NS_MICROSECOND
+        elif unit == "us":
+            return value
+        elif unit == "ms":
+            return value // US_MILLISECOND
+        elif unit == "s":
+            return value // US_SECOND
+        elif unit == "m":
+            return value // US_MINUTE
+        elif unit == "h":
+            return value // US_HOUR
+        elif unit == "D":
+            return value // US_DAY
+
+    # Convert from [ms] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        if unit == "ns":
+            return value * NS_MILLISECOND
+        elif unit == "us":
+            return value * US_MILLISECOND
+        elif unit == "ms":
+            return value
+        elif unit == "s":
+            return value // MS_SECOND
+        elif unit == "m":
+            return value // MS_MINUTE
+        elif unit == "h":
+            return value // MS_HOUR
+        elif unit == "D":
+            return value // MS_DAY
+
+    # Convert from [s] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        if unit == "ns":
+            return value * NS_SECOND
+        elif unit == "us":
+            return value * US_SECOND
+        elif unit == "ms":
+            return value * MS_SECOND
+        elif unit == "s":
+            return value
+        elif unit == "m":
+            return value // SEC_MINUTE
+        elif unit == "h":
+            return value // SEC_HOUR
+        elif unit == "D":
+            return value // SEC_DAY
+
+    # Convert from [m] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        if unit == "ns":
+            return value * NS_MINUTE
+        elif unit == "us":
+            return value * US_MINUTE
+        elif unit == "ms":
+            return value * MS_MINUTE
+        elif unit == "s":
+            return value * SEC_MINUTE
+        elif unit == "m":
+            return value
+        elif unit == "h":
+            return value // MIN_HOUR
+        elif unit == "D":
+            return value // MIN_DAY
+
+    # Convert from [h] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        if unit == "ns":
+            return value * NS_HOUR
+        elif unit == "us":
+            return value * US_HOUR
+        elif unit == "ms":
+            return value * MS_HOUR
+        elif unit == "s":
+            return value * SEC_HOUR
+        elif unit == "m":
+            return value * MIN_HOUR
+        elif unit == "h":
+            return value
+        elif unit == "D":
+            return value // HOUR_DAY
+
+    # Convert from [D] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        if unit == "ns":
+            return value * NS_DAY
+        elif unit == "us":
+            return value * US_DAY
+        elif unit == "ms":
+            return value * MS_DAY
+        elif unit == "s":
+            return value * SEC_DAY
+        elif unit == "m":
+            return value * MIN_DAY
+        elif unit == "h":
+            return value * HOUR_DAY
+        elif unit == "D":
+            return value
+
     # Unsupported unit
     raise ValueError(
-        "Unsupported timedelta64 '%s' - (val: %s, unit: %s)" % (delta64, val, unit)
+        "Unsupported timedelta64 '%s' - (val: %s, unit: %s)" % (delta64, value, unit)
     )
+
+
+@cython.cfunc
+@cython.inline(True)
+def delta64_to_days(delta64: object) -> cython.longlong:
+    """Convert `numpy.timedelta64` to integer (days).
+
+    - Support units from `'D'` to `'ns'`.
+    - Percision will be lost if the original timedelta64 unit is smaller than 'days'.
+    """
+    # Validate
+    if not _is_timedelta64_object(delta64):
+        raise TypeError(
+            "Expected a `numpy.timedelta64` object, got '%s'" % type(delta64)
+        )
+
+    # Get val & unit
+    dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(delta64)
+    value: np.npy_timedelta = _get_timedelta64_value(delta64)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return value // NS_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return value // US_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return value // MS_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return value // SEC_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return value // MIN_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return value // HOUR_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return value
+    else:
+        raise ValueError(
+            "Unsupported timedelta64 '%s' - (val: %s, unit: %s)"
+            % (delta64, value, dt_unit)
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def delta64_to_hours(delta64: object) -> cython.longlong:
+    """Convert `numpy.timedelta64` to integer (hours).
+
+    - Support units from `'D'` to `'ns'`.
+    - Percision will be lost if the original timedelta64 unit is smaller than 'hours'.
+    """
+    # Validate
+    if not _is_timedelta64_object(delta64):
+        raise TypeError(
+            "Expected a `numpy.timedelta64` object, got '%s'" % type(delta64)
+        )
+
+    # Get val & unit
+    dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(delta64)
+    value: np.npy_timedelta = _get_timedelta64_value(delta64)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return value // NS_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return value // US_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return value // MS_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return value // SEC_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return value // MIN_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return value
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return value * HOUR_DAY
+    else:
+        raise ValueError(
+            "Unsupported timedelta64 '%s' - (val: %s, unit: %s)"
+            % (delta64, value, dt_unit)
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def delta64_to_minutes(delta64: object) -> cython.longlong:
+    """Convert `numpy.timedelta64` to integer (minutes).
+
+    - Support units from `'D'` to `'ns'`.
+    - Percision will be lost if the original timedelta64 unit is smaller than 'minutes'.
+    """
+    # Validate
+    if not _is_timedelta64_object(delta64):
+        raise TypeError(
+            "Expected a `numpy.timedelta64` object, got '%s'" % type(delta64)
+        )
+
+    # Get val & unit
+    dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(delta64)
+    value: np.npy_timedelta = _get_timedelta64_value(delta64)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return value // NS_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return value // US_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return value // MS_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return value // SEC_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return value
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return value * MIN_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return value * MIN_DAY
+    else:
+        raise ValueError(
+            "Unsupported timedelta64 '%s' - (val: %s, unit: %s)"
+            % (delta64, value, dt_unit)
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def delta64_to_seconds(delta64: object) -> cython.longlong:
+    """Convert `numpy.timedelta64` to integer (seconds).
+
+    - Support units from `'D'` to `'ns'`.
+    - Percision will be lost if the original timedelta64 unit is smaller than 'seconds'.
+    """
+    # Validate
+    if not _is_timedelta64_object(delta64):
+        raise TypeError(
+            "Expected a `numpy.timedelta64` object, got '%s'" % type(delta64)
+        )
+
+    # Get val & unit
+    dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(delta64)
+    value: np.npy_timedelta = _get_timedelta64_value(delta64)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return value // NS_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return value // US_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return value // MS_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return value
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return value * SEC_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return value * SEC_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return value * SEC_DAY
+    else:
+        raise ValueError(
+            "Unsupported timedelta64 '%s' - (val: %s, unit: %s)"
+            % (delta64, value, dt_unit)
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def delta64_to_miliseconds(delta64: object) -> cython.longlong:
+    """Convert `numpy.timedelta64` to integer (miliseconds).
+
+    - Support units from `'D'` to `'ns'`.
+    - Percision will be lost if the original timedelta64 unit is smaller than 'miliseconds'.
+    """
+    # Validate
+    if not _is_timedelta64_object(delta64):
+        raise TypeError(
+            "Expected a `numpy.timedelta64` object, got '%s'" % type(delta64)
+        )
+
+    # Get val & unit
+    dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(delta64)
+    value: np.npy_timedelta = _get_timedelta64_value(delta64)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return value // NS_MILLISECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return value // US_MILLISECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return value
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return value * MS_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return value * MS_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return value * MS_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return value * MS_DAY
+    else:
+        raise ValueError(
+            "Unsupported timedelta64 '%s' - (val: %s, unit: %s)"
+            % (delta64, value, dt_unit)
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def delta64_to_microseconds(delta64: object) -> cython.longlong:
+    """Convert `numpy.timedelta64` to integer (microseconds).
+
+    - Support units from `'D'` to `'ns'`.
+    - Percision will be lost if the original timedelta64 unit is smaller than 'microseconds'.
+    """
+    # Validate
+    if not _is_timedelta64_object(delta64):
+        raise TypeError(
+            "Expected a `numpy.timedelta64` object, got '%s'" % type(delta64)
+        )
+
+    # Get val & unit
+    dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(delta64)
+    value: np.npy_timedelta = _get_timedelta64_value(delta64)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return value // NS_MICROSECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return value
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return value * US_MILLISECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return value * US_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return value * US_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return value * US_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return value * US_DAY
+    else:
+        raise ValueError(
+            "Unsupported timedelta64 '%s' - (val: %s, unit: %s)"
+            % (delta64, value, dt_unit)
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def delta64_to_nanoseconds(delta64: object) -> cython.longlong:
+    """Convert `numpy.timedelta64` to integer (nanoseconds).
+
+    - Support units from `'D'` to `'ns'`.
+    - Percision will be lost if the original timedelta64 unit is smaller than 'nanoseconds'.
+    """
+    # Validate
+    if not _is_timedelta64_object(delta64):
+        raise TypeError(
+            "Expected a `numpy.timedelta64` object, got '%s'" % type(delta64)
+        )
+
+    # Get val & unit
+    dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(delta64)
+    value: np.npy_timedelta = _get_timedelta64_value(delta64)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return value
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return value * NS_MICROSECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return value * NS_MILLISECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return value * NS_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return value * NS_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return value * NS_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return value * NS_DAY
+    else:
+        raise ValueError(
+            "Unsupported timedelta64 '%s' - (val: %s, unit: %s)"
+            % (delta64, value, dt_unit)
+        )
 
 
 @cython.cfunc
@@ -2056,3 +2811,1023 @@ def delta64_to_microseconds(delta64: object) -> cython.longlong:
 def delta64_to_delta(delta64: object) -> datetime.timedelta:
     "Convert `numpy.timedelta64` to `datetime.timedelta`. Only support units from `'D'` to `'ms'`."
     return delta_fr_microseconds(delta64_to_microseconds(delta64))
+
+
+# ndarray[dateimte64] ----------------------------------------------------------------------------------
+@cython.cfunc
+@cython.inline(True)
+def arraydt64_to_arrayint(arr: np.ndarray, unit: str) -> np.ndarray:
+    """Convert ndarray[datetime64] to ndarray[int] based on time unit.
+
+    - Support units from `'D'` to `'ns'`.
+    - Percision will be lost if the original datetime64 unit is smaller than 'unit'.
+    """
+    # Get unit & values
+    try:
+        dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(arr[0])
+        values: np.ndarray = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_INT64)
+    except Exception:
+        raise ValueError("Expected `ndarray[datetime64]`, got\n%s" % arr)
+
+    # Convert from [ns] to desired [unit]
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        if unit == "ns":
+            return values
+        elif unit == "us":
+            return values // NS_MICROSECOND
+        elif unit == "ms":
+            return values // NS_MILLISECOND
+        elif unit == "s":
+            return values // NS_SECOND
+        elif unit == "m":
+            return values // NS_MINUTE
+        elif unit == "h":
+            return values // NS_HOUR
+        elif unit == "D":
+            return values // NS_DAY
+
+    # Convert from [us] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        if unit == "ns":
+            return values * NS_MICROSECOND
+        elif unit == "us":
+            return values
+        elif unit == "ms":
+            return values // US_MILLISECOND
+        elif unit == "s":
+            return values // US_SECOND
+        elif unit == "m":
+            return values // US_MINUTE
+        elif unit == "h":
+            return values // US_HOUR
+        elif unit == "D":
+            return values // US_DAY
+
+    # Convert from [ms] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        if unit == "ns":
+            return values * NS_MILLISECOND
+        elif unit == "us":
+            return values * US_MILLISECOND
+        elif unit == "ms":
+            return values
+        elif unit == "s":
+            return values // MS_SECOND
+        elif unit == "m":
+            return values // MS_MINUTE
+        elif unit == "h":
+            return values // MS_HOUR
+        elif unit == "D":
+            return values // MS_DAY
+
+    # Convert from [s] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        if unit == "ns":
+            return values * NS_SECOND
+        elif unit == "us":
+            return values * US_SECOND
+        elif unit == "ms":
+            return values * MS_SECOND
+        elif unit == "s":
+            return values
+        elif unit == "m":
+            return values // SEC_MINUTE
+        elif unit == "h":
+            return values // SEC_HOUR
+        elif unit == "D":
+            return values // SEC_DAY
+
+    # Convert from [m] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        if unit == "ns":
+            return values * NS_MINUTE
+        elif unit == "us":
+            return values * US_MINUTE
+        elif unit == "ms":
+            return values * MS_MINUTE
+        elif unit == "s":
+            return values * SEC_MINUTE
+        elif unit == "m":
+            return values
+        elif unit == "h":
+            return values // MIN_HOUR
+        elif unit == "D":
+            return values // MIN_DAY
+
+    # Convert from [h] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        if unit == "ns":
+            return values * NS_HOUR
+        elif unit == "us":
+            return values * US_HOUR
+        elif unit == "ms":
+            return values * MS_HOUR
+        elif unit == "s":
+            return values * SEC_HOUR
+        elif unit == "m":
+            return values * MIN_HOUR
+        elif unit == "h":
+            return values
+        elif unit == "D":
+            return values // HOUR_DAY
+
+    # Convert from [D] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        if unit == "ns":
+            return values * NS_DAY
+        elif unit == "us":
+            return values * US_DAY
+        elif unit == "ms":
+            return values * MS_DAY
+        elif unit == "s":
+            return values * SEC_DAY
+        elif unit == "m":
+            return values * MIN_DAY
+        elif unit == "h":
+            return values * HOUR_DAY
+        elif unit == "D":
+            return values
+
+    raise ValueError("Unsupported unit: %s. Accept units from `'D'` to `'ns'`." % unit)
+
+
+@cython.cfunc
+@cython.inline(True)
+def arraydt64_to_arrayint_day(arr: np.ndarray) -> np.ndarray:
+    """Convert ndarray[datetime64] to ndarray[int] (days).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'days'.
+    """
+    # Get unit & values
+    try:
+        dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(arr[0])
+        values: np.ndarray = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_INT64)
+    except Exception:
+        raise ValueError("Expected `ndarray[datetime64]`, got\n%s" % arr)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return values // NS_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return values // US_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return values // MS_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return values // SEC_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return values // MIN_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return values // HOUR_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return values
+    else:
+        raise ValueError(
+            "Unsupported datetime64 unit: %s. Accept units from `'D'` to `'ns'`."
+            % dt_unit
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def arraydt64_to_arrayint_hour(arr: np.ndarray) -> np.ndarray:
+    """Convert ndarray[datetime64] to ndarray[int] (hours).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'hours'.
+    """
+    # Get unit & values
+    try:
+        dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(arr[0])
+        values: np.ndarray = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_INT64)
+    except Exception:
+        raise ValueError("Expected `ndarray[datetime64]`, got\n%s" % arr)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return values // NS_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return values // US_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return values // MS_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return values // SEC_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return values // MIN_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return values
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return values * HOUR_DAY
+    else:
+        raise ValueError(
+            "Unsupported datetime64 unit: %s. Accept units from `'D'` to `'ns'`."
+            % dt_unit
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def arraydt64_to_arrayint_min(arr: np.ndarray) -> np.ndarray:
+    """Convert ndarray[datetime64] to ndarray[int] (minutes).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'minutes'.
+    """
+    # Get unit & values
+    try:
+        dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(arr[0])
+        values: np.ndarray = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_INT64)
+    except Exception:
+        raise ValueError("Expected `ndarray[datetime64]`, got\n%s" % arr)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return values // NS_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return values // US_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return values // MS_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return values // SEC_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return values
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return values * MIN_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return values * MIN_DAY
+    else:
+        raise ValueError(
+            "Unsupported datetime64 unit: %s. Accept units from `'D'` to `'ns'`."
+            % dt_unit
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def arraydt64_to_arrayint_sec(arr: np.ndarray) -> np.ndarray:
+    """Convert ndarray[datetime64] to ndarray[int] (seconds).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'seconds'.
+    """
+    # Get unit & values
+    try:
+        dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(arr[0])
+        values: np.ndarray = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_INT64)
+    except Exception:
+        raise ValueError("Expected `ndarray[datetime64]`, got\n%s" % arr)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return values // NS_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return values // US_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return values // MS_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return values
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return values * SEC_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return values * SEC_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return values * SEC_DAY
+    else:
+        raise ValueError(
+            "Unsupported datetime64 unit: %s. Accept units from `'D'` to `'ns'`."
+            % dt_unit
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def arraydt64_to_arrayint_ms(arr: np.ndarray) -> np.ndarray:
+    """Convert ndarray[datetime64] to ndarray[int] (miliseconds).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'miliseconds'.
+    """
+    # Get unit & values
+    try:
+        dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(arr[0])
+        values: np.ndarray = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_INT64)
+    except Exception:
+        raise ValueError("Expected `ndarray[datetime64]`, got\n%s" % arr)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return values // NS_MILLISECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return values // US_MILLISECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return values
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return values * MS_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return values * MS_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return values * MS_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return values * MS_DAY
+    else:
+        raise ValueError(
+            "Unsupported datetime64 unit: %s. Accept units from `'D'` to `'ns'`."
+            % dt_unit
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def arraydt64_to_arrayint_us(arr: np.ndarray) -> np.ndarray:
+    """Convert ndarray[datetime64] to ndarray[int] (microseconds).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'microseconds'.
+    """
+    # Get unit & values
+    try:
+        dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(arr[0])
+        values: np.ndarray = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_INT64)
+    except Exception:
+        raise ValueError("Expected `ndarray[datetime64]`, got\n%s" % arr)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return values // NS_MICROSECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return values
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return values * US_MILLISECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return values * US_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return values * US_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return values * US_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return values * US_DAY
+    else:
+        raise ValueError(
+            "Unsupported datetime64 unit: %s. Accept units from `'D'` to `'ns'`."
+            % dt_unit
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def arraydt64_to_arrayint_ns(arr: np.ndarray) -> np.ndarray:
+    """Convert ndarray[datetime64] to ndarray[int] (nanoseconds).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'nanoseconds'.
+    """
+    # Get unit & values
+    try:
+        dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(arr[0])
+        values: np.ndarray = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_INT64)
+    except Exception:
+        raise ValueError("Expected `ndarray[datetime64]`, got\n%s" % arr)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return values
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return values * NS_MICROSECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return values * NS_MILLISECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return values * NS_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return values * NS_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return values * NS_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return values * NS_DAY
+    else:
+        raise ValueError(
+            "Unsupported datetime64 unit: %s. Accept units from `'D'` to `'ns'`."
+            % dt_unit
+        )
+
+
+# ndarray[timedelta64] ---------------------------------------------------------------------------------
+@cython.cfunc
+@cython.inline(True)
+def arraydelta64_to_arrayint(arr: np.ndarray, unit: str) -> np.ndarray:
+    """Convert ndarray[timedelta64] to ndarray[int] based on time unit.
+
+    - Support units from `'D'` to `'ns'`.
+    - Percision will be lost if the original timedelta64 unit is smaller than 'unit'.
+    """
+    # Get unit & values
+    try:
+        dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(arr[0])
+        values: np.ndarray = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_INT64)
+    except Exception:
+        raise ValueError("Expected `ndarray[timedelta64]`, got\n%s" % arr)
+
+    # Convert from [ns] to desired [unit]
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        if unit == "ns":
+            return values
+        elif unit == "us":
+            return values // NS_MICROSECOND
+        elif unit == "ms":
+            return values // NS_MILLISECOND
+        elif unit == "s":
+            return values // NS_SECOND
+        elif unit == "m":
+            return values // NS_MINUTE
+        elif unit == "h":
+            return values // NS_HOUR
+        elif unit == "D":
+            return values // NS_DAY
+
+    # Convert from [us] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        if unit == "ns":
+            return values * NS_MICROSECOND
+        elif unit == "us":
+            return values
+        elif unit == "ms":
+            return values // US_MILLISECOND
+        elif unit == "s":
+            return values // US_SECOND
+        elif unit == "m":
+            return values // US_MINUTE
+        elif unit == "h":
+            return values // US_HOUR
+        elif unit == "D":
+            return values // US_DAY
+
+    # Convert from [ms] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        if unit == "ns":
+            return values * NS_MILLISECOND
+        elif unit == "us":
+            return values * US_MILLISECOND
+        elif unit == "ms":
+            return values
+        elif unit == "s":
+            return values // MS_SECOND
+        elif unit == "m":
+            return values // MS_MINUTE
+        elif unit == "h":
+            return values // MS_HOUR
+        elif unit == "D":
+            return values // MS_DAY
+
+    # Convert from [s] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        if unit == "ns":
+            return values * NS_SECOND
+        elif unit == "us":
+            return values * US_SECOND
+        elif unit == "ms":
+            return values * MS_SECOND
+        elif unit == "s":
+            return values
+        elif unit == "m":
+            return values // SEC_MINUTE
+        elif unit == "h":
+            return values // SEC_HOUR
+        elif unit == "D":
+            return values // SEC_DAY
+
+    # Convert from [m] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        if unit == "ns":
+            return values * NS_MINUTE
+        elif unit == "us":
+            return values * US_MINUTE
+        elif unit == "ms":
+            return values * MS_MINUTE
+        elif unit == "s":
+            return values * SEC_MINUTE
+        elif unit == "m":
+            return values
+        elif unit == "h":
+            return values // MIN_HOUR
+        elif unit == "D":
+            return values // MIN_DAY
+
+    # Convert from [h] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        if unit == "ns":
+            return values * NS_HOUR
+        elif unit == "us":
+            return values * US_HOUR
+        elif unit == "ms":
+            return values * MS_HOUR
+        elif unit == "s":
+            return values * SEC_HOUR
+        elif unit == "m":
+            return values * MIN_HOUR
+        elif unit == "h":
+            return values
+        elif unit == "D":
+            return values // HOUR_DAY
+
+    # Convert from [D] to desired [unit]
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        if unit == "ns":
+            return values * NS_DAY
+        elif unit == "us":
+            return values * US_DAY
+        elif unit == "ms":
+            return values * MS_DAY
+        elif unit == "s":
+            return values * SEC_DAY
+        elif unit == "m":
+            return values * MIN_DAY
+        elif unit == "h":
+            return values * HOUR_DAY
+        elif unit == "D":
+            return values
+
+    raise ValueError("Unsupported unit: %s. Accept units from `'D'` to `'ns'`." % unit)
+
+
+@cython.cfunc
+@cython.inline(True)
+def arraydelta64_to_arrayint_day(arr: np.ndarray) -> np.ndarray:
+    """Convert ndarray[timedelta64] to ndarray[int] (days).
+
+    - Percision will be lost if the original timedelta64 unit is smaller than 'days'.
+    """
+    # Get unit & values
+    try:
+        dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(arr[0])
+        values: np.ndarray = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_INT64)
+    except Exception:
+        raise ValueError("Expected `ndarray[timedelta64]`, got\n%s" % arr)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return values // NS_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return values // US_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return values // MS_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return values // SEC_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return values // MIN_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return values // HOUR_DAY
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return values
+    else:
+        raise ValueError(
+            "Unsupported timedelta64 unit: %s. Accept units from `'D'` to `'ns'`."
+            % dt_unit
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def arraydelta64_to_arrayint_hour(arr: np.ndarray) -> np.ndarray:
+    """Convert ndarray[timedelta64] to ndarray[int] (hours).
+
+    - Percision will be lost if the original timedelta64 unit is smaller than 'hours'.
+    """
+    # Get unit & values
+    try:
+        dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(arr[0])
+        values: np.ndarray = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_INT64)
+    except Exception:
+        raise ValueError("Expected `ndarray[timedelta64]`, got\n%s" % arr)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return values // NS_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return values // US_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return values // MS_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return values // SEC_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return values // MIN_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return values
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return values * HOUR_DAY
+    else:
+        raise ValueError(
+            "Unsupported timedelta64 unit: %s. Accept units from `'D'` to `'ns'`."
+            % dt_unit
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def arraydelta64_to_arrayint_min(arr: np.ndarray) -> np.ndarray:
+    """Convert ndarray[timedelta64] to ndarray[int] (minutes).
+
+    - Percision will be lost if the original timedelta64 unit is smaller than 'minutes'.
+    """
+    # Get unit & values
+    try:
+        dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(arr[0])
+        values: np.ndarray = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_INT64)
+    except Exception:
+        raise ValueError("Expected `ndarray[timedelta64]`, got\n%s" % arr)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return values // NS_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return values // US_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return values // MS_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return values // SEC_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return values
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return values * MIN_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return values * MIN_DAY
+    else:
+        raise ValueError(
+            "Unsupported timedelta64 unit: %s. Accept units from `'D'` to `'ns'`."
+            % dt_unit
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def arraydelta64_to_arrayint_sec(arr: np.ndarray) -> np.ndarray:
+    """Convert ndarray[timedelta64] to ndarray[int] (seconds).
+
+    - Percision will be lost if the original timedelta64 unit is smaller than 'seconds'.
+    """
+    # Get unit & values
+    try:
+        dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(arr[0])
+        values: np.ndarray = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_INT64)
+    except Exception:
+        raise ValueError("Expected `ndarray[timedelta64]`, got\n%s" % arr)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return values // NS_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return values // US_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return values // MS_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return values
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return values * SEC_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return values * SEC_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return values * SEC_DAY
+    else:
+        raise ValueError(
+            "Unsupported timedelta64 unit: %s. Accept units from `'D'` to `'ns'`."
+            % dt_unit
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def arraydelta64_to_arrayint_ms(arr: np.ndarray) -> np.ndarray:
+    """Convert ndarray[timedelta64] to ndarray[int] (miliseconds).
+
+    - Percision will be lost if the original timedelta64 unit is smaller than 'miliseconds'.
+    """
+    # Get unit & values
+    try:
+        dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(arr[0])
+        values: np.ndarray = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_INT64)
+    except Exception:
+        raise ValueError("Expected `ndarray[timedelta64]`, got\n%s" % arr)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return values // NS_MILLISECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return values // US_MILLISECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return values
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return values * MS_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return values * MS_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return values * MS_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return values * MS_DAY
+    else:
+        raise ValueError(
+            "Unsupported timedelta64 unit: %s. Accept units from `'D'` to `'ns'`."
+            % dt_unit
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def arraydelta64_to_arrayint_us(arr: np.ndarray) -> np.ndarray:
+    """Convert ndarray[timedelta64] to ndarray[int] (microseconds).
+
+    - Percision will be lost if the original timedelta64 unit is smaller than 'microseconds'.
+    """
+    # Get unit & values
+    try:
+        dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(arr[0])
+        values: np.ndarray = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_INT64)
+    except Exception:
+        raise ValueError("Expected `ndarray[timedelta64]`, got\n%s" % arr)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return values // NS_MICROSECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return values
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return values * US_MILLISECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return values * US_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return values * US_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return values * US_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return values * US_DAY
+    else:
+        raise ValueError(
+            "Unsupported timedelta64 unit: %s. Accept units from `'D'` to `'ns'`."
+            % dt_unit
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def arraydelta64_to_arrayint_ns(arr: np.ndarray) -> np.ndarray:
+    """Convert ndarray[timedelta64] to ndarray[int] (nanoseconds).
+
+    - Percision will be lost if the original timedelta64 unit is smaller than 'nanoseconds'.
+    """
+    # Get unit & values
+    try:
+        dt_unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(arr[0])
+        values: np.ndarray = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_INT64)
+    except Exception:
+        raise ValueError("Expected `ndarray[timedelta64]`, got\n%s" % arr)
+
+    # Conversion
+    if dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
+        return values
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
+        return values * NS_MICROSECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
+        return values * NS_MILLISECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:  # second
+        return values * NS_SECOND
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:  # minute
+        return values * NS_MINUTE
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:  # hour
+        return values * NS_HOUR
+    elif dt_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:  # day
+        return values * NS_DAY
+    else:
+        raise ValueError(
+            "Unsupported timedelta64 unit: %s. Accept units from `'D'` to `'ns'`."
+            % dt_unit
+        )
+
+
+# pandas.Series[datetime64] ----------------------------------------------------------------------------
+@cython.cfunc
+@cython.inline(True)
+def seriesdt64_to_arrayint(series: pd.Series, unit: str) -> np.ndarray:
+    """Convert pandas.Series[datetime64] to ndarray[int] based on time unit.
+
+    - Support units from `'D'` to `'ns'`.
+    - Percision will be lost if the original datetime64 unit is smaller than 'unit'.
+    """
+    return arraydt64_to_arrayint(series.values, unit)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdt64_to_arrayint_day(series: pd.Series) -> np.ndarray:
+    """Convert pandas.Series[datetime64] to ndarray[int] (days).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'days'.
+    """
+    return arraydt64_to_arrayint_day(series.values)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdt64_to_arrayint_hour(series: pd.Series) -> np.ndarray:
+    """Convert pandas.Series[datetime64] to ndarray[int] (hours).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'hours'.
+    """
+    return arraydt64_to_arrayint_hour(series.values)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdt64_to_arrayint_min(series: pd.Series) -> np.ndarray:
+    """Convert pandas.Series[datetime64] to ndarray[int] (minutes).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'minutes'.
+    """
+    return arraydt64_to_arrayint_min(series.values)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdt64_to_arrayint_sec(series: pd.Series) -> np.ndarray:
+    """Convert pandas.Series[datetime64] to ndarray[int] (seconds).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'seconds'.
+    """
+    return arraydt64_to_arrayint_sec(series.values)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdt64_to_arrayint_ms(series: pd.Series) -> np.ndarray:
+    """Convert pandas.Series[datetime64] to ndarray[int] (miliseconds).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'miliseconds'.
+    """
+    return arraydt64_to_arrayint_ms(series.values)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdt64_to_arrayint_us(series: pd.Series) -> np.ndarray:
+    """Convert pandas.Series[datetime64] to ndarray[int] (microseconds).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'microseconds'.
+    """
+    return arraydt64_to_arrayint_us(series.values)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdt64_to_arrayint_ns(series: pd.Series) -> np.ndarray:
+    """Convert pandas.Series[datetime64] to ndarray[int] (nanoseconds).
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'nanoseconds'.
+    """
+    return arraydt64_to_arrayint_ns(series.values)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdt64_adjust_to_ns(series: pd.Series) -> object:
+    """Adjust pandas.Series[datetime64] to 'datetime64[ns]'
+    Support both timezone-naive and timezone-aware series.
+
+    - Percision will be lost if the original datetime64 unit is smaller than 'nanoseconds'.
+    """
+    dtype: str = series.dtype.str
+    if dtype == "<M8[ns]" or dtype == "|M8[ns]":
+        return series
+
+    kind: str = series.dtype.kind
+    if kind == "M":
+        # Timestamp to nanosecond
+        values: np.ndarray = arraydt64_to_arrayint_ns(series.values)
+        # Reconstruction
+        return pd.Series(pd.DatetimeIndex(values, tz=series.dt.tz))
+    else:
+        raise ValueError(
+            "Not a Series of datetime64: %s (dtype: %s)" % (series, series.dtype)
+        )
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdt64_to_ordinal(series: pd.Series) -> object:
+    "Convert Series[datetime64] to Series[int] (ordinal)."
+    # Convert to days
+    values: np.ndarray = seriesdt64_to_arrayint_day(series) + EPOCH_DAY
+    # Reconstruction
+    return pd.Series(values, index=series.index)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdt64_to_seconds(series: pd.Series) -> object:
+    "Convert Series[datetime64] to Series[float] (total seconds)."
+    # Convert to seconds
+    values: np.ndarray = seriesdt64_to_arrayint_us(series) / US_SECOND
+    # Reconstruction
+    return pd.Series(values, index=series.index)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdt64_to_microseconds(series: pd.Series) -> object:
+    "Convert Series[datetime64] to Series[float] (total seconds)."
+    # Convert to seconds
+    values: np.ndarray = seriesdt64_to_arrayint_us(series)
+    # Reconstruction
+    return pd.Series(values, index=series.index)
+
+
+# pandas.Series[timedelta64] ---------------------------------------------------------------------------
+@cython.cfunc
+@cython.inline(True)
+def seriesdelta64_to_arrayint(series: pd.Series, unit: str) -> np.ndarray:
+    """Convert pandas.Series[timedelta64] to ndarray[int] based on time unit.
+
+    - Support units from `'D'` to `'ns'`.
+    - Percision will be lost if the original timedelta64 unit is smaller than 'unit'.
+    """
+    return arraydt64_to_arrayint(series.values, unit)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdelta64_to_arrayint_day(series: pd.Series) -> np.ndarray:
+    """Convert pandas.Series[timedelta64] to ndarray[int] (days).
+
+    - Percision will be lost if the original timedelta64 unit is smaller than 'days'.
+    """
+    return arraydelta64_to_arrayint_day(series.values)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdelta64_to_arrayint_hour(series: pd.Series) -> np.ndarray:
+    """Convert pandas.Series[timedelta64] to ndarray[int] (hours).
+
+    - Percision will be lost if the original timedelta64 unit is smaller than 'hours'.
+    """
+    return arraydelta64_to_arrayint_hour(series.values)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdelta64_to_arrayint_min(series: pd.Series) -> np.ndarray:
+    """Convert pandas.Series[timedelta64] to ndarray[int] (minutes).
+
+    - Percision will be lost if the original timedelta64 unit is smaller than 'minutes'.
+    """
+    return arraydelta64_to_arrayint_min(series.values)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdelta64_to_arrayint_sec(series: pd.Series) -> np.ndarray:
+    """Convert pandas.Series[timedelta64] to ndarray[int] (seconds).
+
+    - Percision will be lost if the original timedelta64 unit is smaller than 'seconds'.
+    """
+    return arraydelta64_to_arrayint_sec(series.values)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdelta64_to_arrayint_ms(series: pd.Series) -> np.ndarray:
+    """Convert pandas.Series[timedelta64] to ndarray[int] (miliseconds).
+
+    - Percision will be lost if the original timedelta64 unit is smaller than 'miliseconds'.
+    """
+    return arraydelta64_to_arrayint_ms(series.values)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdelta64_to_arrayint_us(series: pd.Series) -> np.ndarray:
+    """Convert pandas.Series[timedelta64] to ndarray[int] (microseconds).
+
+    - Percision will be lost if the original timedelta64 unit is smaller than 'microseconds'.
+    """
+    return arraydelta64_to_arrayint_us(series.values)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdelta64_to_arrayint_ns(series: pd.Series) -> np.ndarray:
+    """Convert pandas.Series[timedelta64] to ndarray[int] (nanoseconds).
+
+    - Percision will be lost if the original timedelta64 unit is smaller than 'nanoseconds'.
+    """
+    return arraydelta64_to_arrayint_ns(series.values)
+
+
+@cython.cfunc
+@cython.inline(True)
+def seriesdelta64_adjust_to_ns(series: pd.Series) -> object:
+    """Adjust pandas.Series[datetime64] to 'datetime64[ns]'
+    Support both timezone-naive and timezone-aware series.
+    """
+    dtype: str = series.dtype.str
+    if dtype == "<m8[ns]" or dtype == "|m8[ns]":
+        return series
+
+    kind: str = series.dtype.kind
+    if kind == "m":
+        # Timedelta to nanosecond
+        values: np.ndarray = arraydelta64_to_arrayint_ns(series.values)
+        # Reconstruction
+        return pd.Series(pd.TimedeltaIndex(values, unit="ns"))
+    else:
+        raise ValueError(
+            "Not a Series of timedelta64: %s (dtype: %s)" % (series, series.dtype)
+        )

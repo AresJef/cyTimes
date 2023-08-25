@@ -2,6 +2,7 @@
 # cython: wraparound=False
 # cython: boundscheck=False
 
+cimport numpy as np
 from cpython cimport datetime
 from cytimes cimport cytime
 
@@ -16,7 +17,10 @@ cdef:
     long long DT_MIN_US, DT_MAX_US
     long long NA_DAY, NS_HOUR, NS_MINUTE, NS_SECOND, NS_MILLISECOND, NS_MICROSECOND, NS_NANOSECOND
     long long US_DAY, US_HOUR, US_MINUTE, US_SECOND, US_MILLISECOND, US_MICROSECOND
+    long long MS_DAY, MS_HOUR, MS_MINUTE, MS_SECOND, MS_MILLISECOND
     long long SEC_DAY, SEC_HOUR, SEC_MINUTE, SEC_SECOND
+    long long MIN_DAY, MIN_HOUR, MIN_MINUTE
+    long long HOUR_DAY, HOUR_HOUR
 
 # Struct
 cdef struct ymd:
@@ -187,11 +191,68 @@ cdef str format_utcoffset(datetime.timedelta utcoffset) except *
 # Datetime64
 cdef bint is_dt64(object obj) except -1
 cdef str dt64_to_isoformat(object dt64) except *
+cdef long long dt64_to_int(object dt64, str unit) except *
+cdef long long dt64_to_days(object dt64) except *
+cdef long long dt64_to_hours(object dt64) except *
+cdef long long dt64_to_minutes(object dt64) except *
+cdef long long dt64_to_seconds(object dt64) except *
+cdef long long dt64_to_miliseconds(object dt64) except *
 cdef long long dt64_to_microseconds(object dt64) except *
+cdef long long dt64_to_nanoseconds(object dt64) except *
 cdef datetime.date dt64_to_date(object dt64) except *
 cdef datetime.datetime dt64_to_dt(object dt64) except *
 cdef datetime.time dt64_to_time(object dt64) except *
 # Timedelta64
 cdef bint is_delta64(object obj) except -1
+cdef long long delta64_to_int(object delta64, str unit) except *
+cdef long long delta64_to_days(object delta64) except *
+cdef long long delta64_to_hours(object delta64) except *
+cdef long long delta64_to_minutes(object delta64) except *
+cdef long long delta64_to_seconds(object delta64) except *
+cdef long long delta64_to_miliseconds(object delta64) except *
 cdef long long delta64_to_microseconds(object delta64) except *
+cdef long long delta64_to_nanoseconds(object delta64) except *
 cdef datetime.timedelta delta64_to_delta(object delta64) except *
+# ndarray[dateimte64]
+cdef np.ndarray arraydt64_to_arrayint(np.ndarray arr, str unit) except *
+cdef np.ndarray arraydt64_to_arrayint_day(np.ndarray arr) except *
+cdef np.ndarray arraydt64_to_arrayint_hour(np.ndarray arr) except *
+cdef np.ndarray arraydt64_to_arrayint_min(np.ndarray arr) except *
+cdef np.ndarray arraydt64_to_arrayint_sec(np.ndarray arr) except *
+cdef np.ndarray arraydt64_to_arrayint_ms(np.ndarray arr) except *
+cdef np.ndarray arraydt64_to_arrayint_us(np.ndarray arr) except *
+cdef np.ndarray arraydt64_to_arrayint_ns(np.ndarray arr) except *
+# ndarray[timedelta64]
+cdef np.ndarray arraydelta64_to_arrayint(np.ndarray arr, str unit) except *
+cdef np.ndarray arraydelta64_to_arrayint_day(np.ndarray arr) except *
+cdef np.ndarray arraydelta64_to_arrayint_hour(np.ndarray arr) except *
+cdef np.ndarray arraydelta64_to_arrayint_min(np.ndarray arr) except *
+cdef np.ndarray arraydelta64_to_arrayint_sec(np.ndarray arr) except *
+cdef np.ndarray arraydelta64_to_arrayint_ms(np.ndarray arr) except *
+cdef np.ndarray arraydelta64_to_arrayint_us(np.ndarray arr) except *
+cdef np.ndarray arraydelta64_to_arrayint_ns(np.ndarray arr) except *
+# pandas.Series[datetime64]
+cdef np.ndarray seriesdt64_to_arrayint(object series, str unit) except *
+cdef np.ndarray seriesdt64_to_arrayint_day(object series) except *
+cdef np.ndarray seriesdt64_to_arrayint_hour(object series) except *
+cdef np.ndarray seriesdt64_to_arrayint_min(object series) except *
+cdef np.ndarray seriesdt64_to_arrayint_sec(object series) except *
+cdef np.ndarray seriesdt64_to_arrayint_ms(object series) except *
+cdef np.ndarray seriesdt64_to_arrayint_us(object series) except *
+cdef np.ndarray seriesdt64_to_arrayint_ns(object series) except *
+cdef object seriesdt64_adjust_to_ns(object series) except *
+cdef object seriesdt64_to_ordinal(object series) except *
+cdef object seriesdt64_to_seconds(object series) except *
+cdef object seriesdt64_to_microseconds(object series) except *
+# pandas.Series[timedelta64]
+cdef np.ndarray seriesdelta64_to_arrayint(object series, str unit) except *
+cdef np.ndarray seriesdelta64_to_arrayint_day(object series) except *
+cdef np.ndarray seriesdelta64_to_arrayint_hour(object series) except *
+cdef np.ndarray seriesdelta64_to_arrayint_min(object series) except *
+cdef np.ndarray seriesdelta64_to_arrayint_sec(object series) except *
+cdef np.ndarray seriesdelta64_to_arrayint_ms(object series) except *
+cdef np.ndarray seriesdelta64_to_arrayint_us(object series) except *
+cdef np.ndarray seriesdelta64_to_arrayint_ns(object series) except *
+cdef object seriesdelta64_adjust_to_ns(object series) except *
+
+

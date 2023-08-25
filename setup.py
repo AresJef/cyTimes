@@ -39,6 +39,6 @@ setup(
             extension("pddt.py", True, "-Wno-unreachable-code-fallthrough"),
         ],
         compiler_directives={"language_level": "3"},
-        # annotate=True,
+        annotate=True,
     ),
 )
