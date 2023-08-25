@@ -50,6 +50,14 @@ EPOCH_DAY: cython.longlong = 719163
 DT_MIN_US: cython.longlong = 86400000000
 DT_MAX_US: cython.longlong = 315537983999999999
 
+NS_DAY: cython.longlong = 86400000000000
+NS_HOUR: cython.longlong = 3600000000000
+NS_MINUTE: cython.longlong = 60000000000
+NS_SECOND: cython.longlong = 1000000000
+NS_MILLISECOND: cython.longlong = 1000000
+NS_MICROSECOND: cython.longlong = 1000
+NS_NANOSECOND: cython.longlong = 1
+
 US_DAY: cython.longlong = 86400000000
 US_HOUR: cython.longlong = 3600000000
 US_MINUTE: cython.longlong = 60000000
@@ -60,6 +68,7 @@ US_MICROSECOND: cython.longlong = 1
 SEC_DAY: cython.longlong = 86400
 SEC_HOUR: cython.longlong = 3600
 SEC_MINUTE: cython.longlong = 60
+SEC_SECOND: cython.longlong = 1
 # fmt: on
 
 # Struct -----------------------------------------------------------------------------------------------
@@ -1925,22 +1934,25 @@ def dt64_to_isoformat(dt64: object) -> str:
 @cython.cfunc
 @cython.inline(True)
 def dt64_to_microseconds(dt64: object) -> cython.longlong:
-    "Convert `numpy.datetime64` to total microseconds. Only support units from `'D'` to `'ms'`."
+    "Convert `numpy.datetime64` to total microseconds. Only support units from `'D'` to `'ns'`."
     # Validate
     if not is_dt64(dt64):
         raise TypeError("Expected a `numpy.datetime64` object, got '%s'" % type(dt64))
     # Get val & unit
     unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(dt64)
     val: np.npy_datetime = _get_datetime64_value(dt64)
+    # Unit - nanosecond
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:
+        return val // NS_MICROSECOND
+    # Unit - microsecond
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
+        return val
     # Unit - second
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_s:
         return val * US_SECOND
     # Unit - day
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_D:
         return val * US_DAY
-    # Unit - microsecond
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
-        return val
     # Unit - millisecond
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
         return val * US_MILLISECOND
@@ -2003,7 +2015,7 @@ def is_delta64(obj: object) -> cython.bint:
 @cython.cfunc
 @cython.inline(True)
 def delta64_to_microseconds(delta64: object) -> cython.longlong:
-    "Convert `numpy.timedelta64` to total microseconds. Only support units from `'D'` to `'ms'`."
+    "Convert `numpy.timedelta64` to total microseconds. Only support units from `'D'` to `'ns'`."
     # Validate
     if not is_delta64(delta64):
         raise TypeError(
@@ -2012,15 +2024,18 @@ def delta64_to_microseconds(delta64: object) -> cython.longlong:
     # Get val & unit
     unit: np.NPY_DATETIMEUNIT = _get_datetime64_unit(delta64)
     val: np.npy_datetime = _get_timedelta64_value(delta64)
+    # Unit - nanosecond
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:
+        return val // NS_MICROSECOND
+    # Unit - microsecond
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
+        return val
     # Unit - second
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_s:
         return val * US_SECOND
     # Unit - day
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_D:
         return val * US_DAY
-    # Unit - microsecond
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
-        return val
     # Unit - millisecond
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
         return val * US_MILLISECOND
