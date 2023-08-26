@@ -30,13 +30,13 @@ def extension(filename: str, include_np: bool, *extra_compile_args: str) -> Exte
 setup(
     ext_modules=cythonize(
         [
-            extension("cydatetime.py", True),
+            extension("cydatetime.py", True, "-Wno-unreachable-code"),
             extension("cymath.py", False),
-            extension("cyparser.py", True),
+            extension("cyparser.py", True, "-Wno-unreachable-code"),
             extension("cytime.pyx", False),
-            extension("cytimedelta.py", True),
-            extension("pydt.py", True),
-            extension("pddt.py", True, "-Wno-unreachable-code-fallthrough"),
+            extension("cytimedelta.py", True, "-Wno-unreachable-code"),
+            extension("pydt.py", True, "-Wno-unreachable-code"),
+            extension("pddt.py", True, "-Wno-unreachable-code"),
         ],
         compiler_directives={"language_level": "3"},
         annotate=True,
