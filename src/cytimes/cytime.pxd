@@ -19,6 +19,5 @@ cdef extern from "<time.h>" nogil:
         long tm_gmtoff
 
 # Functions
-cdef double time() noexcept
 cdef tm localtime() except * nogil
 cdef tm localize_time(double timestamp) except * nogil

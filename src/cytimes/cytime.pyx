@@ -3,8 +3,8 @@
 # cython: boundscheck=False
 
 from cpython.exc cimport PyErr_SetFromErrno
+from cpython.time cimport localtime as _localtime
 from libc.time cimport time_t, localtime as libc_localtime
-from cpython.time cimport time as _time, localtime as _localtime
 
 # Struct --------------------------------------------------------------------------------
 cdef extern from "<time.h>" nogil:
@@ -18,15 +18,8 @@ cdef extern from "<time.h>" nogil:
         int  tm_wday
         int  tm_yday
         int  tm_isdst
-        # GNU specific extensions
-        char *tm_zone
-        long tm_gmtoff
 
 # Functions -----------------------------------------------------------------------------
-# Equivalent to python `time.time()`.
-cdef inline double time() noexcept:
-    return _time()
-
 # Equivalent to `time.localtime()`.
 cdef inline tm localtime() except * nogil:
     return _localtime()

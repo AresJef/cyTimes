@@ -4,6 +4,7 @@
 
 # Cython imports
 import cython
+from cython.cimports.cpython.time import time as _time  # type: ignore
 from cython.cimports.cpython import datetime  # type: ignore
 from cython.cimports.cpython.datetime import date_new as _date_new  # type: ignore
 from cython.cimports.cpython.datetime import date_from_timestamp as _date_from_timestamp  # type: ignore
@@ -27,8 +28,9 @@ np.import_umath()
 datetime.import_datetime()
 
 # Python imports
-import numpy as np, pandas as pd
 from cytimes import cymath
+import numpy as np, pandas as pd
+from time import localtime as _localtime
 
 
 # Constants --------------------------------------------------------------------------------------------
@@ -102,19 +104,6 @@ iso = cython.struct(
     year=cython.int,
     week=cython.int,
     weekday=cython.int,
-)
-tm = cython.struct(
-    tm_sec=cython.int,
-    tm_min=cython.int,
-    tm_hour=cython.int,
-    tm_mday=cython.int,
-    tm_mon=cython.int,
-    tm_year=cython.int,
-    tm_wday=cython.int,
-    tm_yday=cython.int,
-    tm_isdst=cython.int,
-    tm_zone=cython.p_char,
-    tm_gmtoff=cython.long,
 )
 
 
@@ -454,7 +443,7 @@ def microseconds_to_hms(microseconds: cython.longlong) -> hms:
 @cython.exceptval(check=False)
 def time() -> cython.double:
     "Equivalent to python `time.time()`"
-    return cytime.time()
+    return _time()
 
 
 @cython.cfunc
@@ -862,7 +851,7 @@ def gen_dt(
 @cython.exceptval(check=False)
 def gen_dt_local() -> datetime.datetime:
     "Generate datetime.datetime from local time. Equivalent to `datetime.now()`."
-    microseconds: cython.longlong = int(cytime.time() % 1 * US_SECOND)
+    microseconds: cython.longlong = int(_time() % 1 * US_SECOND)
     tms = cytime.localtime()
     return _datetime_new(
         tms.tm_year,
@@ -1406,7 +1395,7 @@ def gen_time(
 def gen_time_local() -> datetime.time:
     "Generate datetime.time from local time. Equivalent to `datetime.time.now()`."
     tms = cytime.localtime()
-    microseconds: cython.int = int(cytime.time() % 1 * US_SECOND)
+    microseconds: cython.int = int(_time() % 1 * US_SECOND)
     return _time_new(tms.tm_hour, tms.tm_min, tms.tm_sec, microseconds, None, 0)
 
 
@@ -1845,14 +1834,11 @@ def gen_timezone_local(dt: datetime.datetime = None) -> datetime.tzinfo:
         else:
             ts = delta_to_seconds(dt_sub_dt(dt, EPOCH_UTC))
     else:
-        ts = cytime.time()
+        ts = _time()
     # Get local time
-    tms = localize_time(ts)
-    # Extrac timezone info
-    tzname: str = tms.tm_zone.decode("utf-8")
-    offset: int = tms.tm_gmtoff
+    tms = _localtime(ts)
     # Generate timezone
-    return gen_timezone(offset, tzname)
+    return gen_timezone(tms.tm_gmtoff, tms.tm_zone)
 
 
 # Timezone: Check Types --------------------------------------------------------------------------------
