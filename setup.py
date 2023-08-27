@@ -1,4 +1,4 @@
-import os, numpy as np
+import os, numpy as np, platform
 from setuptools import setup, Extension
 from Cython.Build import cythonize
 
@@ -26,18 +26,32 @@ def extension(filename: str, include_np: bool, *extra_compile_args: str) -> Exte
         return Extension(name, sources=[source], extra_compile_args=extra_args)
 
 
+# Build Extension
+if platform.system() == "Windows":
+    extnesions = [
+        extension("cydatetime.py", True),
+        extension("cymath.py", False),
+        extension("cyparser.py", True),
+        extension("cytime.pyx", False),
+        extension("cytimedelta.py", True),
+        extension("pydt.py", True),
+        extension("pddt.py", True),
+    ]
+else:
+    extensions = [
+        extension("cydatetime.py", True, "-Wno-unreachable-code"),
+        extension("cymath.py", False),
+        extension("cyparser.py", True, "-Wno-unreachable-code"),
+        extension("cytime.pyx", False),
+        extension("cytimedelta.py", True, "-Wno-unreachable-code"),
+        extension("pydt.py", True, "-Wno-unreachable-code"),
+        extension("pddt.py", True, "-Wno-unreachable-code"),
+    ]
+
 # Build
 setup(
     ext_modules=cythonize(
-        [
-            extension("cydatetime.py", True, "-Wno-unreachable-code"),
-            extension("cymath.py", False),
-            extension("cyparser.py", True, "-Wno-unreachable-code"),
-            extension("cytime.pyx", False),
-            extension("cytimedelta.py", True, "-Wno-unreachable-code"),
-            extension("pydt.py", True, "-Wno-unreachable-code"),
-            extension("pddt.py", True, "-Wno-unreachable-code"),
-        ],
+        extensions,
         compiler_directives={"language_level": "3"},
         annotate=True,
     ),
