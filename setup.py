@@ -28,7 +28,7 @@ def extension(filename: str, include_np: bool, *extra_compile_args: str) -> Exte
 
 # Build Extension
 if platform.system() == "Windows":
-    extnesions = [
+    extensions = [
         extension("cydatetime.py", True),
         extension("cymath.py", False),
         extension("cyparser.py", True),
