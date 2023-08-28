@@ -4,8 +4,12 @@ Created to be used in a project, this package is published to github
 for ease of management and installation across different modules.
 
 ### Installation
-Install from `github`
+Install from `PyPi`
+``` bash
+pip install cytimes
+```
 
+Install from `github`
 ``` bash
 pip install git+https://github.com/AresJef/cyTimes.git
 ```

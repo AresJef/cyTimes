@@ -26,7 +26,7 @@ def extension(filename: str, include_np: bool, *extra_compile_args: str) -> Exte
         return Extension(name, sources=[source], extra_compile_args=extra_args)
 
 
-# Build Extension
+# Build Extensions
 if platform.system() == "Windows":
     extensions = [
         extension("cydatetime.py", True),
