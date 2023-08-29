@@ -1235,7 +1235,10 @@ def dt_fr_microseconds(
 
 @cython.cfunc
 @cython.inline(True)
-def dt_fr_timestamp(timestamp: cython.double, tzinfo: object) -> datetime.datetime:
+def dt_fr_timestamp(
+    timestamp: cython.double,
+    tzinfo: object = None,
+) -> datetime.datetime:
     "Create `datetime.datetime` from timestamp."
     return _datetime_from_timestamp(timestamp, tzinfo)
 

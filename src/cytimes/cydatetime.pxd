@@ -138,7 +138,7 @@ cdef datetime.datetime dt_fr_date_time(datetime.date date, datetime.time time) n
 cdef datetime.datetime dt_fr_ordinal(int ordinal) noexcept
 cdef datetime.datetime dt_fr_seconds(double seconds, object tzinfo=?, int fold=?) noexcept
 cdef datetime.datetime dt_fr_microseconds(long long microseconds, object tzinfo=?, int fold=?) noexcept
-cdef datetime.datetime dt_fr_timestamp(double timestamp, object tzinfo) except *
+cdef datetime.datetime dt_fr_timestamp(double timestamp, object tzinfo=?) except *
 cdef datetime.datetime dt_add(datetime.datetime dt, int days=?, long long seconds=?, long long microseconds=?) noexcept
 cdef datetime.datetime dt_add_delta(datetime.datetime dt, datetime.timedelta delta) noexcept
 cdef datetime.timedelta dt_sub_dt(datetime.datetime dt_l, datetime.datetime dt_r) noexcept
