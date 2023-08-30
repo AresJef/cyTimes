@@ -156,6 +156,55 @@ class pydt:
         self._tzinfo = None
         self._microseconds = US_NULL
 
+    # Static methods
+    @staticmethod
+    def from_ordinal(ordinal: int) -> pydt:
+        """Create `pydt` from ordinal.
+        :param ordinal: `<int>` ordinal.
+        :return: `<pydt>`.
+        """
+        return pydt(cydt.dt_fr_ordinal(ordinal))
+
+    @staticmethod
+    def from_timestamp(
+        timestamp: Union[int, float],
+        tzinfo: datetime.tzinfo = None,
+    ) -> pydt:
+        """Create `pydt` from timestamp.
+        :param timestamp: `<int>`/`<float>` timestamp.
+        :param tzinfo: `<datetime.tzinfo>` timezone info, default `None`.
+        :return: `<pydt>`.
+        """
+        return pydt(cydt.dt_fr_timestamp(timestamp, tzinfo))
+
+    @staticmethod
+    def from_seconds(
+        seconds: float,
+        tzinfo: datetime.tzinfo = None,
+        fold: int = 0,
+    ) -> pydt:
+        """Create `pydt` from total seconds.
+        :param seconds: `<float>` totla seconds after EPOCH.
+        :param tzinfo: `<datetime.tzinfo>` timezone info, default `None`.
+        :param fold: `<int>` fold, default `0`.
+        :return: `<pydt>`.
+        """
+        return pydt(cydt.dt_fr_seconds(seconds, tzinfo, fold))
+
+    @staticmethod
+    def from_microseconds(
+        microseconds: int,
+        tzinfo: datetime.tzinfo = None,
+        fold: int = 0,
+    ) -> pydt:
+        """Create `pydt` from total microseconds.
+        :param microseconds: `<int>` total microseconds after EPOCH.
+        :param tzinfo: `<datetime.tzinfo>` timezone info, default `None`.
+        :param fold: `<int>` fold, default `0`.
+        :return: `<pydt>`.
+        """
+        return pydt(cydt.dt_fr_microseconds(microseconds, tzinfo, fold))
+
     # Data type
     @property
     def dt(self) -> datetime.datetime:
@@ -983,10 +1032,6 @@ class pydt:
                 return cydt.dt_fr_date_time(self._default, timeobj)
             else:  # combine local date with time
                 return cydt.dt_fr_time(timeobj)
-
-        # Is integer
-        if isinstance(timeobj, int):
-            return cydt.dt_fr_microseconds(timeobj)
 
         # Is datetime64
         if cydt.is_dt64(timeobj):
