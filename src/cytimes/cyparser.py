@@ -781,8 +781,8 @@ class ParserInfo:
 
         ### Configuration
         The following settings can be modified through `set_xxx()` or `add_xxx()` method.
-        If there is an existing `dateutil.parserinfo` you want to use, call `from_parserinfo()`
-        method to import settings from `<dateutil.parserinfo>` instance.
+        If there is an existing `dateutil.parserinfo` you want to use, call instance method
+        `from_parserinfo()` to import settings from a `<dateutil.parserinfo>` instance.
 
         - jump: Words should be jump (skipped) when parsing, e.g: `'and'`, `'at'`, `'on'`.
         - weekday: Words should recognized as weekday when parsing, e.g: `'monday'`, `'tuesday'`.
