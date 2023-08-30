@@ -40,9 +40,9 @@ if platform.system() == "Windows":
 else:
     extensions = [
         extension("cydatetime.py", True, "-Wno-unreachable-code"),
-        extension("cymath.py", False),
+        extension("cymath.py", False, "-Wno-unreachable-code"),
         extension("cyparser.py", True, "-Wno-unreachable-code"),
-        extension("cytime.pyx", False),
+        extension("cytime.pyx", False, "-Wno-unreachable-code"),
         extension("cytimedelta.py", True, "-Wno-unreachable-code"),
         extension("pydt.py", True, "-Wno-unreachable-code"),
         extension("pddt.py", True, "-Wno-unreachable-code"),
