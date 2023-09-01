@@ -175,6 +175,7 @@ cdef bint is_delta_exact(object obj) except -1
 cdef int get_delta_days(datetime.timedelta delta) noexcept
 cdef int get_delta_seconds(datetime.timedelta delta) noexcept
 cdef int get_delta_microseconds(datetime.timedelta delta) noexcept
+cdef str delta_to_isoformat(datetime.timedelta delta) noexcept
 cdef double delta_to_seconds(datetime.timedelta delta) noexcept
 cdef long long delta_to_microseconds(datetime.timedelta delta) noexcept
 cdef datetime.timedelta delta_fr_seconds(double seconds) noexcept
@@ -204,6 +205,7 @@ cdef datetime.datetime dt64_to_dt(object dt64) except *
 cdef datetime.time dt64_to_time(object dt64) except *
 # Timedelta64
 cdef bint is_delta64(object obj) except -1
+cdef str delta64_to_isoformat(object delta64) except *
 cdef long long delta64_to_int(object delta64, str unit) except *
 cdef long long delta64_to_days(object delta64) except *
 cdef long long delta64_to_hours(object delta64) except *

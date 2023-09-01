@@ -29,8 +29,8 @@ datetime.import_datetime()
 
 # Python imports
 from cytimes import cymath
-import numpy as np, pandas as pd
 from time import localtime as _localtime
+import datetime, numpy as np, pandas as pd
 
 
 # Constants --------------------------------------------------------------------------------------------
@@ -1706,6 +1706,22 @@ def get_delta_microseconds(delta: datetime.timedelta) -> cython.int:
 # Timedelta: Conversion --------------------------------------------------------------------------------
 @cython.cfunc
 @cython.inline(True)
+@cython.exceptval(check=False)
+def delta_to_isoformat(delta: datetime.timedelta) -> str:
+    us: cython.longlong = delta_to_microseconds(delta)
+    days: cython.longlong = us // US_DAY
+    hours: cython.longlong = us // US_HOUR % 24 + days * 24
+    minutes: cython.longlong = us // US_MINUTE % 60
+    seconds: cython.longlong = us // US_SECOND % 60
+    microseconds: cython.int = us % US_SECOND
+    if microseconds:
+        return "'%02d:%02d:%02d.%06d'" % (hours, minutes, seconds, microseconds)
+    else:
+        return "'%02d:%02d:%02d'" % (hours, minutes, seconds)
+
+
+@cython.cfunc
+@cython.inline(True)
 @cython.cdivision(True)
 @cython.exceptval(check=False)
 def delta_to_seconds(delta: datetime.timedelta) -> cython.double:
@@ -2370,6 +2386,21 @@ def dt64_to_time(dt64: object) -> datetime.time:
 def is_delta64(obj: object) -> cython.bint:
     "Check if an obj is `numpy.timedelta64`."
     return _is_timedelta64_object(obj)
+
+
+@cython.cfunc
+@cython.inline(True)
+def delta64_to_isoformat(delta64: object) -> str:
+    us: cython.longlong = delta64_to_microseconds(delta64)
+    days: cython.longlong = us // US_DAY
+    hours: cython.longlong = us // US_HOUR % 24 + days * 24
+    minutes: cython.longlong = us // US_MINUTE % 60
+    seconds: cython.longlong = us // US_SECOND % 60
+    microseconds: cython.int = us % US_SECOND
+    if microseconds:
+        return "'%02d:%02d:%02d.%06d'" % (hours, minutes, seconds, microseconds)
+    else:
+        return "'%02d:%02d:%02d'" % (hours, minutes, seconds)
 
 
 @cython.cfunc
