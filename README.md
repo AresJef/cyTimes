@@ -7,6 +7,7 @@ for ease of management and installation across different modules.
 Provides two classes for datetime and pandas time series management.
 - `pydt` (Python Datetime)
 - `pddt` (Pandas Time Series)
+
 Both provide similar functionalities:
 - Parse time string
 - Access in different data types
