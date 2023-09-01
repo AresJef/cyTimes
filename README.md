@@ -52,7 +52,7 @@ pt = pydt(datetime.datetime(2021, 1, 1, 0, 0, 0))
 # 2021-01-01T00:00:00
 pt = pydt(datetime.date(2021, 1, 1))
 # 2021-01-01T00:00:00
-pt = pydt(datetime.time(12, 0, 0)) # date defaults to today, but can be changed with default arugment
+pt = pydt(datetime.time(12, 0, 0)) # date defaults to today. Can change through default arugment.
 # 2023-09-01T12:00:00
 
 # pandas.Timestamp
@@ -126,11 +126,9 @@ pt.replace(year=2022) # -> pydt (replace year to 2022)
 ```
 
 ### Usage (pddt)
-`pddt` accepts `list` and `pandas.Series` as argument instead of 
-`str`/`datetime` comparing to `pydt`.
-
-Properties and methods are similar to `pydt`, except `pddt` is designed
-to work with `pandas.Series[datetime64]`.
+`pddt` accepts `list` and `pandas.Series` as argument instead of  `str`/`datetime` 
+comparing to `pydt`. Properties and methods are similar to `pydt`, except `pddt` 
+is designed to work with `pandas.Series[datetime64]`.
 
 ### Acknowledgements
 cyTimes is based on several open-source repositories.
