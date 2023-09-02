@@ -61,7 +61,7 @@ class pydt:
 
     def __init__(
         self,
-        timeobj: Union[datetime.datetime, datetime.date, str],
+        timeobj: Union[datetime.datetime, datetime.date, str, None] = None,
         default: Union[datetime.datetime, datetime.date, None] = None,
         dayfirst: cython.bint = False,
         yearfirst: cython.bint = False,
@@ -74,7 +74,8 @@ class pydt:
         A wrapper for python's datetime/date combined with parsing and delta adjustment.
 
         #### Time object arguments
-        :param timeobj: Accepts `<datetime>`/`<date>`/`<str>`
+        :param timeobj: Accepts `<datetime>`/`<date>`/`<str>`/`None`
+            - `None` (default) equivalent to the current local datetime `datetime.now()`
 
         #### Datetime parsing arguments (Takes affect when 'timeobj' is `<str>`)
         :param default: `<datetime>` The default date, which will be used as the base to fillin missing time elements from parsed results.
@@ -135,7 +136,10 @@ class pydt:
         self._parserinfo = parserinfo
         # To datetime
         try:
-            self._dt = self._to_datetime(timeobj)
+            if timeobj is None:
+                self._dt = cydt.gen_dt_local()
+            else:
+                self._dt = self._to_datetime(timeobj)
         except PydtValueError:
             raise
         except Exception as err:
@@ -224,32 +228,46 @@ class pydt:
     @property
     def date(self) -> datetime.date:
         "Access as `datetime.date`."
-        return cydt.date_fr_dt(self._dt)
+        return cydt.gen_date(self._get_year(), self._get_month(), self._get_day())
 
     @property
     def dateiso(self) -> str:
         "Access `datetime.date` in ISO format as `str`."
-        return cydt.date_to_isoformat(self._dt)
+        return cydt.date_to_isoformat(self.date)
 
     @property
     def time(self) -> datetime.time:
         "Access as `datetime.time`."
-        return cydt.time_fr_dt(self._dt)
+        return cydt.gen_time(
+            self._get_hour(),
+            self._get_minute(),
+            self._get_second(),
+            self._get_microsecond(),
+            None,
+            0,
+        )
 
     @property
     def timeiso(self) -> str:
         "Access `datetime.time` in ISO format as `str`."
-        return cydt.time_to_isoformat(cydt.time_fr_dt(self._dt))
+        return cydt.time_to_isoformat(self.time)
 
     @property
     def timetz(self) -> datetime.time:
         "Access as `datetime.time` with timezone."
-        return cydt.time_fr_dt_tz(self._dt)
+        return cydt.gen_time(
+            self._get_hour(),
+            self._get_minute(),
+            self._get_second(),
+            self._get_microsecond(),
+            self._get_tzinfo(),
+            self._get_fold(),
+        )
 
     @property
     def timeisotz(self) -> str:
         "Access `datetime.time` in ISO format with timezone as `str`."
-        return cydt.time_to_isoformat_tz(cydt.time_fr_dt_tz(self._dt))
+        return cydt.time_to_isoformat_tz(self.timetz)
 
     @property
     def ts(self) -> pd.Timestamp:
