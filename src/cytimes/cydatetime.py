@@ -1706,18 +1706,19 @@ def get_delta_microseconds(delta: datetime.timedelta) -> cython.int:
 # Timedelta: Conversion --------------------------------------------------------------------------------
 @cython.cfunc
 @cython.inline(True)
+@cython.cdivision(True)
 @cython.exceptval(check=False)
 def delta_to_isoformat(delta: datetime.timedelta) -> str:
-    us: cython.longlong = delta_to_microseconds(delta)
-    days: cython.longlong = us // US_DAY
-    hours: cython.longlong = us // US_HOUR % 24 + days * 24
-    minutes: cython.longlong = us // US_MINUTE % 60
-    seconds: cython.longlong = us // US_SECOND % 60
-    microseconds: cython.int = us % US_SECOND
+    days: cython.int = get_delta_days(delta)
+    secs: cython.int = get_delta_seconds(delta)
+    hours: cython.int = secs // SEC_HOUR % 24 + days * 24
+    minutes: cython.int = secs // SEC_MINUTE % 60
+    seconds: cython.int = secs % 60
+    microseconds: cython.int = get_delta_microseconds(delta)
     if microseconds:
-        return "'%02d:%02d:%02d.%06d'" % (hours, minutes, seconds, microseconds)
+        return "%02d:%02d:%02d.%06d" % (hours, minutes, seconds, microseconds)
     else:
-        return "'%02d:%02d:%02d'" % (hours, minutes, seconds)
+        return "%02d:%02d:%02d" % (hours, minutes, seconds)
 
 
 @cython.cfunc
@@ -2393,14 +2394,15 @@ def is_delta64(obj: object) -> cython.bint:
 def delta64_to_isoformat(delta64: object) -> str:
     us: cython.longlong = delta64_to_microseconds(delta64)
     days: cython.longlong = us // US_DAY
-    hours: cython.longlong = us // US_HOUR % 24 + days * 24
-    minutes: cython.longlong = us // US_MINUTE % 60
-    seconds: cython.longlong = us // US_SECOND % 60
-    microseconds: cython.int = us % US_SECOND
+    secs: cython.longlong = us // US_SECOND
+    hours: cython.longlong = secs // SEC_HOUR % 24 + days * 24
+    minutes: cython.longlong = secs // SEC_MINUTE % 60
+    seconds: cython.longlong = secs % 60
+    microseconds: cython.longlong = us % US_SECOND
     if microseconds:
-        return "'%02d:%02d:%02d.%06d'" % (hours, minutes, seconds, microseconds)
+        return "%02d:%02d:%02d.%06d" % (hours, minutes, seconds, microseconds)
     else:
-        return "'%02d:%02d:%02d'" % (hours, minutes, seconds)
+        return "%02d:%02d:%02d" % (hours, minutes, seconds)
 
 
 @cython.cfunc
