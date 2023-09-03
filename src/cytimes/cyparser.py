@@ -578,7 +578,7 @@ class Result:
     _second: cython.int
     _microsecond: cython.int
     _ampm: cython.int
-    _tzname: str
+    _tz_name: str
     _tzoffset: cython.int
     _century_specified: cython.bint
 
@@ -592,7 +592,7 @@ class Result:
         self._second = -1
         self._microsecond = -1
         self._ampm = -1
-        self._tzname = None
+        self._tz_name = None
         self._tzoffset = -1000000
         self._century_specified = False
 
@@ -652,7 +652,7 @@ class Result:
     @property
     def tzname(self) -> str:
         """Parsed result for timezone name."""
-        return self._tzname
+        return self._tz_name
 
     # Timezone offset
     @property
@@ -690,8 +690,8 @@ class Result:
             reprs.append("microsecond=%d" % self._microsecond)
         if self._ampm != -1:
             reprs.append("ampm=%d" % self._ampm)
-        if self._tzname:
-            reprs.append("tzname='%s'" % self._tzname)
+        if self._tz_name:
+            reprs.append("tzname='%s'" % self._tz_name)
         if self._tzoffset != -1000000:
             reprs.append("tzoffset=%d" % self._tzoffset)
         return ", ".join(reprs)
@@ -1459,13 +1459,13 @@ class ParserInfo:
         if res._year != -1:
             res._year = self._convert_year(res._year, res._century_specified)
 
-        if res._tzoffset == 0 and not res._tzname:
-            res._tzname = "UTC"
-        elif res._tzname:
-            if res._tzname == "Z" or res._tzname == "z":
-                res._tzname = "UTC"
+        if res._tzoffset == 0 and not res._tz_name:
+            res._tz_name = "UTC"
+        elif res._tz_name:
+            if res._tz_name == "Z" or res._tz_name == "z":
+                res._tz_name = "UTC"
                 res._tzoffset = 0
-            elif res._tzoffset != 0 and self.utczone(res._tzname):
+            elif res._tzoffset != 0 and self.utczone(res._tz_name):
                 res._tzoffset = 0
 
         return res
@@ -2045,7 +2045,7 @@ class Parser:
         if (
             res._hour != -1
             and (res._tzoffset == -1000000 if chech_tzoffset else True)
-            and not res._tzname
+            and not res._tz_name
             and len(token) <= 5
         ):
             # Could be a UTC timezone
@@ -2073,7 +2073,7 @@ class Parser:
         res: Result,
     ) -> cython.int:
         # Set timezone name & offset
-        res._tzname = token
+        res._tz_name = token
         res._tzoffset = self.__info.tzoffset(token)
 
         # Check for something like GMT+3, or BRST+3. Notice
@@ -2092,8 +2092,8 @@ class Parser:
             res._tzoffset = -1000000  # set to `None`
 
             # With something like GMT+3, the timezone is *not* GMT.
-            if self.__info.utczone(res._tzname):
-                res._tzname = None  # set to `None`
+            if self.__info.utczone(res._tz_name):
+                res._tz_name = None  # set to `None`
 
         return idx  # exit
 
@@ -2150,7 +2150,7 @@ class Parser:
         if nxt4_token is not None and nxt4_token == ")":
             n3rd_token: str = tokens[idx + 3]
             if self._could_be_tzname(n3rd_token, False, res) and tokens[idx + 2] == "(":
-                res._tzname = n3rd_token
+                res._tz_name = n3rd_token
                 return idx + 4  # exit
 
         # -0300 (BRST) # w/o space
@@ -2161,7 +2161,7 @@ class Parser:
                 and tokens[idx + 3] == "("
                 and self.__info.jump(tokens[idx + 2])
             ):
-                res._tzname = nxt4_token
+                res._tz_name = nxt4_token
                 return idx + 5  # exit
 
         return idx + 1  # exit
@@ -2186,14 +2186,14 @@ class Parser:
         # No extra tzinfos provided (default).
         if tzinfos is None:
             # Local timezone (Special case)
-            if res._tzname and res._tzname in time.tzname:
+            if res._tz_name and res._tz_name in time.tzname:
                 # Build with local tzinfo
                 dt = self._build_datetime(res, default, None)
                 dt = cydt.dt_replace_tzinfo(dt, cydt.gen_timezone_local(dt))
                 # Handle ambiguous local datetime
-                dt = self._handle_anbiguous_time(dt, res._tzname)
+                dt = self._handle_anbiguous_time(dt, res._tz_name)
                 # Adjust for winter GMT zones parsed in the UK
-                if dt.tzname() != res._tzname and self.__info.utczone(res._tzname):
+                if dt.tzname() != res._tz_name and self.__info.utczone(res._tz_name):
                     dt = cydt.dt_replace_tzinfo(dt, cydt.UTC)
                 return dt  # Exit
 
@@ -2202,7 +2202,7 @@ class Parser:
                 tzinfo = cydt.UTC
             # Parsed tzname & tzoffset (Custom tzinfo)
             elif res._tzoffset != -1000000:
-                tzinfo = cydt.gen_timezone(res._tzoffset, res._tzname)
+                tzinfo = cydt.gen_timezone(res._tzoffset, res._tz_name)
             # No tzinfo
             else:
                 tzinfo = None
@@ -2213,13 +2213,13 @@ class Parser:
         else:
             # Extra tzinfos (dict[str, int | tzinfo])
             if isinstance(tzinfos, dict):
-                tzdata = tzinfos.get(res._tzname)
+                tzdata = tzinfos.get(res._tz_name)
             # Extra tzinfos (TzinfoFactory)
             elif callable(tzinfos) and res._tzoffset != -1000000:
                 try:
-                    tzdata = tzinfos(res._tzname or None, res._tzoffset)
+                    tzdata = tzinfos(res._tz_name or None, res._tzoffset)
                 except Exception:
-                    tzdata = tzinfos(res._tzoffset, res._tzname or None)
+                    tzdata = tzinfos(res._tzoffset, res._tz_name or None)
             # Invalid tzinfos
             else:
                 raise ValueError(
@@ -2230,7 +2230,7 @@ class Parser:
             if tzdata is None or cydt.is_tzinfo(tzdata):
                 tzinfo = tzdata
             elif isinstance(tzdata, int):
-                tzinfo = cydt.gen_timezone(tzdata, res._tzname)
+                tzinfo = cydt.gen_timezone(tzdata, res._tz_name)
             elif isinstance(tzdata, str):
                 tzinfo = dateutil_tz.tzstr(tzdata)
             else:
@@ -2238,7 +2238,7 @@ class Parser:
             # Build datetime
             dt = self._build_datetime(res, default, tzinfo)
             # Handle ambiguous local datetime
-            dt = self._handle_anbiguous_time(dt, res._tzname)
+            dt = self._handle_anbiguous_time(dt, res._tz_name)
 
         # Return datetime
         return dt  # Exit

@@ -11,7 +11,7 @@ cdef bint uni_iscomma(int obj) except -1
 # TimeLex
 cdef class TimeLex:
     # Attributes
-    cdef public:
+    cdef:
         str _string
         int _strlen, _idx
         list _charstack, _tokenstack
@@ -24,10 +24,10 @@ cdef class TimeLex:
 # Result
 cdef class Result:
     # Attributes
-    cdef public: 
+    cdef: 
         int _year, _month, _day, _weekday, _ampm
         int _hour, _minute, _second, _microsecond
-        str _tzname
+        str _tz_name
         int _tzoffset
         bint _century_specified
     # Special methods
@@ -36,7 +36,7 @@ cdef class Result:
 # YMD
 cdef class YMD:
     # Attributes
-    cdef public:
+    cdef:
         bint _century_specified
         int _year, _month, _day
         int _validx, _val0, _val1, _val2
@@ -52,7 +52,7 @@ cdef class YMD:
 # ParserInfo (config)
 cdef class ParserInfo:
     # Attributes
-    cdef public:
+    cdef:
         set _jump, _utczone, _pertain
         dict _weekday, _month, _hms, _ampm, _tzoffset
         bint _dayfirst, _yearfirst
