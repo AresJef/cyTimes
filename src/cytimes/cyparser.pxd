@@ -11,10 +11,11 @@ cdef bint uni_iscomma(int obj) except -1
 # TimeLex
 cdef class TimeLex:
     # Attributes
-    cdef public str _string
-    cdef public int _strlen, _idx
-    cdef public list _charstack, _tokenstack
-    cdef public bint _ended
+    cdef public:
+        str _string
+        int _strlen, _idx
+        list _charstack, _tokenstack
+        bint _ended
     # Methods
     cdef str _get_nextchar(self) noexcept
     cdef str _get_token(self) except *
@@ -23,21 +24,23 @@ cdef class TimeLex:
 # Result
 cdef class Result:
     # Attributes
-    cdef public int _year, _month, _day, _weekday, _ampm
-    cdef public int _hour, _minute, _second, _microsecond
-    cdef public str _tzname
-    cdef public int _tzoffset
-    cdef public bint _century_specified
+    cdef public: 
+        int _year, _month, _day, _weekday, _ampm
+        int _hour, _minute, _second, _microsecond
+        str _tzname
+        int _tzoffset
+        bint _century_specified
     # Special methods
     cdef str _represent(self) noexcept
 
 # YMD
 cdef class YMD:
     # Attributes
-    cdef public bint _century_specified
-    cdef public int _year, _month, _day
-    cdef public int _validx, _val0, _val1, _val2
-    cdef public int _yidx, _midx, _didx
+    cdef public:
+        bint _century_specified
+        int _year, _month, _day
+        int _validx, _val0, _val1, _val2
+        int _yidx, _midx, _didx
     # Resolve
     cdef int _get(self, int idx) noexcept
     cdef _set(self, int val) noexcept
@@ -49,9 +52,10 @@ cdef class YMD:
 # ParserInfo (config)
 cdef class ParserInfo:
     # Attributes
-    cdef public set _jump, _utczone, _pertain
-    cdef public dict _weekday, _month, _hms, _ampm, _tzoffset
-    cdef public bint _dayfirst, _yearfirst
+    cdef public:
+        set _jump, _utczone, _pertain
+        dict _weekday, _month, _hms, _ampm, _tzoffset
+        bint _dayfirst, _yearfirst
     # Methods
     cpdef bint jump(self, str word)
     cpdef int weekday(self, str word)
