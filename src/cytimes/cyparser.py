@@ -45,15 +45,15 @@ __all__ = ["ParserInfo", "Parser", "parse", "TimeLex"]
 @cython.cfunc
 @cython.inline(True)
 @cython.exceptval(-1, check=False)
-def uni_isdot(obj: cython.int) -> cython.bint:
-    return obj == 46
+def uni_isdot(char: cython.int) -> cython.bint:
+    return char == 46
 
 
 @cython.cfunc
 @cython.inline(True)
 @cython.exceptval(-1, check=False)
-def uni_iscomma(obj: cython.int) -> cython.bint:
-    return obj == 44
+def uni_iscomma(char: cython.int) -> cython.bint:
+    return char == 44
 
 
 # TimeLex -------------------------------------------------------------------------------------
