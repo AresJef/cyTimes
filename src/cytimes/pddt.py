@@ -42,7 +42,9 @@ class pddt:
     _format: str
     _exact: cython.bint
     _series: pd.Series
+    _index: pd.Series
     _naive: pd.Series
+    # Cache
     _year: pd.Series
     _year_1st: pd.Series
     _year_lst: pd.Series
@@ -140,6 +142,7 @@ class pddt:
             raise
         except Exception as err:
             raise PddtValueError("<pddt> %s" % err) from err
+        self._index = None
         self._naive = None
         # Cache
         self._year = None
@@ -494,7 +497,7 @@ class pddt:
         :param weekday: `<int>` 0 as Monday to 6 as Sunday / `<str>` 'mon', 'tuesday', etc.
         """
         if weekday is None:
-            return pd.Series(True, index=self._series.index)
+            return pd.Series(True, index=self._get_index())
         else:
             return self._get_weekday() == self._parse_weekday(weekday)
 
@@ -551,7 +554,7 @@ class pddt:
         :param month: `<int>` 1 as January to 12 as December / `<str>` 'jan', 'feb', etc.
         """
         if month is None:
-            return pd.Series(True, index=self._series.index)
+            return pd.Series(True, index=self._get_index())
         else:
             return self._get_month() == self._parse_month(month)
 
@@ -996,7 +999,7 @@ class pddt:
     @cython.cfunc
     @cython.inline(True)
     def _new(self, series: object) -> pddt:
-        return pddt(
+        pt = pddt(
             series,
             default=self._default,
             dayfirst=self._dayfirst,
@@ -1005,6 +1008,9 @@ class pddt:
             format=self._format,
             exact=self._exact,
         )
+        # Pass index
+        pt._index = self._index
+        return pt
 
     @cython.cfunc
     @cython.inline(True)
@@ -1057,7 +1063,14 @@ class pddt:
     @cython.cfunc
     @cython.inline(True)
     def _np_to_series(self, array: np.ndarray) -> object:
-        return pd.Series(array, index=self._series.index)
+        return pd.Series(array, index=self._get_index())
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _get_index(self) -> object:
+        if self._index is None:
+            self._index = self._series.index
+        return self._index
 
     @cython.cfunc
     @cython.inline(True)

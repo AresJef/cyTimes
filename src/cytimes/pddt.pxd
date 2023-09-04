@@ -14,7 +14,7 @@ cdef class pddt:
         datetime.datetime _default
         bint _dayfirst, _yearfirst, _utc, _exact
         str _format
-        object _series, _naive
+        object _series, _index, _naive
         object _year, _year_1st, _year_lst
         object _quarter, _quarter_1st, _quarter_lst
         object _month, _month_1st, _month_lst, _month_days
@@ -25,6 +25,7 @@ cdef class pddt:
     cdef object _parse_datetime(self, timeobj) except *
     cdef object _fill_default(self, object series) except *
     cdef object _np_to_series(self, np.ndarray array) except *
+    cdef object _get_index(self) except *
     cdef object _get_naive(self) except *
     cdef object _get_year(self) except *
     cdef object _get_year_1st(self) except *
