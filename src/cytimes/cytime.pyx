@@ -25,7 +25,7 @@ cdef inline tm localtime() except * nogil:
     return _localtime()
 
 # Equivalent to `time.localtime(timestamp)`.
-cdef inline tm localize_time(double timestamp) except * nogil:
+cdef inline tm localize_time(double timestamp) except *:
     cdef:
         time_t tic = <time_t>timestamp
         tm* tms

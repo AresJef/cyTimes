@@ -20,4 +20,4 @@ cdef extern from "<time.h>" nogil:
 
 # Functions
 cdef tm localtime() except * nogil
-cdef tm localize_time(double timestamp) except * nogil
+cdef tm localize_time(double timestamp) except *

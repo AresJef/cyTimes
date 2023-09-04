@@ -447,7 +447,6 @@ def time() -> cython.double:
 
 
 @cython.cfunc
-@cython.nogil(True)
 @cython.inline(True)
 def localtime() -> cytime.tm:
     "Equivalent to `time.localtime()`."
@@ -455,7 +454,6 @@ def localtime() -> cytime.tm:
 
 
 @cython.cfunc
-@cython.nogil(True)
 @cython.inline(True)
 def localize_time(timestamp: cython.double) -> cytime.tm:
     "Equivalent to `time.localtime(timestamp)`."

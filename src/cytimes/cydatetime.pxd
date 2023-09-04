@@ -68,8 +68,8 @@ cdef ymd ordinal_to_ymd(int ordinal) noexcept
 cdef hms microseconds_to_hms(long long microseconds) noexcept
 # Time
 cdef double time() noexcept
-cdef cytime.tm localtime() except * nogil
-cdef cytime.tm localize_time(double timestamp) except * nogil
+cdef cytime.tm localtime() except *
+cdef cytime.tm localize_time(double timestamp) except *
 cdef long long localize_timestamp(double timestamp) except *
 # Date
 cdef datetime.date gen_date(int year=?, int month=?, int day=?) except *
