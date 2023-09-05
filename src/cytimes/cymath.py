@@ -107,6 +107,31 @@ def round_l(num: cython.longdouble) -> cython.longlong:
     return int(_roundl(num))
 
 
+@cython.cfunc
+@cython.inline(True)
+@cython.cdivision(True)
+@cython.exceptval(check=False)
+def round_half_away(num: cython.double, ndigits: cython.int = 0) -> cython.double:
+    "Round a number half away from zero"
+    return round_half_away_factor(num, int(10**ndigits))
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.cdivision(True)
+@cython.exceptval(check=False)
+def round_half_away_factor(
+    num: cython.double,
+    f: cython.longlong = 10,
+) -> cython.double:
+    """Round a number half away from zero (f provided)
+    :param f: Equivalent to `10**ndigits`. Defaults to `10`.
+        - `ndigit` is the nth digits after the decimal point to round to.
+    """
+    adj: cython.double = 0.5 if num >= 0 else -0.5
+    return int(num * f + adj) / f
+
+
 # Maximum -------------------------------------------------------------------------------
 @cython.cfunc
 @cython.inline(True)

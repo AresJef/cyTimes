@@ -17,6 +17,8 @@ cdef long long floor_l(long double num) noexcept
 # Round
 cdef long round(double num) noexcept
 cdef long long round_l(long double num) noexcept
+cdef double round_half_away(double num, int ndigits=?) noexcept
+cdef double round_half_away_factor(double num, long long f=?) noexcept
 # Maximum
 cdef double max_f(double num1, double num2) noexcept
 cdef long double max_lf(long double num1, long double num2) noexcept
