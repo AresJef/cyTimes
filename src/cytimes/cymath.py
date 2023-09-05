@@ -129,7 +129,8 @@ def round_half_away_factor(
         - `ndigit` is the nth digits after the decimal point to round to.
     """
     adj: cython.double = 0.5 if num >= 0 else -0.5
-    return int(num * f + adj) / f
+    base: cython.longlong = int(num * f + adj)
+    return base / f
 
 
 # Maximum -------------------------------------------------------------------------------
