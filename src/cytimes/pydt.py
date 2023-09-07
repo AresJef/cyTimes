@@ -44,20 +44,21 @@ class pydt:
     _fuzzy: cython.bint
     _parserinfo: object
     _dt: datetime.datetime
-    _hashcode: cython.int
-    _year: cython.int
-    _month: cython.int
-    _day: cython.int
-    _hour: cython.int
-    _minute: cython.int
-    _second: cython.int
-    _microsecond: cython.int
-    _quarter: cython.int
-    _month_days: cython.int
-    _weekday: cython.int
-    _fold: cython.int
-    _tzinfo: datetime.tzinfo
-    _microseconds: cython.longlong
+    # Cache
+    __hashcode: cython.int
+    __year: cython.int
+    __month: cython.int
+    __day: cython.int
+    __hour: cython.int
+    __minute: cython.int
+    __second: cython.int
+    __microsecond: cython.int
+    __tzinfo: datetime.tzinfo
+    __fold: cython.int
+    __quarter: cython.int
+    __days_in_month: cython.int
+    __weekday: cython.int
+    __microseconds: cython.longlong
 
     def __init__(
         self,
@@ -144,23 +145,23 @@ class pydt:
             raise
         except Exception as err:
             raise PydtValueError("<pydt> %s" % err) from err
-        # cache
-        self._hashcode = -1
-        self._year = -1
-        self._month = -1
-        self._day = -1
-        self._hour = -1
-        self._minute = -1
-        self._second = -1
-        self._microsecond = -1
-        self._quarter = -1
-        self._month_days = -1
-        self._weekday = -1
-        self._fold = -1
-        self._tzinfo = None
-        self._microseconds = US_NULL
+        # Cache
+        self.__hashcode = -1
+        self.__year = -1
+        self.__month = -1
+        self.__day = -1
+        self.__hour = -1
+        self.__minute = -1
+        self.__second = -1
+        self.__microsecond = -1
+        self.__tzinfo = None
+        self.__fold = -1
+        self.__quarter = -1
+        self.__days_in_month = -1
+        self.__weekday = -1
+        self.__microseconds = US_NULL
 
-    # Static methods
+    # Static methods --------------------------------------------------------------------------
     @staticmethod
     def from_ordinal(ordinal: int) -> pydt:
         """Create `pydt` from ordinal.
@@ -209,65 +210,121 @@ class pydt:
         """
         return pydt(cydt.dt_fr_microseconds(microseconds, tzinfo, fold))
 
-    # Data type
+    # Access ----------------------------------------------------------------------------------
     @property
     def dt(self) -> datetime.datetime:
         "Access as `datetime.datetime`."
         return self._dt
 
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _dtiso(self) -> str:
+        "(cfunc) Return `datetime.datetime` in ISO format as `str`."
+        return cydt.dt_to_isoformat(self._dt)
+
     @property
     def dtiso(self) -> str:
         "Access `datetime.datetime` in ISO format as `str`."
-        return cydt.dt_to_isoformat(self._dt)
+        return self._dtiso()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _dtisotz(self) -> str:
+        "(cfunc) Return `datetime.datetime` in ISO format with timezone as `str`."
+        return cydt.dt_to_isoformat_tz(self._dt)
 
     @property
     def dtisotz(self) -> str:
         "Access `datetime.datetime` in ISO format with timezone as `str`."
-        return cydt.dt_to_isoformat_tz(self._dt)
+        return self._dtisotz()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _date(self) -> datetime.date:
+        "(cfunc) Return as `datetime.date`."
+        return cydt.gen_date(self._year(), self._month(), self._day())
 
     @property
     def date(self) -> datetime.date:
         "Access as `datetime.date`."
-        return cydt.gen_date(self._get_year(), self._get_month(), self._get_day())
+        return self._date()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _dateiso(self) -> str:
+        "(cfunc) Return `datetime.date` in ISO format as `str`."
+        return cydt.date_to_isoformat(self._date())
 
     @property
     def dateiso(self) -> str:
         "Access `datetime.date` in ISO format as `str`."
-        return cydt.date_to_isoformat(self.date)
+        return self._dateiso()
 
-    @property
-    def time(self) -> datetime.time:
-        "Access as `datetime.time`."
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _time(self) -> datetime.time:
+        "(cfunc) Return as `datetime.time`."
         return cydt.gen_time(
-            self._get_hour(),
-            self._get_minute(),
-            self._get_second(),
-            self._get_microsecond(),
+            self._hour(),
+            self._minute(),
+            self._second(),
+            self._microsecond(),
             None,
             0,
         )
 
     @property
+    def time(self) -> datetime.time:
+        "Access as `datetime.time`."
+        return self._time()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _timeiso(self) -> str:
+        "(cfunc) Return `datetime.time` in ISO format as `str`."
+        return cydt.time_to_isoformat(self._time())
+
+    @property
     def timeiso(self) -> str:
         "Access `datetime.time` in ISO format as `str`."
-        return cydt.time_to_isoformat(self.time)
+        return self._timeiso()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _timetz(self) -> datetime.time:
+        "(cfunc) Return as `datetime.time` with timezone."
+        return cydt.gen_time(
+            self._hour(),
+            self._minute(),
+            self._second(),
+            self._microsecond(),
+            self._tzinfo(),
+            self._fold(),
+        )
 
     @property
     def timetz(self) -> datetime.time:
         "Access as `datetime.time` with timezone."
-        return cydt.gen_time(
-            self._get_hour(),
-            self._get_minute(),
-            self._get_second(),
-            self._get_microsecond(),
-            self._get_tzinfo(),
-            self._get_fold(),
-        )
+        return self._timetz()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _timeisotz(self) -> str:
+        "(cfunc) Return `datetime.time` in ISO format with timezone as `str`."
+        return cydt.time_to_isoformat_tz(self._timetz())
 
     @property
     def timeisotz(self) -> str:
         "Access `datetime.time` in ISO format with timezone as `str`."
-        return cydt.time_to_isoformat_tz(self.timetz)
+        return self._timeisotz()
 
     @property
     def ts(self) -> pd.Timestamp:
@@ -281,17 +338,44 @@ class pydt:
         """
         return np.datetime64(cydt.dt_to_microseconds_utc(self._dt), "us")
 
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _ordinal(self) -> cython.int:
+        "(cfunc) Return `datetime.date` in ordinal as `<int>`."
+        return cydt.to_ordinal(self._dt)
+
     @property
     def ordinal(self) -> int:
         "Access `datetime.date` in ordinal as `<int>`."
-        return cydt.to_ordinal(self._dt)
+        return self._ordinal()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _seconds(self) -> cython.double:
+        """(cfunc) Return `datetime.datetime` in total seconds (naive) after EPOCH as `<float>`.
+        For datetime out of `Timestamp` range, microsecond percision will be lost.
+        """
+        return cydt.dt_to_seconds(self._dt)
 
     @property
     def seconds(self) -> float:
         """Access `datetime.datetime` in total seconds (naive) after EPOCH as `<float>`.
         For datetime out of `Timestamp` range, microsecond percision will be lost.
         """
-        return cydt.dt_to_seconds(self._dt)
+        return self._seconds()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _seconds_utc(self) -> cython.double:
+        """(cfunc) Return `datetime.datetime` in total seconds after EPOCH as `<float>`.
+        For datetime out of `Timestamp` range, microsecond percision will be lost.
+        - If timezone-aware, return total seconds in UTC.
+        - If timezone-naive, requivalent to `seconds`.
+        """
+        return cydt.dt_to_seconds_utc(self._dt)
 
     @property
     def seconds_utc(self) -> float:
@@ -304,12 +388,31 @@ class pydt:
         This should `NOT` be treated as timestamp, but rather adjustment of the
         total seconds of the datetime from utcoffset.
         """
-        return cydt.dt_to_seconds_utc(self._dt)
+        return self._seconds_utc()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _microseconds(self) -> cython.longlong:
+        "(cfunc) Return `datetime.datetime` in total microseconds (naive) after EPOCH as `<int>`."
+        if self.__microseconds == US_NULL:
+            self.__microseconds = cydt.dt_to_microseconds(self._dt)
+        return self.__microseconds
 
     @property
     def microseconds(self) -> int:
         "Access `datetime.datetime` in total microseconds (naive) after EPOCH as `<int>`."
-        return self._get_microseconds()
+        return self._microseconds()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _microseconds_utc(self) -> cython.longlong:
+        """(cfunc) Return `datetime.datetime` in total microseconds (naive) after EPOCH as `<int>`.
+        - If timezone-aware, return total microseconds in UTC.
+        - If timezone-naive, requivalent to `microseconds`.
+        """
+        return cydt.dt_to_microseconds_utc(self._dt)
 
     @property
     def microseconds_utc(self) -> int:
@@ -321,218 +424,518 @@ class pydt:
         This should `NOT` be treated as timestamp, but rather adjustment of the
         total microseconds of the datetime from utcoffset.
         """
-        return cydt.dt_to_microseconds_utc(self._dt)
+        return self._microseconds_utc()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _timestamp(self) -> cython.double:
+        "(cfunc) Return `datetime.datetime` in timestamp as `<int>`."
+        return cydt.dt_to_timestamp(self._dt)
 
     @property
     def timestamp(self) -> float:
         "Access `datetime.datetime` in timestamp as `<int>`."
-        return cydt.dt_to_timestamp(self._dt)
+        return self._timestamp()
 
-    # Absolute
+    # Absolute --------------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _year(self) -> cython.int:
+        "(cfunc) Return the year attribute `<int>`."
+        if self.__year == -1:
+            self.__year = cydt.get_year(self._dt)
+        return self.__year
+
     @property
     def year(self) -> int:
-        "`<int>` The year attribute."
-        return self._get_year()
+        "The year attribute `<int>`."
+        return self._year()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _month(self) -> cython.int:
+        "(cfunc) Return the month attribute `<int>`."
+        if self.__month == -1:
+            self.__month = cydt.get_month(self._dt)
+        return self.__month
 
     @property
     def month(self) -> int:
-        "`<int>` The month attribute."
-        return self._get_month()
+        "The month attribute `<int>`."
+        return self._month()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _day(self) -> cython.int:
+        "(cfunc) Return the day attribute `<int>`"
+        if self.__day == -1:
+            self.__day = cydt.get_day(self._dt)
+        return self.__day
 
     @property
     def day(self) -> int:
-        "`<int>` The day attribute."
-        return self._get_day()
+        "The day attribute `<int>`."
+        return self._day()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _hour(self) -> cython.int:
+        "(cfunc) Return the hour attribute `<int>`"
+        if self.__hour == -1:
+            self.__hour = cydt.get_dt_hour(self._dt)
+        return self.__hour
 
     @property
     def hour(self) -> int:
-        "`<int>` The hour attribute."
-        return self._get_hour()
+        "The hour attribute `<int>`."
+        return self._hour()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _minute(self) -> cython.int:
+        "(cfunc) Return the minite attribute `<int>`"
+        if self.__minute == -1:
+            self.__minute = cydt.get_dt_minute(self._dt)
+        return self.__minute
 
     @property
     def minute(self) -> int:
-        "`<int>` The minute attribute."
-        return self._get_minute()
+        "The minute attribute `<int>`."
+        return self._minute()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _second(self) -> cython.int:
+        "(cfunc) Return the second attribute `<int>`."
+        if self.__second == -1:
+            self.__second = cydt.get_dt_second(self._dt)
+        return self.__second
 
     @property
     def second(self) -> int:
-        "`<int>` The second attribute."
-        return self._get_second()
+        "The second attribute `<int>`."
+        return self._second()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _microsecond(self) -> cython.int:
+        "(cfunc) Return the microsecond attribute `<int>`."
+        if self.__microsecond == -1:
+            self.__microsecond = cydt.get_dt_microsecond(self._dt)
+        return self.__microsecond
 
     @property
     def microsecond(self) -> int:
-        "`<int>` The microsecond attribute."
-        return self._get_microsecond()
+        "The microsecond attribute `<int>`."
+        return self._microsecond()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _tzinfo(self) -> datetime.tzinfo:
+        "(cfunc) Return the tzinfo attribute `<datetime.tzinfo>`."
+        if self.__tzinfo is None:
+            self.__tzinfo = cydt.get_dt_tzinfo(self._dt)
+        return self.__tzinfo
 
     @property
     def tzinfo(self) -> datetime.tzinfo:
-        "`<datetime.tzinfo>` The tzinfo attribute."
-        return self._get_tzinfo()
+        "The tzinfo attribute `<datetime.tzinfo>`."
+        return self._tzinfo()
 
-    # Calendar
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _fold(self) -> cython.int:
+        "(cfunc) Return the fold attribute `<int>`."
+        if self.__fold == -1:
+            self.__fold = cydt.get_dt_fold(self._dt)
+        return self.__fold
+
     @property
-    def is_leapyear(self) -> bool:
-        "`<bool>` Whether is a leap year."
+    def fold(self) -> int:
+        "The fold attribute `<int>`."
+        return self._fold()
+
+    # Calendar --------------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _is_leapyear(self) -> cython.bint:
+        "(cfun) Return whether is a leap year `<bool>`."
         return cydt.get_is_leapyear(self._dt)
 
     @property
-    def days_in_year(self) -> int:
-        "`<int>` Number of days in the year."
+    def is_leapyear(self) -> bool:
+        "Whether is a leap year `<bool>`."
+        return self._is_leapyear()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _days_in_year(self) -> cython.int:
+        "(cfunc) Return number of days in the year `<int>`."
         return cydt.get_days_in_year(self._dt)
 
     @property
-    def days_bf_year(self) -> int:
-        "`<int>` Number of days before January 1st of the year."
+    def days_in_year(self) -> int:
+        "Number of days in the year `<int>`."
+        return self._days_in_year()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _days_bf_year(self) -> cython.int:
+        "(cfunc) Return the number of days before Jan 1st of the year `<int>`."
         return cydt.get_days_bf_year(self._dt)
 
     @property
-    def days_of_year(self) -> int:
-        "`<int>` Number of days into the year."
+    def days_bf_year(self) -> int:
+        "Number of days before Jan 1st of the year `<int>`."
+        return self._days_bf_year()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _days_of_year(self) -> cython.int:
+        "(cfunc) Return the number of days into the year `<int>`."
         return cydt.get_days_of_year(self._dt)
 
     @property
-    def quarter(self) -> int:
-        "`<int>` The quarter of the date."
-        return self._get_quarter()
+    def days_of_year(self) -> int:
+        "Number of days into the year `<int>`."
+        return self._days_of_year()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _quarter(self) -> cython.int:
+        "(cfunc) Return the quarter of the date `<int>`."
+        if self.__quarter == -1:
+            self.__quarter = cydt.get_quarter(self._dt)
+        return self.__quarter
 
     @property
-    def days_in_quarter(self) -> int:
-        "`<int>` Number of days in the quarter."
+    def quarter(self) -> int:
+        "The quarter of the date `<int>`."
+        return self._quarter()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _days_in_quarter(self) -> cython.int:
+        "(cfunc) Return the number of days in the quarter `<int>`."
         return cydt.get_days_in_quarter(self._dt)
 
     @property
-    def days_bf_quarter(self) -> int:
-        "`<int>` Number of days in the year preceding first day of the quarter."
+    def days_in_quarter(self) -> int:
+        "Number of days in the quarter `<int>`."
+        return self._days_in_quarter()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _days_bf_quarter(self) -> cython.int:
+        "(cfunc) Return the number of days in the year preceding 1st day of the quarter `<int>`."
         return cydt.get_days_bf_quarter(self._dt)
 
     @property
-    def days_of_quarter(self) -> int:
-        "`<int>` Number of days into the quarter."
+    def days_bf_quarter(self) -> int:
+        "Number of days in the year preceding first day of the quarter `<int>`."
+        return self._days_bf_quarter()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _days_of_quarter(self) -> cython.int:
+        "(cfunc) Return the number of days into the quarter `<int>`."
         return cydt.get_days_of_quarter(self._dt)
 
     @property
-    def days_in_month(self) -> int:
-        "`<int>` Number of days in the month."
-        return self._get_month_days()
+    def days_of_quarter(self) -> int:
+        "Number of days into the quarter `<int>`."
+        return self._days_of_quarter()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _days_in_month(self) -> cython.int:
+        "(cfunc) Return the number of days in the month `<int>`."
+        if self.__days_in_month == -1:
+            self.__days_in_month = cydt.get_days_in_month(self._dt)
+        return self.__days_in_month
 
     @property
-    def days_bf_month(self) -> int:
-        "`<int>` Number of days in the year preceding first day of the month."
+    def days_in_month(self) -> int:
+        "Number of days in the month `<int>`."
+        return self._days_in_month()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _days_bf_month(self) -> cython.int:
+        "(cfunc) Return the number of days in the year preceding 1st day of the month `<int>`."
         return cydt.get_days_bf_month(self._dt)
 
     @property
+    def days_bf_month(self) -> int:
+        "Number of days in the year preceding 1st day of the month `<int>`."
+        return self._days_bf_month()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _weekday(self) -> cython.int:
+        "(cfunc) Return the weekday, where Monday == 0 ... Sunday == 6 `<int>`."
+        if self.__weekday == -1:
+            self.__weekday = cydt.get_weekday(self._dt)
+        return self.__weekday
+
+    @property
     def weekday(self) -> int:
-        "`<int>` The the weekday, where Monday == 0 ... Sunday == 6."
-        return self._get_weekday()
+        "The weekday, where Monday == 0 ... Sunday == 6 `<int>`."
+        return self._weekday()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _isoweekday(self) -> cython.int:
+        "(cfunc) Return the ISO weekday, where Monday == 1 ... Sunday == 7 `<int>`."
+        return self._weekday() + 1
 
     @property
     def isoweekday(self) -> int:
-        "`<int>` The the ISO weekday, where Monday == 1 ... Sunday == 7."
-        return self._get_weekday() + 1
+        "The ISO weekday, where Monday == 1 ... Sunday == 7."
+        return self._isoweekday()
 
-    @property
-    def isoweek(self) -> int:
-        "`<int>` The ISO calendar week number."
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _isoweek(self) -> cython.int:
+        "(cfunc) Return the ISO calendar week number `<int>`."
         return cydt.get_isoweek(self._dt)
 
     @property
-    def isoyear(self) -> int:
-        "`<int>` The ISO calendar year."
+    def isoweek(self) -> int:
+        "The ISO calendar week number `<int>`."
+        return self._isoweek()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _isoyear(self) -> cython.int:
+        "(cfunc) Return the ISO calendar year `<int>`."
         return cydt.get_isoyear(self._dt)
 
     @property
+    def isoyear(self) -> int:
+        "The ISO calendar year `<int>`."
+        return self._isoyear()
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _isocalendar(self) -> cydt.iso:
+        "(cfunc) Return the ISO calendar struct (year, week and weekday)."
+        return cydt.get_isocalendar(self._dt)
+
+    @property
     def isocalendar(self) -> tuple[int, int, int]:
-        "`<tuple[int, int, int]>` The ISO calendar year, week number and weekday."
+        "The ISO calendar year, week number and weekday `<tuple[int, int, int]>`."
         iso = cydt.get_isocalendar(self._dt)
         return (iso.year, iso.week, iso.weekday)
 
-    # Time manipulation
-    @property
-    def start_time(self) -> pydt:
-        "Start time (00:00:00.000000) of the current datetime."
+    # Time manipulation -----------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _start_time(self) -> pydt:
+        "(cfunc) Return the start (00:00:00.000000) of the current datetime."
         return self._new(
             cydt.gen_dt(
-                self._get_year(),
-                self._get_month(),
-                self._get_day(),
+                self._year(),
+                self._month(),
+                self._day(),
                 0,
                 0,
                 0,
                 0,
-                self._get_tzinfo(),
-                self._get_fold(),
+                self._tzinfo(),
+                self._fold(),
+            )
+        )
+
+    @property
+    def start_time(self) -> pydt:
+        "The start (00:00:00.000000) of the current datetime."
+        return self._start_time()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _end_time(self) -> pydt:
+        "(cfunc) Return the end (23:59:59.999999) of the current datetime."
+        return self._new(
+            cydt.gen_dt(
+                self._year(),
+                self._month(),
+                self._day(),
+                23,
+                59,
+                59,
+                999999,
+                self._tzinfo(),
+                self._fold(),
             )
         )
 
     @property
     def end_time(self) -> pydt:
-        "End time (23:59:59.999999) of the current datetime."
-        return self._new(
-            cydt.gen_dt(
-                self._get_year(),
-                self._get_month(),
-                self._get_day(),
-                23,
-                59,
-                59,
-                999999,
-                self._get_tzinfo(),
-                self._get_fold(),
-            )
-        )
+        "The end (23:59:59.999999) of the current datetime."
+        return self._end_time()
 
-    # Day manipulation
+    # Day manipulation ------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _tomorrow(self) -> pydt:
+        "(cfunc) Return tomorrow."
+        return self._add_days(1)
+
     @property
     def tomorrow(self) -> pydt:
         "Tomorrow."
-        return self._add_days(1)
+        return self._tomorrow()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _yesterday(self) -> pydt:
+        "(cfunc) Return yesterday."
+        return self._add_days(-1)
 
     @property
     def yesterday(self) -> pydt:
         "Yesterday."
-        return self._add_days(-1)
+        return self._yesterday()
 
-    # Weekday manipulation
+    # Weekday manipulation --------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _monday(self) -> pydt:
+        "(cfunc) Return Monday of the current week."
+        return self._add_days(-self._weekday())
+
     @property
     def monday(self) -> pydt:
         "Monday of the current week."
-        return self._add_days(-self._get_weekday())
+        return self._monday()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _tuesday(self) -> pydt:
+        "(cfunc) Return Tuesday of the current week."
+        return self._add_days(-self._weekday() + 1)
 
     @property
     def tuesday(self) -> pydt:
         "Tuesday of the current week."
-        return self._add_days(-self._get_weekday() + 1)
+        return self._tuesday()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _wednesday(self) -> pydt:
+        "(cfunc) Return Wednesday of the current week."
+        return self._add_days(-self._weekday() + 2)
 
     @property
     def wednesday(self) -> pydt:
         "Wednesday of the current week."
-        return self._add_days(-self._get_weekday() + 2)
+        return self._wednesday()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _thursday(self) -> pydt:
+        "(cfunc) Return Thursday of the current week."
+        return self._add_days(-self._weekday() + 3)
 
     @property
     def thursday(self) -> pydt:
         "Thursday of the current week."
-        return self._add_days(-self._get_weekday() + 3)
+        return self._thursday()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _friday(self) -> pydt:
+        "(cfunc) Return Friday of the current week."
+        return self._add_days(-self._weekday() + 4)
 
     @property
     def friday(self) -> pydt:
         "Friday of the current week."
-        return self._add_days(-self._get_weekday() + 4)
+        return self._friday()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _saturday(self) -> pydt:
+        "(cfunc) Return Saturday of the current week."
+        return self._add_days(-self._weekday() + 5)
 
     @property
     def saturday(self) -> pydt:
         "Saturday of the current week."
-        return self._add_days(-self._get_weekday() + 5)
+        return self._saturday()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _sunday(self) -> pydt:
+        "(cfunc) Return Sunday of the current week."
+        return self._add_days(-self._weekday() + 6)
 
     @property
     def sunday(self) -> pydt:
         "Sunday of the current week."
-        return self._add_days(-self._get_weekday() + 6)
+        return self._sunday()
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _curr_week(self, weekday: object) -> pydt:
+        "(cfunc) Return specific weekday of the currect week."
+        if weekday is None:
+            return self
+        else:
+            return self._add_days(self._parse_weekday(weekday) - self._weekday())
 
     def curr_week(self, weekday: Union[int, str]) -> pydt:
         """Specific weekday of the currect week.
         :param weekday: `<int>` 0 as Monday to 6 as Sunday / `<str>` 'mon', 'tuesday', etc.
         """
         return self._curr_week(weekday)
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _to_week(self, offset: cython.int, weekday: object) -> pydt:
+        "(cfunc) Return specific weekday of the week (+/-) offset."
+        if weekday is None:
+            return self._add_days(offset * 7)
+        else:
+            return self._add_days(
+                self._parse_weekday(weekday) + offset * 7 - self._weekday()
+            )
 
     def next_week(self, weekday: Union[int, str, None] = None) -> pydt:
         """Specific weekday of the next week.
@@ -556,57 +959,101 @@ class pydt:
         """
         return self._to_week(offset, weekday)
 
-    def is_weekday(self, weekday: Union[int, str]) -> bool:
-        """Whether the current datetime is a specific weekday.
-        :param weekday: `<int>` 0 as Monday to 6 as Sunday / `<str>` 'mon', 'tuesday', etc.
-        """
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _is_weekday(self, weekday: object) -> cython.bint:
+        "(cfunc) Return whether the current datetime is a specific weekday `<bool`>."
         if weekday is None:
             return True
         else:
-            return self._get_weekday() == self._parse_weekday(weekday)
+            return self._weekday() == self._parse_weekday(weekday)
 
-    # Month manipulation
-    @property
-    def month_1st(self) -> pydt:
-        "First day of the current month."
+    def is_weekday(self, weekday: Union[int, str]) -> bool:
+        """Whether the current datetime is a specific weekday `<bool`>.
+        :param weekday: `<int>` 0 as Monday to 6 as Sunday / `<str>` 'mon', 'tuesday', etc.
+        """
+        return self._is_weekday(weekday)
+
+    # Month manipulation ----------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _month_1st(self) -> pydt:
+        "(cfunc) Return the 1st day of the current month."
         return self._new(
             cydt.gen_dt(
-                self._get_year(),
-                self._get_month(),
+                self._year(),
+                self._month(),
                 1,
-                self._get_hour(),
-                self._get_minute(),
-                self._get_second(),
-                self._get_microsecond(),
-                self._get_tzinfo(),
-                self._get_fold(),
+                self._hour(),
+                self._minute(),
+                self._second(),
+                self._microsecond(),
+                self._tzinfo(),
+                self._fold(),
             )
         )
 
+    @property
+    def month_1st(self) -> pydt:
+        "First day of the current month."
+        return self._month_1st()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _is_month_1st(self) -> cython.bint:
+        "(cfunc) Return whether is the 1st day of the month `<bool>`."
+        return self._day() == 1
+
     def is_month_1st(self) -> bool:
-        "`<bool>` Whether the current datetime is the first day of the month."
-        return self._get_day() == 1
+        "Whether is the first day of the month `<bool>`."
+        return self._is_month_1st()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _month_lst(self) -> pydt:
+        "(cfunc) Return the last day of the current month."
+        return self._new(
+            cydt.gen_dt(
+                self._year(),
+                self._month(),
+                self._days_in_month(),
+                self._hour(),
+                self._minute(),
+                self._second(),
+                self._microsecond(),
+                self._tzinfo(),
+                self._fold(),
+            )
+        )
 
     @property
     def month_lst(self) -> pydt:
         "Last day of the current month."
-        return self._new(
-            cydt.gen_dt(
-                self._get_year(),
-                self._get_month(),
-                self._get_month_days(),
-                self._get_hour(),
-                self._get_minute(),
-                self._get_second(),
-                self._get_microsecond(),
-                self._get_tzinfo(),
-                self._get_fold(),
-            )
-        )
+        return self._month_lst()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _is_month_lst(self) -> cython.bint:
+        "(cfunc) Return whether is the last day of the month `<bool>`."
+        return self._day() == self._days_in_month()
 
     def is_month_lst(self) -> bool:
-        "`<bool>` Whether the current datetime is the last day of the month."
-        return self._get_day() == self._get_month_days()
+        "Whether is the last day of the month `<bool>`."
+        return self._is_month_lst()
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _curr_month(self, day: cython.int) -> pydt:
+        "(cfunc) Return specifc day of the current month."
+        if day < 1:
+            return self
+        else:
+            return self._new(cytimedelta(day=day)._add_date_time(self._dt))
 
     def curr_month(self, day: int) -> pydt:
         """Specifc day of the current month.
@@ -614,6 +1061,17 @@ class pydt:
             `Value < 1` will be ignored, otherwise will automatically cap by the max days in the current month.
         """
         return self._curr_month(day)
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _to_month(self, offset: cython.int, day: cython.int) -> pydt:
+        "(cfunc) Return specifc day of the month (+/-) offset."
+        dt: datetime.datetime
+        if day < 1:
+            dt = cytimedelta(months=offset)._add_date_time(self._dt)
+        else:
+            dt = cytimedelta(months=offset, day=day)._add_date_time(self._dt)
+        return self._new(dt)
 
     def next_month(self, day: int = 0) -> pydt:
         """Specifc day of the next month.
@@ -637,43 +1095,66 @@ class pydt:
         """
         return self._to_month(offset, day)
 
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _is_month(self, month: object) -> cython.bint:
+        "(cfunc) Return whether the current datetime is a specific month."
+        if month is None:
+            return True
+        else:
+            return self._month() == self._parse_month(month)
+
     def is_month(self, month: Union[int, str]) -> bool:
         """Whether the current datetime is a specific month.
         :param month: `<int>` 1 as January to 12 as December / `<str>` 'jan', 'February', etc.
         """
-        if month is None:
-            return True
-        else:
-            return self._get_month() == self._parse_month(month)
+        return self._is_month(month)
 
-    # Quarter manipulation
-    @property
-    def quarter_1st(self) -> pydt:
-        "First day of the current quarter."
+    # Quarter manipulation --------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _quarter_1st(self) -> pydt:
+        "(cfunc) Return the first day of the current quarter."
         return self._new(
             cydt.gen_dt(
-                self._get_year(),
+                self._year(),
                 cydt.get_quarter_1st_month(self._dt),
                 1,
-                self._get_hour(),
-                self._get_minute(),
-                self._get_second(),
-                self._get_microsecond(),
-                self._get_tzinfo(),
-                self._get_fold(),
+                self._hour(),
+                self._minute(),
+                self._second(),
+                self._microsecond(),
+                self._tzinfo(),
+                self._fold(),
             )
         )
 
-    def is_quarter_1st(self) -> bool:
-        "`<bool>` Whether the current datetime is the first day of the quarter."
-        return self._get_day() == 1 and cydt.get_month(
+    @property
+    def quarter_1st(self) -> pydt:
+        "First day of the current quarter."
+        return self._quarter_1st()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _is_quarter_1st(self) -> cython.bint:
+        "(cfunc) Return whether is the first day of the quarter `<bool>`."
+        return self._day() == 1 and cydt.get_month(
             self._dt
         ) == cydt.get_quarter_1st_month(self._dt)
 
-    @property
-    def quarter_lst(self) -> pydt:
-        "Last day of the current quarter."
-        year: cython.int = self._get_year()
+    def is_quarter_1st(self) -> bool:
+        "Whether is the first day of the quarter `<bool>`."
+        return self._is_quarter_1st()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _quarter_lst(self) -> pydt:
+        "(cfunc) Return last day of the current quarter."
+        year: cython.int = self._year()
         month: cython.int = cydt.get_quarter_lst_month(self._dt)
         day: cython.int = cydt.days_in_month(year, month)
         return self._new(
@@ -681,20 +1162,52 @@ class pydt:
                 year,
                 month,
                 day,
-                self._get_hour(),
-                self._get_minute(),
-                self._get_second(),
-                self._get_microsecond(),
-                self._get_tzinfo(),
-                self._get_fold(),
+                self._hour(),
+                self._minute(),
+                self._second(),
+                self._microsecond(),
+                self._tzinfo(),
+                self._fold(),
             )
         )
 
-    def is_quarter_lst(self) -> bool:
-        "`<bool>` Whether the current datetime is the last day of the quarter."
-        return self._get_day() == cydt.get_days_in_month(
+    @property
+    def quarter_lst(self) -> pydt:
+        "Last day of the current quarter."
+        return self._quarter_lst()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _is_quarter_lst(self) -> cython.bint:
+        "(cfunc) Return whether is the last day of the quarter `<bool>`."
+        return self._day() == cydt.get_days_in_month(
             self._dt
-        ) and self._get_month() == cydt.get_quarter_lst_month(self._dt)
+        ) and self._month() == cydt.get_quarter_lst_month(self._dt)
+
+    def is_quarter_lst(self) -> bool:
+        "Whether is the last day of the quarter `<bool>`."
+        return self._is_quarter_lst()
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _curr_quarter(self, month: cython.int, day: cython.int) -> pydt:
+        "(cfunc) Return specifc day of the current quarter."
+        # Validate month
+        if not 1 <= month <= 3:
+            raise PydtValueError(
+                "<pydt> Invalid quarter month: %s. Accepts `<int>` 1-3." % repr(month)
+            )
+
+        # Convert
+        quarter: cython.int = self._quarter()
+        month = quarter * 3 - 3 + (month % 3 or 3)
+        dt: datetime.datetime
+        if day < 1:
+            dt = cytimedelta(month=month)._add_date_time(self._dt)
+        else:
+            dt = cytimedelta(month=month, day=day)._add_date_time(self._dt)
+        return self._new(dt)
 
     def curr_quarter(self, month: int, day: int = 0) -> pydt:
         """Specifc day of the current quarter.
@@ -703,6 +1216,33 @@ class pydt:
             `Value < 1` will be ignored, otherwise will automatically cap by the max days in the current quarter month.
         """
         return self._curr_quarter(month, day)
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _to_quarter(
+        self,
+        offset: cython.int,
+        month: cython.int,
+        day: cython.int,
+    ) -> pydt:
+        "(cfunc) Return specifc day of the quarter (+/-) offset."
+        # Validate month
+        if not 1 <= month <= 3:
+            raise PydtValueError(
+                "<pydt> Invalid quarter month: %s. Accepts `<int>` 1-3." % repr(month)
+            )
+
+        # Convert
+        quarter: cython.int = self._quarter()
+        month = quarter * 3 - 3 + (month % 3 or 3)
+        dt: datetime.datetime
+        if day < 1:
+            dt = cytimedelta(months=offset * 3, month=month)._add_date_time(self._dt)
+        else:
+            dt = cytimedelta(months=offset * 3, month=month, day=day)._add_date_time(
+                self._dt
+            )
+        return self._new(dt)
 
     def next_quarter(self, month: int, day: int = 0) -> pydt:
         """Specifc day of the next quarter.
@@ -729,54 +1269,105 @@ class pydt:
         """
         return self._to_quarter(offset, month, day)
 
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _is_quarter(self, quarter: cython.int) -> cython.bint:
+        "(cfunc) Return whether the current datetime is a specific quarter. `<bool`>"
+        return self._quarter() == quarter
+
     def is_quarter(self, quarter: int) -> bool:
-        """Whether the current datetime is a specific quarter.
+        """Whether the current datetime is a specific quarter `<bool>`.
         :param quarter: `<int>` 1 as 1st quarter to 4 as 4th quarter.
         """
-        return self._get_quarter() == quarter
+        return self._is_quarter(quarter)
 
-    # Year manipulation
-    @property
-    def year_1st(self) -> pydt:
-        "First day of the current year."
+    # Year manipulation -----------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _year_1st(self) -> pydt:
+        "(cfunc) Return first day of the current year."
         return self._new(
             cydt.gen_dt(
-                self._get_year(),
+                self._year(),
                 1,
                 1,
-                self._get_hour(),
-                self._get_minute(),
-                self._get_second(),
-                self._get_microsecond(),
-                self._get_tzinfo(),
-                self._get_fold(),
+                self._hour(),
+                self._minute(),
+                self._second(),
+                self._microsecond(),
+                self._tzinfo(),
+                self._fold(),
             )
         )
 
+    @property
+    def year_1st(self) -> pydt:
+        "First day of the current year."
+        return self._year_1st()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _is_year_1st(self) -> cython.bint:
+        "(cfunc) Return whether is the first day of the year `<bool>`."
+        return self._month() == 1 and self._day() == 1
+
     def is_year_1st(self) -> bool:
-        "`<bool>` Whether the current datetime is the first day of the year."
-        return self._get_month() == 1 and self._get_day() == 1
+        "Whether is the first day of the year `<bool>`."
+        return self._is_year_1st()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _year_lst(self) -> pydt:
+        "(cfun) Return last day of the current year."
+        return self._new(
+            cydt.gen_dt(
+                self._year(),
+                12,
+                31,
+                self._hour(),
+                self._minute(),
+                self._second(),
+                self._microsecond(),
+                self._tzinfo(),
+                self._fold(),
+            )
+        )
 
     @property
     def year_lst(self) -> pydt:
         "Last day of the current year."
-        return self._new(
-            cydt.gen_dt(
-                self._get_year(),
-                12,
-                31,
-                self._get_hour(),
-                self._get_minute(),
-                self._get_second(),
-                self._get_microsecond(),
-                self._get_tzinfo(),
-                self._get_fold(),
-            )
-        )
+        return self._year_lst()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _is_year_lst(self) -> cython.bint:
+        "(cfunc) Return whether is the last day of the year `<bool>`."
+        return self._month() == 12 and self._day() == 31
 
     def is_year_lst(self) -> bool:
-        "`<bool>` Whether the current datetime is the last day of the year."
-        return self._get_month() == 12 and self._get_day() == 31
+        "Whether is the last day of the year `<bool>`."
+        return self._is_year_lst()
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _curr_year(self, month: object, day: cython.int) -> pydt:
+        "(cfunc) Return specifc month and day of the current year."
+        if month is None:
+            return self._curr_month(day)
+
+        dt: datetime.datetime
+        if day < 1:
+            dt = cytimedelta(month=self._parse_month(month))._add_date_time(self._dt)
+        else:
+            dt = cytimedelta(month=self._parse_month(month), day=day)._add_date_time(
+                self._dt
+            )
+        return self._new(dt)
 
     def curr_year(self, month: Union[int, str, None] = None, day: int = 0) -> pydt:
         """Specifc month and day of the current year.
@@ -786,6 +1377,27 @@ class pydt:
             `Value < 1` will be ignored, otherwise will automatically cap by the max days in the month.
         """
         return self._curr_year(month, day)
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _to_year(self, offset: cython.int, month: object, day: cython.int) -> pydt:
+        "(cfunc) Return specifc month and day of the year (+/-) offset."
+        dt: datetime.datetime
+        if month is None:
+            if day < 1:
+                dt = cytimedelta(years=offset)._add_date_time(self._dt)
+            else:
+                dt = cytimedelta(years=offset, day=day)._add_date_time(self._dt)
+        else:
+            if day < 1:
+                dt = cytimedelta(
+                    years=offset, month=self._parse_month(month)
+                )._add_date_time(self._dt)
+            else:
+                dt = cytimedelta(
+                    years=offset, month=self._parse_month(month), day=day
+                )._add_date_time(self._dt)
+        return self._new(dt)
 
     def next_year(self, month: Union[int, str, None] = None, day: int = 0) -> pydt:
         """Specifc month and day of the next year.
@@ -820,17 +1432,37 @@ class pydt:
         """
         return self._to_year(offset, month, day)
 
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _is_year(self, year: cython.int) -> cython.bint:
+        "(cfunc) Return whether the current datetime is a specific year `<bool>`."
+        return self._year() == year
+
     def is_year(self, year: int) -> bool:
-        """Whether the current datetime is a specific year.
+        """Whether the current datetime is a specific year `<bool>`.
         :param year: `<int>` year.
         """
-        return self._get_year() == year
+        return self._is_year(year)
 
-    # Timezone manipulation
+    # Timezone manipulation -------------------------------------------------------------------
     @property
     def tz_available(self) -> set[str]:
         "`<set[str]>` All available timezone names accept by localize/convert/switch methods."
         return zoneinfo.available_timezones()
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _tz_localize(self, dt: datetime.datetime, tz: object) -> datetime.datetime:
+        """(cfunc) Localize to a specific timezone. Equivalent to `datetime.replace(tzinfo=tz)`
+        - Notice: This method returns `datetime.datetime` instead of `pydt`.
+        """
+        try:
+            return cydt.dt_replace_tzinfo(dt, self._parse_tzinfo(tz))
+        except PydtValueError:
+            raise
+        except Exception as err:
+            raise PydtValueError("<pydt> %s" % err) from err
 
     def tz_localize(self, tz: Union[datetime.timezone, str, None]) -> pydt:
         """Localize to a specific timezone. Equivalent to `datetime.replace(tzinfo=tz)`.
@@ -845,6 +1477,19 @@ class pydt:
         """
         return self._new(self._tz_localize(self._dt, tz))
 
+    @cython.cfunc
+    @cython.inline(True)
+    def _tz_convert(self, dt: datetime.datetime, tz: object) -> datetime.datetime:
+        """(cfunc) Convert to a specific timezone. Equivalent to `datetime.astimezone(tz)`.
+        - Notice: This method returns `datetime.datetime` instead of `pydt`.
+        """
+        try:
+            return dt.astimezone(self._parse_tzinfo(tz))
+        except PydtValueError:
+            raise
+        except Exception as err:
+            raise PydtValueError("<pydt> %s" % err) from err
+
     def tz_convert(self, tz: Union[datetime.timezone, str, None]) -> pydt:
         """Convert to a specific timezone. Equivalent to `datetime.astimezone(tz)`.
 
@@ -857,6 +1502,32 @@ class pydt:
             - `None`: Convert to system's local timezone.
         """
         return self._new(self._tz_convert(self._dt, tz))
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _tz_switch(
+        self,
+        dt: datetime.datetime,
+        targ_tz: object,
+        base_tz: object,
+        naive: cython.bint,
+    ) -> datetime.datetime:
+        """(cfunc) Switch from base timezone to target timezone.
+        - Notice: This method returns `datetime.datetime` instead of `pydt`.
+        """
+        # Already timezone-aware: convert to targ_tz
+        if cydt.get_dt_tzinfo(dt) is not None:
+            dt = self._tz_convert(dt, targ_tz)
+        # Localize to base_tz & convert to targ_tz
+        elif isinstance(base_tz, (str, datetime.tzinfo)):
+            dt = self._tz_convert(self._tz_localize(dt, base_tz), targ_tz)
+        # Invalid base_tz
+        else:
+            raise PydtValueError(
+                "<pydt> Cannot switch timezone without 'base_tz' for naive datetime."
+            )
+        # Return
+        return cydt.dt_replace_tzinfo(dt, None) if naive else dt
 
     def tz_switch(
         self,
@@ -891,7 +1562,19 @@ class pydt:
         """
         return self._new(self._tz_switch(self._dt, targ_tz, base_tz, naive))
 
-    # Frequency manipulation
+    # Frequency manipulation ------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    def _round(self, freq: str) -> pydt:
+        "(cfunc) Perform round operation to specified freqency."
+        frequency: cython.longlong = self._parse_frequency(freq)
+        if frequency == cydt.US_MICROSECOND:
+            return self
+
+        us: cython.longlong = self._microseconds()
+        us = int(cymath.round_l(us / frequency)) * frequency
+        return self._new(cydt.dt_fr_microseconds(us, self._tzinfo(), self._fold()))
+
     def round(self, freq: Literal["D", "h", "m", "s", "ms", "us"]) -> pydt:
         """Perform round operation to specified freqency.
         Similar to `pandas.DatetimeIndex.round()`.
@@ -900,7 +1583,19 @@ class pydt:
             `'D'`: Day / `'h'`: Hour / `'m'`: Minute / `'s'`: Second /
             `'ms'`: Millisecond / `'us'`: Microsecond
         """
-        return self._round_frequency(freq)
+        return self._round(freq)
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _ceil(self, freq: str) -> pydt:
+        "(cfunc) Perform ceil operation to specified freqency."
+        frequency: cython.longlong = self._parse_frequency(freq)
+        if frequency == cydt.US_MICROSECOND:
+            return self
+
+        us: cython.longlong = self._microseconds()
+        us = int(cymath.ceil_l(us / frequency)) * frequency
+        return self._new(cydt.dt_fr_microseconds(us, self._tzinfo(), self._fold()))
 
     def ceil(self, freq: Literal["D", "h", "m", "s", "ms", "us"]) -> pydt:
         """Perform ceil operation to specified freqency.
@@ -910,7 +1605,19 @@ class pydt:
             `'D'`: Day / `'h'`: Hour / `'m'`: Minute / `'s'`: Second /
             `'ms'`: Millisecond / `'us'`: Microsecond
         """
-        return self._ceil_frequency(freq)
+        return self._ceil(freq)
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _floor(self, freq: str) -> pydt:
+        "(cfunc) Perform floor operation to specified freqency."
+        frequency: cython.longlong = self._parse_frequency(freq)
+        if frequency == cydt.US_MICROSECOND:
+            return self
+
+        us: cython.longlong = self._microseconds()
+        us = int(cymath.floor_l(us / frequency)) * frequency
+        return self._new(cydt.dt_fr_microseconds(us, self._tzinfo(), self._fold()))
 
     def floor(self, freq: Literal["D", "h", "m", "s", "ms", "us"]) -> pydt:
         """Perform floor operation to specified freqency.
@@ -920,9 +1627,36 @@ class pydt:
             `'D'`: Day / `'h'`: Hour / `'m'`: Minute / `'s'`: Second /
             `'ms'`: Millisecond / `'us'`: Microsecond
         """
-        return self._floor_frequency(freq)
+        return self._floor(freq)
 
-    # Delta adjustment
+    # Delta adjustment ------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    def _delta(
+        self,
+        years: cython.int = 0,
+        months: cython.int = 0,
+        days: cython.int = 0,
+        weeks: cython.int = 0,
+        hours: cython.int = 0,
+        minutes: cython.int = 0,
+        seconds: cython.int = 0,
+        microseconds: cython.int = 0,
+    ) -> pydt:
+        "(cfunc) Adjustment with delta. Equivalent to `pydt + cytimedelta`."
+        return self._add_cytimedelta(
+            cytimedelta(
+                years=years,
+                months=months,
+                days=days,
+                weeks=weeks,
+                hours=hours,
+                minutes=minutes,
+                seconds=seconds,
+                microseconds=microseconds,
+            )
+        )
+
     def delta(
         self,
         years: int = 0,
@@ -954,7 +1688,37 @@ class pydt:
         except Exception as err:
             raise PydtValueError("<pydt> %s" % err) from err
 
-    # Replace adjustment
+    # Replace adjustment ----------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    def _replace(
+        self,
+        year: cython.int = -1,
+        month: cython.int = -1,
+        day: cython.int = -1,
+        hour: cython.int = -1,
+        minute: cython.int = -1,
+        second: cython.int = -1,
+        microsecond: cython.int = -1,
+        tzinfo: object = -1,
+        fold: cython.int = -1,
+    ) -> pydt:
+        "(cfunc) Replace the current datetime. Equivalent to `datetime.replace()`."
+        return self._new(
+            cydt.dt_replace(
+                self._dt,
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+                microsecond,
+                tzinfo,
+                fold,
+            )
+        )
+
     def replace(
         self,
         year: int = -1,
@@ -988,7 +1752,27 @@ class pydt:
         except Exception as err:
             raise PydtValueError("<pydt> %s" % err) from err
 
-    # Between calculation
+    # Between calculation ---------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    def _between(
+        self,
+        other: object,
+        unit: str = "D",
+        inclusive: cython.bint = False,
+    ) -> cython.longlong:
+        "(cfunc) Calculate the `ABSOLUTE` delta between two time in the given unit."
+        if cydt.is_dt(other):
+            return self._between_datetime(other, unit, inclusive)
+        elif cydt.is_date(other):
+            return self._between_datetime(cydt.dt_fr_date(other), unit, inclusive)
+        elif isinstance(other, pydt):
+            return self._between_pydt(other, unit, inclusive)
+        elif isinstance(other, (str, np.datetime64)):
+            return self._between_datetime(self._parse_datetime(other), unit, inclusive)
+        else:
+            raise PydtValueError("<pydt> Unsupported data type: %s" % (type(other)))
+
     def between(
         self,
         other: Union[datetime.datetime, datetime.date, pydt, str],
@@ -1011,7 +1795,7 @@ class pydt:
         except Exception as err:
             raise PydtValueError("<pydt> %s" % err) from err
 
-    # Core methods
+    # Core methods ----------------------------------------------------------------------------
     @cython.cfunc
     @cython.inline(True)
     def _new(self, dt: datetime.datetime) -> pydt:
@@ -1075,110 +1859,6 @@ class pydt:
 
     @cython.cfunc
     @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _get_year(self) -> cython.int:
-        if self._year == -1:
-            self._year = cydt.get_year(self._dt)
-        return self._year
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _get_month(self) -> cython.int:
-        if self._month == -1:
-            self._month = cydt.get_month(self._dt)
-        return self._month
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _get_day(self) -> cython.int:
-        if self._day == -1:
-            self._day = cydt.get_day(self._dt)
-        return self._day
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _get_hour(self) -> cython.int:
-        if self._hour == -1:
-            self._hour = cydt.get_dt_hour(self._dt)
-        return self._hour
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _get_minute(self) -> cython.int:
-        if self._minute == -1:
-            self._minute = cydt.get_dt_minute(self._dt)
-        return self._minute
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _get_second(self) -> cython.int:
-        if self._second == -1:
-            self._second = cydt.get_dt_second(self._dt)
-        return self._second
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _get_microsecond(self) -> cython.int:
-        if self._microsecond == -1:
-            self._microsecond = cydt.get_dt_microsecond(self._dt)
-        return self._microsecond
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _get_quarter(self) -> cython.int:
-        if self._quarter == -1:
-            self._quarter = cydt.get_quarter(self._dt)
-        return self._quarter
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _get_weekday(self) -> cython.int:
-        if self._weekday == -1:
-            self._weekday = cydt.get_weekday(self._dt)
-        return self._weekday
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _get_month_days(self) -> cython.int:
-        if self._month_days == -1:
-            self._month_days = cydt.get_days_in_month(self._dt)
-        return self._month_days
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _get_fold(self) -> cython.int:
-        if self._fold == -1:
-            self._fold = cydt.get_dt_fold(self._dt)
-        return self._fold
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(check=False)
-    def _get_tzinfo(self) -> datetime.tzinfo:
-        if self._tzinfo is None:
-            self._tzinfo = cydt.get_dt_tzinfo(self._dt)
-        return self._tzinfo
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(check=False)
-    def _get_microseconds(self) -> cython.longlong:
-        if self._microseconds == US_NULL:
-            self._microseconds = cydt.dt_to_microseconds(self._dt)
-        return self._microseconds
-
-    @cython.cfunc
-    @cython.inline(True)
     def _add_days(self, days: cython.int) -> pydt:
         return self._new(cytimedelta(days=days)._add_date_time(self._dt))
 
@@ -1199,24 +1879,6 @@ class pydt:
 
     @cython.cfunc
     @cython.inline(True)
-    def _curr_week(self, weekday: object) -> pydt:
-        if weekday is None:
-            return self
-        else:
-            return self._add_days(self._parse_weekday(weekday) - self._get_weekday())
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _to_week(self, offset: cython.int, weekday: object) -> pydt:
-        if weekday is None:
-            return self._add_days(offset * 7)
-        else:
-            return self._add_days(
-                self._parse_weekday(weekday) + offset * 7 - self._get_weekday()
-            )
-
-    @cython.cfunc
-    @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _parse_month(self, month: object) -> cython.int:
         mth: cython.int
@@ -1229,104 +1891,6 @@ class pydt:
         if not 1 <= mth <= 12:
             raise PydtValueError("<pydt> Invalid month: %s" % repr(month))
         return mth
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _curr_month(self, day: cython.int) -> pydt:
-        if day < 1:
-            return self
-        else:
-            return self._new(cytimedelta(day=day)._add_date_time(self._dt))
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _to_month(self, offset: cython.int, day: cython.int) -> pydt:
-        dt: datetime.datetime
-        if day < 1:
-            dt = cytimedelta(months=offset)._add_date_time(self._dt)
-        else:
-            dt = cytimedelta(months=offset, day=day)._add_date_time(self._dt)
-        return self._new(dt)
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _curr_quarter(self, month: cython.int, day: cython.int) -> pydt:
-        # Validate month
-        if not 1 <= month <= 3:
-            raise PydtValueError(
-                "<pydt> Invalid quarter month: %s. Accepts `<int>` 1-3." % repr(month)
-            )
-
-        # Convert
-        quarter: cython.int = self._get_quarter()
-        month = quarter * 3 - 3 + (month % 3 or 3)
-        dt: datetime.datetime
-        if day < 1:
-            dt = cytimedelta(month=month)._add_date_time(self._dt)
-        else:
-            dt = cytimedelta(month=month, day=day)._add_date_time(self._dt)
-        return self._new(dt)
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _to_quarter(
-        self,
-        offset: cython.int,
-        month: cython.int,
-        day: cython.int,
-    ) -> pydt:
-        # Validate month
-        if not 1 <= month <= 3:
-            raise PydtValueError(
-                "<pydt> Invalid quarter month: %s. Accepts `<int>` 1-3." % repr(month)
-            )
-
-        # Convert
-        quarter: cython.int = self._get_quarter()
-        month = quarter * 3 - 3 + (month % 3 or 3)
-        dt: datetime.datetime
-        if day < 1:
-            dt = cytimedelta(months=offset * 3, month=month)._add_date_time(self._dt)
-        else:
-            dt = cytimedelta(months=offset * 3, month=month, day=day)._add_date_time(
-                self._dt
-            )
-        return self._new(dt)
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _curr_year(self, month: object, day: cython.int) -> pydt:
-        if month is None:
-            return self._curr_month(day)
-
-        dt: datetime.datetime
-        if day < 1:
-            dt = cytimedelta(month=self._parse_month(month))._add_date_time(self._dt)
-        else:
-            dt = cytimedelta(month=self._parse_month(month), day=day)._add_date_time(
-                self._dt
-            )
-        return self._new(dt)
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _to_year(self, offset: cython.int, month: object, day: cython.int) -> pydt:
-        dt: datetime.datetime
-        if month is None:
-            if day < 1:
-                dt = cytimedelta(years=offset)._add_date_time(self._dt)
-            else:
-                dt = cytimedelta(years=offset, day=day)._add_date_time(self._dt)
-        else:
-            if day < 1:
-                dt = cytimedelta(
-                    years=offset, month=self._parse_month(month)
-                )._add_date_time(self._dt)
-            else:
-                dt = cytimedelta(
-                    years=offset, month=self._parse_month(month), day=day
-                )._add_date_time(self._dt)
-        return self._new(dt)
 
     @cython.cfunc
     @cython.inline(True)
@@ -1343,49 +1907,6 @@ class pydt:
         raise PydtValueError(
             "<pydt> Invalid tzinfo: %s. Accept: `<tzinfo>`, `<str>` or None." % repr(tz)
         )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _tz_localize(self, dt: datetime.datetime, tz: object) -> datetime.datetime:
-        try:
-            return cydt.dt_replace_tzinfo(dt, self._parse_tzinfo(tz))
-        except PydtValueError:
-            raise
-        except Exception as err:
-            raise PydtValueError("<pydt> %s" % err) from err
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _tz_convert(self, dt: datetime.datetime, tz: object) -> datetime.datetime:
-        try:
-            return dt.astimezone(self._parse_tzinfo(tz))
-        except PydtValueError:
-            raise
-        except Exception as err:
-            raise PydtValueError("<pydt> %s" % err) from err
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _tz_switch(
-        self,
-        dt: datetime.datetime,
-        targ_tz: object,
-        base_tz: object,
-        naive: cython.bint,
-    ) -> datetime.datetime:
-        # Already timezone-aware: convert to targ_tz
-        if cydt.get_dt_tzinfo(dt) is not None:
-            dt = self._tz_convert(dt, targ_tz)
-        # Localize to base_tz & convert to targ_tz
-        elif isinstance(base_tz, (str, datetime.tzinfo)):
-            dt = self._tz_convert(self._tz_localize(dt, base_tz), targ_tz)
-        # Invalid base_tz
-        else:
-            raise PydtValueError(
-                "<pydt> Cannot switch timezone without 'base_tz' for naive datetime."
-            )
-        # Return
-        return cydt.dt_replace_tzinfo(dt, None) if naive else dt
 
     @cython.cfunc
     @cython.inline(True)
@@ -1412,119 +1933,6 @@ class pydt:
 
     @cython.cfunc
     @cython.inline(True)
-    def _round_frequency(self, freq: str) -> pydt:
-        frequency: cython.longlong = self._parse_frequency(freq)
-        if frequency == cydt.US_MICROSECOND:
-            return self
-
-        us: cython.longlong = self._get_microseconds()
-        us = int(cymath.round_l(us / frequency)) * frequency
-        return self._new(
-            cydt.dt_fr_microseconds(us, self._get_tzinfo(), self._get_fold())
-        )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _ceil_frequency(self, freq: str) -> pydt:
-        frequency: cython.longlong = self._parse_frequency(freq)
-        if frequency == cydt.US_MICROSECOND:
-            return self
-
-        us: cython.longlong = self._get_microseconds()
-        us = int(cymath.ceil_l(us / frequency)) * frequency
-        return self._new(
-            cydt.dt_fr_microseconds(us, self._get_tzinfo(), self._get_fold())
-        )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _floor_frequency(self, freq: str) -> pydt:
-        frequency: cython.longlong = self._parse_frequency(freq)
-        if frequency == cydt.US_MICROSECOND:
-            return self
-
-        us: cython.longlong = self._get_microseconds()
-        us = int(cymath.floor_l(us / frequency)) * frequency
-        return self._new(
-            cydt.dt_fr_microseconds(us, self._get_tzinfo(), self._get_fold())
-        )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _delta(
-        self,
-        years: cython.int,
-        months: cython.int,
-        days: cython.int,
-        weeks: cython.int,
-        hours: cython.int,
-        minutes: cython.int,
-        seconds: cython.int,
-        microseconds: cython.int,
-    ) -> pydt:
-        return self._add_cytimedelta(
-            cytimedelta(
-                years=years,
-                months=months,
-                days=days,
-                weeks=weeks,
-                hours=hours,
-                minutes=minutes,
-                seconds=seconds,
-                microseconds=microseconds,
-            )
-        )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _replace(
-        self,
-        year: cython.int,
-        month: cython.int,
-        day: cython.int,
-        hour: cython.int,
-        minute: cython.int,
-        second: cython.int,
-        microsecond: cython.int,
-        tzinfo: object,
-        fold: cython.int,
-    ) -> pydt:
-        return self._new(
-            cydt.dt_replace(
-                self._dt,
-                year,
-                month,
-                day,
-                hour,
-                minute,
-                second,
-                microsecond,
-                tzinfo,
-                fold,
-            )
-        )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _between(
-        self,
-        other: object,
-        unit: str,
-        inclusive: cython.bint,
-    ) -> cython.longlong:
-        if cydt.is_dt(other):
-            return self._between_datetime(other, unit, inclusive)
-        elif cydt.is_date(other):
-            return self._between_datetime(cydt.dt_fr_date(other), unit, inclusive)
-        elif isinstance(other, pydt):
-            return self._between_pydt(other, unit, inclusive)
-        elif isinstance(other, (str, np.datetime64)):
-            return self._between_datetime(self._parse_datetime(other), unit, inclusive)
-        else:
-            raise PydtValueError("<pydt> Unsupported data type: %s" % (type(other)))
-
-    @cython.cfunc
-    @cython.inline(True)
     def _between_pydt(
         self,
         pt: pydt,
@@ -1547,13 +1955,13 @@ class pydt:
 
         # Year
         if unit == "Y":
-            delta = cymath.abs_ll(self._get_year() - cydt.get_year(dt))
+            delta = cymath.abs_ll(self._year() - cydt.get_year(dt))
             return delta + 1 if inclusive else delta  # exit
         # Month
         if unit == "M":
             delta = cymath.abs_ll(
-                (self._get_year() - cydt.get_year(dt)) * 12
-                + (self._get_month() - cydt.get_month(dt))
+                (self._year() - cydt.get_year(dt)) * 12
+                + (self._month() - cydt.get_month(dt))
             )
             return delta + 1 if inclusive else delta  # exit
 
@@ -1566,7 +1974,7 @@ class pydt:
             if self._compare_datetime(dt, False) > 0:  # find base weekday
                 delta += cydt.get_weekday(dt)
             else:
-                delta += self._get_weekday()
+                delta += self._weekday()
             delta = delta // 7
         # Day
         elif unit == "D":
@@ -1590,15 +1998,15 @@ class pydt:
         # Return Delta
         return delta + 1 if inclusive else delta  # exit
 
-    # Special methods - addition
+    # Special methods - addition --------------------------------------------------------------
     @cython.cfunc
     @cython.inline(True)
     def _add_timedelta(self, other: datetime.timedelta) -> pydt:
         return self._new(
             cydt.dt_fr_microseconds(
-                self._get_microseconds() + cydt.delta_to_microseconds(other),
-                self._get_tzinfo(),
-                self._get_fold(),
+                self._microseconds() + cydt.delta_to_microseconds(other),
+                self._tzinfo(),
+                self._fold(),
             )
         )
 
@@ -1637,7 +2045,7 @@ class pydt:
 
         return NotImplemented
 
-    # Special methods - substraction
+    # Special methods - substraction ----------------------------------------------------------
     @cython.cfunc
     @cython.inline(True)
     def _sub_pydt(self, other: pydt) -> datetime.timedelta:
@@ -1653,9 +2061,9 @@ class pydt:
     def _sub_timedelta(self, other: datetime.timedelta) -> pydt:
         return self._new(
             cydt.dt_fr_microseconds(
-                self._get_microseconds() - cydt.delta_to_microseconds(other),
-                self._get_tzinfo(),
-                self._get_fold(),
+                self._microseconds() - cydt.delta_to_microseconds(other),
+                self._tzinfo(),
+                self._fold(),
             )
         )
 
@@ -1693,7 +2101,7 @@ class pydt:
     @cython.inline(True)
     def _rsub_datetime(self, other: datetime.datetime) -> datetime.timedelta:
         return cydt.delta_fr_microseconds(
-            cydt.dt_to_microseconds(other) - self._get_microseconds()
+            cydt.dt_to_microseconds(other) - self._microseconds()
         )
 
     def __rsub__(self, other: object) -> datetime.timedelta:
@@ -1707,7 +2115,7 @@ class pydt:
 
         return NotImplemented
 
-    # Special methods - comparison
+    # Special methods - comparison ------------------------------------------------------------
     @cython.cfunc
     @cython.inline(True)
     def _compare_pydt(self, other: pydt, allow_mixed: cython.bint) -> cython.int:
@@ -1720,7 +2128,7 @@ class pydt:
         other: datetime.datetime,
         allow_mixed: cython.bint,
     ) -> cython.int:
-        my_tzinfo: object = self._get_tzinfo()
+        my_tzinfo: object = self._tzinfo()
         to_tzinfo: object = cydt.get_dt_tzinfo(other)
         if my_tzinfo is to_tzinfo:
             return self._compare_datetime_base(other)
@@ -1731,7 +2139,7 @@ class pydt:
         if my_tzinfo is not None:
             myoff_us = cydt.delta_to_microseconds(self._dt.utcoffset())
             if allow_mixed:
-                temp_dt = cydt.dt_replace_fold(self._dt, self._get_fold() + 1)
+                temp_dt = cydt.dt_replace_fold(self._dt, self._fold() + 1)
                 if myoff_us != cydt.delta_to_microseconds(temp_dt.utcoffset()):
                     return 2
         else:
@@ -1759,7 +2167,7 @@ class pydt:
     @cython.cfunc
     @cython.inline(True)
     def _compare_datetime_base(self, other: datetime.datetime) -> cython.int:
-        mydt_us: cython.longlong = self._get_microseconds()
+        mydt_us: cython.longlong = self._microseconds()
         todt_us: cython.longlong = cydt.dt_to_microseconds(other)
         if mydt_us == todt_us:
             return 0
@@ -1852,7 +2260,7 @@ class pydt:
             % (type(self).__name__, type(other).__name__)
         )
 
-    # Special methods - represent
+    # Special methods - represent -------------------------------------------------------------
     def __repr__(self) -> str:
         return "<pydt (datetime='%s')>" % cydt.dt_to_isoformat_tz(self._dt)
 
@@ -1863,26 +2271,26 @@ class pydt:
     @cython.inline(True)
     @cython.exceptval(check=False)
     def _hash(self) -> cython.int:
-        if self._hashcode != -1:
-            return self._hashcode
+        if self.__hashcode != -1:
+            return self.__hashcode
 
-        tzinfo: object = self._get_tzinfo()
+        tzinfo: object = self._tzinfo()
         if tzinfo is None:
-            self._hashcode = hash(("pytd", self._get_microseconds()))
+            self.__hashcode = hash(("pytd", self._microseconds()))
         else:
             dt: datetime.datetime
-            if self._get_fold():
+            if self._fold():
                 dt = cydt.dt_replace_fold(self._dt, 0)
             else:
                 dt = self._dt
-            self._hashcode = hash(
+            self.__hashcode = hash(
                 (
                     "pydt",
                     cydt.dt_to_microseconds(dt),
                     cydt.delta_to_microseconds(tzinfo.utcoffset(dt)),
                 )
             )
-        return self._hashcode
+        return self.__hashcode
 
     def __hash__(self) -> int:
         return self._hash()
