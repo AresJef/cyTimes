@@ -45,20 +45,20 @@ class pddt:
     _index: pd.Series
     _naive: pd.Series
     # Cache
-    _year: pd.Series
-    _year_1st: pd.Series
-    _year_lst: pd.Series
-    _quarter: pd.Series
-    _quarter_1st: pd.Series
-    _quarter_lst: pd.Series
-    _month: pd.Series
-    _month_1st: pd.Series
-    _month_lst: pd.Series
-    _month_days: pd.Series
-    _day: pd.Series
-    _weekday: pd.Series
-    _is_leapyear: pd.Series
-    _days_of_year: pd.Series
+    __year: pd.Series
+    __year_1st: pd.Series
+    __year_lst: pd.Series
+    __is_leapyear: pd.Series
+    __days_of_year: pd.Series
+    __quarter: pd.Series
+    __quarter_1st: pd.Series
+    __quarter_lst: pd.Series
+    __month: pd.Series
+    __month_1st: pd.Series
+    __month_lst: pd.Series
+    __days_in_month: pd.Series
+    __day: pd.Series
+    __weekday: pd.Series
 
     def __init__(
         self,
@@ -145,22 +145,22 @@ class pddt:
         self._index = None
         self._naive = None
         # Cache
-        self._year = None
-        self._year_1st = None
-        self._year_lst = None
-        self._quarter = None
-        self._quarter_1st = None
-        self._quarter_lst = None
-        self._month = None
-        self._month_1st = None
-        self._month_lst = None
-        self._month_days = None
-        self._day = None
-        self._weekday = None
-        self._is_leapyear = None
-        self._days_of_year = None
+        self.__year = None
+        self.__year_1st = None
+        self.__year_lst = None
+        self.__is_leapyear = None
+        self.__days_of_year = None
+        self.__quarter = None
+        self.__quarter_1st = None
+        self.__quarter_lst = None
+        self.__month = None
+        self.__month_1st = None
+        self.__month_lst = None
+        self.__days_in_month = None
+        self.__day = None
+        self.__weekday = None
 
-    # Access
+    # Access ----------------------------------------------------------------------------------
     @property
     def dt(self) -> pd.Series[pd.Timestamp]:
         "Access datetime as `Series[Timestamp]`."
@@ -262,21 +262,48 @@ class pddt:
         "Access datetime in timestamp as `Series[float]`."
         return cydt.seriesdt64_to_seconds(self._series)
 
-    # Absolute
+    # Absolute --------------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _year(self) -> object:
+        "(cfun) Return year as `Series[int]`."
+        if self.__year is None:
+            self.__year = self._series.dt.year
+        return self.__year
+
     @property
     def year(self) -> pd.Series[int]:
         "Access year as `Series[int]`."
-        return self._get_year()
+        return self._year()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _month(self) -> object:
+        "(cfunc) Return month as `Series[int]`."
+        if self.__month is None:
+            self.__month = self._series.dt.month
+        return self.__month
 
     @property
     def month(self) -> pd.Series[int]:
         "Access month as `Series[int]`."
-        return self._get_month()
+        return self._month()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _day(self) -> object:
+        "(cfunc) Return day as `Series[int]`."
+        if self.__day is None:
+            self.__day = self._series.dt.day
+        return self.__day
 
     @property
     def day(self) -> pd.Series[int]:
         "Access day as `Series[int]`."
-        return self._get_day()
+        return self._day()
 
     @property
     def hour(self) -> pd.Series[int]:
@@ -303,77 +330,120 @@ class pddt:
         "The timezone of the Series `<datetime.tzinfo>`."
         return self._series.dt.tz
 
-    # Calendar
+    # Calendar --------------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _is_leapyear(self) -> object:
+        "(cfunc) Return whether is a leap year as `Series[bool]`."
+        if self.__is_leapyear is None:
+            self.__is_leapyear = self._series.dt.is_leap_year
+        return self.__is_leapyear
+
     @property
     def is_leapyear(self) -> pd.Series[bool]:
         "Whether is a leap year as `Series[bool]`."
-        return self._get_is_leapyear()
+        return self._is_leapyear()
 
     @property
     def days_in_year(self) -> pd.Series[int]:
         "Number of days in the year as `Series[int]`."
-        return self._np_to_series(self._get_is_leapyear().values + 365)
+        return self._np_to_series(self._is_leapyear().values + 365)
 
     @property
     def days_bf_year(self) -> pd.Series[int]:
         "Number of days before January 1st of the year as `Series[int]`."
-        return self._np_to_series(self.ordinal.values - self._get_days_of_year().values)
+        return self._np_to_series(self.ordinal.values - self._days_of_year().values)
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _days_of_year(self) -> object:
+        "(cfunc) Return the number of days into the year as `Series[int]`."
+        if self.__days_of_year is None:
+            self.__days_of_year = self._series.dt.day_of_year
+        return self.__days_of_year
 
     @property
     def days_of_year(self) -> pd.Series[int]:
         "Number of days into the year as `Series[int]`."
-        return self._get_days_of_year()
+        return self._days_of_year()
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _quarter(self) -> object:
+        "(cfunc) Return the quarter of the date as `Series[int]`."
+        if self.__quarter is None:
+            self.__quarter = self._series.dt.quarter
+        return self.__quarter
 
     @property
     def quarter(self) -> pd.Series[int]:
         "The quarter of the date as `Series[int]`."
-        return self._get_quarter()
+        return self._quarter()
 
     @property
     def days_in_quarter(self) -> pd.Series[int]:
         "Number of days in the quarter as `Series[int]`."
-        quarter = self._get_quarter().values
+        quarter = self._quarter().values
         days = DAYS_BR_QUARTER[quarter] - DAYS_BR_QUARTER[quarter - 1]
-        return self._np_to_series(days + self._get_is_leapyear().values)
+        return self._np_to_series(days + self._is_leapyear().values)
 
     @property
     def days_bf_quarter(self) -> pd.Series[int]:
         "Number of days in the year preceding first day of the quarter as `Series[int]`."
-        quarter = self._get_quarter().values
+        quarter = self._quarter().values
         days = DAYS_BR_QUARTER[quarter - 1]
-        leap = self._get_is_leapyear().values * (quarter >= 2)
+        leap = self._is_leapyear().values * (quarter >= 2)
         return self._np_to_series(days + leap)
 
     @property
     def days_of_quarter(self) -> pd.Series[int]:
         "Number of days into the quarter as `Series[int]`."
-        days_y = self._get_days_of_year().values
-        quarter = self._get_quarter().values
+        days_y = self._days_of_year().values
+        quarter = self._quarter().values
         days = DAYS_BR_QUARTER[quarter - 1]
-        leap = self._get_is_leapyear().values * (quarter >= 2)
+        leap = self._is_leapyear().values * (quarter >= 2)
         return self._np_to_series(days_y - days - leap)
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _days_in_month(self) -> object:
+        "(cfunc) Return the number of days in the month as `Series[int]`."
+        if self.__days_in_month is None:
+            self.__days_in_month = self._series.dt.days_in_month
+        return self.__days_in_month
 
     @property
     def days_in_month(self) -> pd.Series[int]:
         "Number of days in the month as `Series[int]`."
-        return self._get_month_days()
+        return self._days_in_month()
 
     @property
     def days_bf_month(self) -> pd.Series[int]:
         "Number of days in the year preceding first day of the month as `Series[int]`."
-        return self._np_to_series(
-            self._get_days_of_year().values - self._get_day().values
-        )
+        return self._np_to_series(self._days_of_year().values - self._day().values)
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _weekday(self) -> object:
+        "(cfunc) Return the weekday, where Monday == 0 ... Sunday == 6, as `Series[int]`."
+        if self.__weekday is None:
+            self.__weekday = self._series.dt.weekday
+        return self.__weekday
 
     @property
     def weekday(self) -> pd.Series[int]:
         "The weekday, where Monday == 0 ... Sunday == 6, as `Series[int]`."
-        return self._get_weekday()
+        return self._weekday()
 
     @property
     def isoweekday(self) -> pd.Series[int]:
         "The ISO weekday, where Monday == 1 ... Sunday == 7, as `Series[int]`."
-        return self._np_to_series(self._get_weekday().values + 1)
+        return self._np_to_series(self._weekday().values + 1)
 
     @property
     def isoweek(self) -> pd.Series[int]:
@@ -390,7 +460,7 @@ class pddt:
         "Access ISO calendar as `DataFrame[int]`."
         return self._series.dt.isocalendar()
 
-    # Time manipulation
+    # Time manipulation -----------------------------------------------------------------------
     @property
     def start_time(self) -> pddt:
         "Start time (00:00:00.000000) of the current datetime."
@@ -403,7 +473,7 @@ class pddt:
             self._series.dt.ceil("D", "infer", "shift_forward") - offsets.Micro(1)
         )
 
-    # Day manipulation
+    # Day manipulation ------------------------------------------------------------------------
     @property
     def tomorrow(self) -> pddt:
         "Tomorrow."
@@ -414,61 +484,85 @@ class pddt:
         "Yesterday."
         return self._new(self._series + offsets.Day(-1))
 
-    # Weekday manipulation
+    # Weekday manipulation --------------------------------------------------------------------
     @property
     def monday(self) -> pddt:
         "Monday of the current week."
-        return self._new(
-            self._series - pd.TimedeltaIndex(self._get_weekday(), unit="D")
-        )
+        return self._new(self._series - pd.TimedeltaIndex(self._weekday(), unit="D"))
 
     @property
     def tuesday(self) -> pddt:
         "Tuesday of the current week."
         return self._new(
-            self._series - pd.TimedeltaIndex(self._get_weekday() - 1, unit="D")
+            self._series - pd.TimedeltaIndex(self._weekday() - 1, unit="D")
         )
 
     @property
     def wednesday(self) -> pddt:
         "Wednesday of the current week."
         return self._new(
-            self._series - pd.TimedeltaIndex(self._get_weekday() - 2, unit="D")
+            self._series - pd.TimedeltaIndex(self._weekday() - 2, unit="D")
         )
 
     @property
     def thursday(self) -> pddt:
         "Thursday of the current week."
         return self._new(
-            self._series - pd.TimedeltaIndex(self._get_weekday() - 3, unit="D")
+            self._series - pd.TimedeltaIndex(self._weekday() - 3, unit="D")
         )
 
     @property
     def friday(self) -> pddt:
         "Friday of the current week."
         return self._new(
-            self._series - pd.TimedeltaIndex(self._get_weekday() - 4, unit="D")
+            self._series - pd.TimedeltaIndex(self._weekday() - 4, unit="D")
         )
 
     @property
     def saturday(self) -> pddt:
         "Saturday of the current week."
         return self._new(
-            self._series - pd.TimedeltaIndex(self._get_weekday() - 5, unit="D")
+            self._series - pd.TimedeltaIndex(self._weekday() - 5, unit="D")
         )
 
     @property
     def sunday(self) -> pddt:
         "Sunday of the current week."
         return self._new(
-            self._series - pd.TimedeltaIndex(self._get_weekday() - 6, unit="D")
+            self._series - pd.TimedeltaIndex(self._weekday() - 6, unit="D")
         )
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _curr_week(self, weekday: object) -> pddt:
+        "(cfunc) Return specific weekday of the currect week."
+        if weekday is None:
+            return self
+        else:
+            delta = pd.TimedeltaIndex(
+                self._parse_weekday(weekday) - self._weekday().values,
+                unit="D",
+            )
+            return self._new(self._series + delta)
 
     def curr_week(self, weekday: Union[int, str, None]) -> pddt:
         """Specific weekday of the currect week.
         :param weekday: `<int>` 0 as Monday to 6 as Sunday / `<str>` 'mon', 'tuesday', etc.
         """
         return self._curr_week(weekday)
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _to_week(self, offset: cython.int, weekday: object) -> pddt:
+        "(cfunc) Return specific weekday of the week (+/-) offset."
+        if weekday is None:
+            return self._new(self._series + pd.Timedelta(days=offset * 7))
+        else:
+            delta = pd.TimedeltaIndex(
+                offset * 7 + self._parse_weekday(weekday) - self._weekday().values,
+                unit="D",
+            )
+            return self._new(self._series + delta)
 
     def next_week(self, weekday: Union[int, str, None] = None) -> pddt:
         """Specific weekday of the next week.
@@ -499,26 +593,60 @@ class pddt:
         if weekday is None:
             return pd.Series(True, index=self._get_index())
         else:
-            return self._get_weekday() == self._parse_weekday(weekday)
+            return self._weekday() == self._parse_weekday(weekday)
 
-    # Month manipulation
+    # Month manipulation ----------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    def _month_1st(self) -> object:
+        "(cfunc) Return the first day of the current month."
+        if self.__month_1st is None:
+            self.__month_1st = self._month_lst() - offsets.MonthBegin(1)
+        return self.__month_1st
+
     @property
     def month_1st(self) -> pddt:
         "First day of the current month."
-        return self._new(self._get_month_1st())
+        return self._new(self._month_1st())
 
     def is_month_1st(self) -> pd.Series[bool]:
         "Whether the current datetime is the first day of the month as `Seires[bool]`."
         return self._series.dt.is_month_start
 
+    @cython.cfunc
+    @cython.inline(True)
+    def _month_lst(self) -> object:
+        "(cfunc) Return the last day of the current month."
+        if self.__month_lst is None:
+            self.__month_lst = self._series + offsets.MonthEnd(0)
+        return self.__month_lst
+
     @property
     def month_lst(self) -> pddt:
         "Last day of the current month."
-        return self._new(self._get_month_lst())
+        return self._new(self._month_lst())
 
     def is_month_lst(self) -> pd.Series[bool]:
         "Whether the current datetime is the last day of the month as `Seires[bool]`."
         return self._series.dt.is_month_end
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _curr_month(self, day: cython.int) -> pddt:
+        "(cfunc) Return specifc day of the current month."
+        if day < 1:
+            return self
+        elif day == 1:
+            return self._new(self._month_1st())
+        elif 1 < day <= 28:
+            return self._new(self._month_1st() + offsets.Day(day - 1))
+        elif 29 <= day < 31:
+            delta = pd.TimedeltaIndex(
+                np.minimum(self._days_in_month().values, day) - 1, unit="D"
+            )
+            return self._new(self._month_1st() + delta)
+        else:
+            return self._new(self._month_lst())
 
     def curr_month(self, day: int) -> pddt:
         """Specifc day of the current month.
@@ -526,6 +654,32 @@ class pddt:
             `Value < 1` will be ignored, otherwise will automatically cap by the max days in the current month.
         """
         return self._curr_month(day)
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _to_month(self, offset: cython.int, day: cython.int) -> pddt:
+        "(cfunc) Return specifc day of the month (+/-) offset."
+        if day < 1:
+            return self._new(self._series + offsets.DateOffset(months=offset))
+        elif day == 1:
+            return self._new(self._month_1st() + offsets.DateOffset(months=offset))
+        elif 1 < day <= 28:
+            return self._new(
+                self._month_1st() + offsets.DateOffset(months=offset, days=day - 1)
+            )
+        elif 29 <= day < 31:
+            base = self._month_1st() + offsets.DateOffset(months=offset)
+            delta = pd.TimedeltaIndex(
+                np.minimum(base.dt.days_in_month.values, day) - 1,
+                unit="D",
+            )
+            return self._new(base + delta)
+        else:
+            return self._new(
+                self._month_lst()
+                + offsets.DateOffset(months=offset)
+                + offsets.MonthEnd(0)
+            )
 
     def next_month(self, day: int = 0) -> pddt:
         """Specifc day of the next month.
@@ -556,26 +710,86 @@ class pddt:
         if month is None:
             return pd.Series(True, index=self._get_index())
         else:
-            return self._get_month() == self._parse_month(month)
+            return self._month() == self._parse_month(month)
 
-    # Quarter manipulation
+    # Quarter manipulation --------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    def _quarter_1st(self) -> object:
+        "(cfunc) Return the first day of the current quarter."
+        if self.__quarter_1st is None:
+            self.__quarter_1st = self._quarter_lst() - offsets.QuarterBegin(
+                1, startingMonth=1
+            )
+        return self.__quarter_1st
+
     @property
     def quarter_1st(self) -> pddt:
         "First day of the current quarter."
-        return self._new(self._get_quarter_1st())
+        return self._new(self._quarter_1st())
 
     def is_quarter_1st(self) -> pd.Series[bool]:
         "Whether the current datetime is the first day of the quarter as `Seires[bool]`."
         return self._series.dt.is_quarter_start
 
+    @cython.cfunc
+    @cython.inline(True)
+    def _quarter_lst(self) -> object:
+        "(cfunc) Return the last day of the current quarter."
+        if self.__quarter_lst is None:
+            self.__quarter_lst = self._series + offsets.QuarterEnd(0)
+        return self.__quarter_lst
+
     @property
     def quarter_lst(self) -> pddt:
         "Last day of the current quarter."
-        return self._new(self._get_quarter_lst())
+        return self._new(self._quarter_lst())
 
     def is_quarter_lst(self) -> pd.Series[bool]:
         "Whether the current datetime is the last day of the quarter as `Seires[bool]`."
         return self._series.dt.is_quarter_end
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _curr_quarter(self, month: cython.int, day: cython.int) -> pddt:
+        "(cfunc) Return specifc day of the current quarter."
+        # Validate
+        if not 1 <= month <= 3:
+            raise PddtValueError(
+                "<pddt> Invalid quarter month: %s. Accepts `<int>` 1-3." % repr(month)
+            )
+
+        # Convert
+        if day < 1:
+            base = self._quarter_lst() - offsets.QuarterBegin(1, startingMonth=month)
+            delta = pd.TimedeltaIndex(
+                np.minimum(base.dt.days_in_month.values, self._day().values) - 1,
+                unit="D",
+            )
+            return self._new(base + delta)
+        elif day == 1:
+            return self._new(
+                self._quarter_lst() - offsets.QuarterBegin(1, startingMonth=month)
+            )
+        elif 1 < day <= 28:
+            return self._new(
+                self._quarter_lst()
+                - offsets.QuarterBegin(1, startingMonth=month)
+                + offsets.Day(day - 1)
+            )
+        elif 29 <= day < 31:
+            base = self._quarter_lst() - offsets.QuarterBegin(1, startingMonth=month)
+            delta = pd.TimedeltaIndex(
+                np.minimum(base.dt.days_in_month.values, day) - 1,
+                unit="D",
+            )
+            return self._new(base + delta)
+        else:
+            return self._new(
+                self._quarter_lst()
+                - offsets.QuarterBegin(1, startingMonth=month)
+                + offsets.MonthEnd(0)
+            )
 
     def curr_quarter(self, month: int, day: int = 0) -> pddt:
         """Specifc day of the current quarter.
@@ -584,6 +798,60 @@ class pddt:
             `Value < 1` will be ignored, otherwise will automatically cap by the max days in the current quarter month.
         """
         return self._curr_quarter(month, day)
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _to_quarter(
+        self,
+        offset: cython.int,
+        month: cython.int,
+        day: cython.int,
+    ) -> pddt:
+        "(cfunc) Return specifc day of the quarter (+/-) offset."
+        # Validate
+        if not 1 <= month <= 3:
+            raise PddtValueError(
+                "<pddt> Invalid quarter month: %s. Accepts `<int>` 1-3." % repr(month)
+            )
+
+        # Convert
+        if day < 1:
+            base = self._quarter_lst() + offsets.DateOffset(
+                months=offset * 3 - 3 + month
+            )
+            delta = pd.TimedeltaIndex(
+                np.minimum(base.dt.days_in_month.values, self._day().values)
+                - base.dt.day.values,
+                unit="D",
+            )
+            return self._new(base + delta)
+        elif day == 1:
+            return self._new(
+                self._quarter_lst()
+                + offsets.DateOffset(months=offset * 3)
+                - offsets.QuarterBegin(1, startingMonth=month)
+            )
+        elif 1 < day <= 28:
+            return self._new(
+                self._quarter_lst()
+                - offsets.QuarterBegin(1, startingMonth=month)
+                + offsets.DateOffset(months=offset * 3, days=day - 1)
+            )
+        elif 29 <= day < 31:
+            base = self._quarter_lst() + offsets.DateOffset(
+                months=offset * 3 - 3 + month
+            )
+            delta = pd.TimedeltaIndex(
+                np.minimum(base.dt.days_in_month.values, day) - base.dt.day.values,
+                unit="D",
+            )
+            return self._new(base + delta)
+        else:
+            return self._new(
+                self._quarter_lst()
+                + offsets.DateOffset(months=offset * 3 - 3 + month)
+                + offsets.MonthEnd(0)
+            )
 
     def next_quarter(self, month: int, day: int = 0) -> pddt:
         """Specifc day of the next quarter.
@@ -614,26 +882,81 @@ class pddt:
         """Whether the current datetime is a specific quarter as `Seires[bool]`.
         :param quarter: `<int>` 1 as 1st quarter to 4 as 4th quarter.
         """
-        return self._get_quarter() == quarter
+        return self._quarter() == quarter
 
-    # Year manipulation
+    # Year manipulation -----------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    def _year_1st(self) -> object:
+        "(cfunc) Return the first day of the current year."
+        if self.__year_1st is None:
+            self.__year_1st = self._year_lst() - offsets.YearBegin(1, month=1)
+        return self.__year_1st
+
     @property
     def year_1st(self) -> pddt:
         "First day of the current year."
-        return self._new(self._get_year_1st())
+        return self._new(self._year_1st())
 
     def is_year_1st(self) -> pd.Series[bool]:
         "Whether the current datetime is the first day of the year as `Seires[bool]`."
         return self._series.dt.is_year_start
 
+    @cython.cfunc
+    @cython.inline(True)
+    def _year_lst(self) -> object:
+        "(cfunc) Return the last day of the current year."
+        if self.__year_lst is None:
+            self.__year_lst = self._series + offsets.YearEnd(0)
+        return self.__year_lst
+
     @property
     def year_lst(self) -> pddt:
         "Last day of the current year."
-        return self._new(self._get_year_lst())
+        return self._new(self._year_lst())
 
     def is_year_lst(self) -> pd.Series[bool]:
         "Whether the current datetime is the last day of the year as `Seires[bool]`."
         return self._series.dt.is_year_end
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _curr_year(self, month: object, day: cython.int) -> pddt:
+        "(cfunc) Return specifc month and day of the current year."
+        # Validate
+        if month is None:
+            return self._curr_month(day)
+        month: cython.int = self._parse_month(month)
+
+        # Convert
+        if day < 1:
+            base = self._year_lst() - offsets.YearBegin(1, month=month)
+            delta = pd.TimedeltaIndex(
+                np.minimum(base.dt.days_in_month.values, self._day().values) - 1,
+                unit="D",
+            )
+            return self._new(base + delta)
+        elif day == 1:
+            return self._new(self._year_lst() - offsets.YearBegin(1, month=month))
+        elif 1 < day <= 28:
+            return self._new(
+                self._year_lst()
+                - offsets.YearBegin(1, month=month)
+                + offsets.Day(day - 1)
+            )
+        elif 29 <= day < 31:
+            base = self._year_lst() - offsets.YearBegin(1, month=month)
+            delta = pd.TimedeltaIndex(
+                np.minimum(base.dt.days_in_month.values, day) - 1,
+                unit="D",
+            )
+            return self._new(base + delta)
+        else:
+            return self._new(
+                self._year_lst()
+                - offsets.YearBegin(1, month=month)
+                + offsets.MonthEnd(0)
+            )
 
     def curr_year(self, month: Union[int, str, None] = None, day: int = 0) -> pddt:
         """Specifc month and day of the current year.
@@ -643,6 +966,56 @@ class pddt:
             `Value < 1` will be ignored, otherwise will automatically cap by the max days in the month.
         """
         return self._curr_year(month, day)
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _to_year(self, offset: cython.int, month: object, day: cython.int) -> pddt:
+        "(cfunc) Return specifc month and day of the year (+/-) offset."
+        # Validate
+        if month is None:
+            return self._new(
+                self._series + offsets.DateOffset(years=offset)
+            )._curr_month(day)
+        month: cython.int = self._parse_month(month)
+
+        # Convert
+        if day < 1:
+            base = self._year_lst() + offsets.DateOffset(
+                years=offset, months=month - 12
+            )
+            delta = pd.TimedeltaIndex(
+                np.minimum(base.dt.days_in_month.values, self._day().values)
+                - base.dt.day.values,
+                unit="D",
+            )
+            return self._new(base + delta)
+        elif day == 1:
+            return self._new(
+                self._year_lst()
+                + offsets.DateOffset(years=offset)
+                - offsets.YearBegin(1, month=month)
+            )
+        elif 1 < day <= 28:
+            return self._new(
+                self._year_lst()
+                - offsets.YearBegin(1, month=month)
+                + offsets.DateOffset(years=offset, days=day - 1)
+            )
+        elif 29 <= day < 31:
+            base = self._year_lst() + offsets.DateOffset(
+                years=offset, months=month - 12
+            )
+            delta = pd.TimedeltaIndex(
+                np.minimum(base.dt.days_in_month.values, day) - base.dt.day.values,
+                unit="D",
+            )
+            return self._new(base + delta)
+        else:
+            return self._new(
+                self._year_lst()
+                + offsets.DateOffset(years=offset, months=month - 12)
+                + offsets.MonthEnd(0)
+            )
 
     def next_year(self, month: Union[int, str, None] = None, day: int = 0) -> pddt:
         """Specifc month and day of the next year.
@@ -681,13 +1054,34 @@ class pddt:
         """Whether the current datetime is a specific year as `Seires[bool]`.
         :param year: `<int>` year.
         """
-        return self._get_year() == year
+        return self._year() == year
 
-    # Timezone manipulation
+    # Timezone manipulation -------------------------------------------------------------------
     @property
     def tz_available(self) -> set[str]:
         "All available timezone names accept by localize/convert/switch methods `<set[str]>`."
         return zoneinfo.available_timezones()
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _tz_localize(
+        self,
+        series: pd.Series,
+        tz: object,
+        ambiguous: object,
+        nonexistent: str,
+    ) -> object:
+        """(cfunc) Localize to a specific timezone. Equivalent to `Series.dt.tz_localize`.
+        - Notice: This method returns `pandas.Series` instead of `pddt`.
+        """
+        self._validate_am_non(ambiguous, nonexistent)
+        try:
+            return series.dt.tz_localize(tz, ambiguous, nonexistent)
+        except Exception as err:
+            if isinstance(tz, str) and tz in str(err):
+                raise PddtValueError("<pddt> Invalid timezone: %s" % repr(tz)) from err
+            else:
+                raise PddtValueError("<pddt> %s" % err) from err
 
     def tz_localize(
         self,
@@ -727,6 +1121,20 @@ class pddt:
         """
         return self._new(self._tz_localize(self._series, tz, ambiguous, nonexistent))
 
+    @cython.cfunc
+    @cython.inline(True)
+    def _tz_convert(self, series: pd.Series, tz: object) -> object:
+        """(cfunc) Convert to a specific timezone. Equivalent to `Series.dt.tz_convert`.
+        - Notice: This method returns `pandas.Series` instead of `pddt`.
+        """
+        try:
+            return series.dt.tz_convert(cydt.gen_timezone_local() if tz is None else tz)
+        except Exception as err:
+            if isinstance(tz, str) and tz in str(err):
+                raise PddtValueError("<pddt> Invalid timezone: %s" % repr(tz)) from err
+            else:
+                raise PddtValueError("<pddt> %s" % err) from err
+
     def tz_convert(self, tz: Union[datetime.tzinfo, str, None]) -> pddt:
         """Convert to a specific timezone. Equivalent to `Series.dt.tz_convert`.
 
@@ -738,6 +1146,36 @@ class pddt:
             - `None`: Convert to system's local timezone.
         """
         return self._new(self._tz_convert(self._series, tz))
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _tz_switch(
+        self,
+        series: pd.Series,
+        targ_tz: object,
+        base_tz: object,
+        ambiguous: object,
+        nonexistent: str,
+        naive: cython.bint,
+    ) -> object:
+        """(cfunc) Switch from base timezone to target timezone.
+        - Notice: This method returns `pandas.Series` instead of `pddt`.
+        """
+        # Already timezone-aware: convert to targ_tz
+        if self.tzinfo is not None:
+            series = self._tz_convert(series, targ_tz)
+        # Localize to base_tz & convert to targ_tz
+        elif isinstance(base_tz, (str, datetime.tzinfo)):
+            series = self._tz_convert(
+                self._tz_localize(series, base_tz, ambiguous, nonexistent), targ_tz
+            )
+        # Invalid base_tz
+        else:
+            raise PddtValueError(
+                "<pddt> Cannot switch timezone without 'base_tz' for naive datetime."
+            )
+        # Return
+        return series.dt.tz_localize(None) if naive else series
 
     def tz_switch(
         self,
@@ -797,7 +1235,16 @@ class pddt:
             )
         )
 
-    # Frequency manipulation
+    # Frequency manipulation ------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    def _round(self, freq: str, ambiguous: object, nonexistent: str) -> pddt:
+        "(cfunc) Perform round operation to specified freqency."
+        self._validate_am_non(ambiguous, nonexistent)
+        return self._new(
+            self._series.dt.round(self._parse_frequency(freq), ambiguous, nonexistent)
+        )
+
     def round(
         self,
         freq: Literal["D", "h", "m", "s", "ms", "us", "ns"],
@@ -831,7 +1278,16 @@ class pddt:
             - `'raise'`: Raises an `PddtValueError` if there are nonexistent times.
             - * Notice: `'NaT'` is not supported.
         """
-        return self._round_frequency(freq, ambiguous, nonexistent)
+        return self._round(freq, ambiguous, nonexistent)
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _ceil(self, freq: str, ambiguous: object, nonexistent: str) -> pddt:
+        "(cfunc) Perform ceil operation to specified freqency."
+        self._validate_am_non(ambiguous, nonexistent)
+        return self._new(
+            self._series.dt.ceil(self._parse_frequency(freq), ambiguous, nonexistent)
+        )
 
     def ceil(
         self,
@@ -866,7 +1322,16 @@ class pddt:
             - `'raise'`: Raises an `PddtValueError` if there are nonexistent times.
             - * Notice: `'NaT'` is not supported.
         """
-        return self._ceil_frequency(freq, ambiguous, nonexistent)
+        return self._ceil(freq, ambiguous, nonexistent)
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _floor(self, freq: str, ambiguous: object, nonexistent: str) -> pddt:
+        "(cfunc) Perform floor operation to specified freqency."
+        self._validate_am_non(ambiguous, nonexistent)
+        return self._new(
+            self._series.dt.floor(self._parse_frequency(freq), ambiguous, nonexistent)
+        )
 
     def floor(
         self,
@@ -901,9 +1366,36 @@ class pddt:
             - `'raise'`: Raises an `PddtValueError` if there are nonexistent times.
             - * Notice: `'NaT'` is not supported.
         """
-        return self._floor_frequency(freq, ambiguous, nonexistent)
+        return self._floor(freq, ambiguous, nonexistent)
 
-    # Delta adjustment
+    # Delta adjustment ------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    def _delta(
+        self,
+        years: cython.int,
+        months: cython.int,
+        days: cython.int,
+        weeks: cython.int,
+        hours: cython.int,
+        minutes: cython.int,
+        seconds: cython.int,
+        microseconds: cython.int,
+    ) -> pddt:
+        return self._new(
+            self._series
+            + offsets.DateOffset(
+                years=years,
+                months=months,
+                days=days,
+                weeks=weeks,
+                hours=hours,
+                minutes=minutes,
+                seconds=seconds,
+                microseconds=microseconds,
+            )
+        )
+
     def delta(
         self,
         years: int = 0,
@@ -935,7 +1427,38 @@ class pddt:
         except Exception as err:
             raise PddtValueError("<pddt> %s" % err) from err
 
-    # Replace adjustment
+    # Replace adjustment ----------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    def _replace(
+        self,
+        year: cython.int,
+        month: cython.int,
+        day: cython.int,
+        hour: cython.int,
+        minute: cython.int,
+        second: cython.int,
+        microsecond: cython.int,
+        tzinfo: object,
+        fold: cython.int,
+    ) -> pddt:
+        return self._new(
+            self._series.apply(
+                lambda dt: cydt.dt_replace(
+                    dt,
+                    year,
+                    month,
+                    day,
+                    hour,
+                    minute,
+                    second,
+                    microsecond,
+                    tzinfo,
+                    fold,
+                )
+            )
+        )
+
     def replace(
         self,
         year: int = -1,
@@ -972,7 +1495,27 @@ class pddt:
         except Exception as err:
             raise PddtValueError("<pddt> %s" % err) from err
 
-    # Between calculation
+    # Between calculation ---------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    def _between(self, other: object, unit: str, inclusive: cython.bint) -> object:
+        if isinstance(other, pd.Series):
+            if other.dtype.str.endswith("M8[ns]"):
+                return self._between_series(other, unit, inclusive)
+            if "M8" in other.dtype.str or other.dtype == "object":
+                return self._between_series(
+                    self._parse_datetime(other), unit, inclusive
+                )
+            raise PddtValueError(
+                "<pddt> Can only compare with `pandas.Series` with datetime64 dtype."
+            )
+        elif isinstance(other, pddt):
+            return self._between_pddt(other, unit, inclusive)
+        elif isinstance(other, list):
+            return self._between_series(self._parse_datetime(other), unit, inclusive)
+        else:
+            raise PddtValueError("<pddt> Unsupported data type: %s" % (type(other)))
+
     def between(
         self,
         other: Union[pd.Series, pddt, list],
@@ -995,7 +1538,7 @@ class pddt:
         except Exception as err:
             raise PddtValueError("<pddt> %s" % err) from err
 
-    # Core methods
+    # Core methods ----------------------------------------------------------------------------
     @cython.cfunc
     @cython.inline(True)
     def _new(self, series: object) -> pddt:
@@ -1081,106 +1624,6 @@ class pddt:
 
     @cython.cfunc
     @cython.inline(True)
-    def _get_year(self) -> object:
-        if self._year is None:
-            self._year = self._series.dt.year
-        return self._year
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _get_year_1st(self) -> object:
-        if self._year_1st is None:
-            self._year_1st = self._get_year_lst() - offsets.YearBegin(1, month=1)
-        return self._year_1st
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _get_year_lst(self) -> object:
-        if self._year_lst is None:
-            self._year_lst = self._series + offsets.YearEnd(0)
-        return self._year_lst
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _get_quarter(self) -> object:
-        if self._quarter is None:
-            self._quarter = self._series.dt.quarter
-        return self._quarter
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _get_quarter_1st(self) -> object:
-        if self._quarter_1st is None:
-            self._quarter_1st = self._get_quarter_lst() - offsets.QuarterBegin(
-                1, startingMonth=1
-            )
-        return self._quarter_1st
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _get_quarter_lst(self) -> object:
-        if self._quarter_lst is None:
-            self._quarter_lst = self._series + offsets.QuarterEnd(0)
-        return self._quarter_lst
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _get_month(self) -> object:
-        if self._month is None:
-            self._month = self._series.dt.month
-        return self._month
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _get_month_1st(self) -> object:
-        if self._month_1st is None:
-            self._month_1st = self._get_month_lst() - offsets.MonthBegin(1)
-        return self._month_1st
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _get_month_lst(self) -> object:
-        if self._month_lst is None:
-            self._month_lst = self._series + offsets.MonthEnd(0)
-        return self._month_lst
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _get_month_days(self) -> object:
-        if self._month_days is None:
-            self._month_days = self._series.dt.days_in_month
-        return self._month_days
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _get_day(self) -> object:
-        if self._day is None:
-            self._day = self._series.dt.day
-        return self._day
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _get_weekday(self) -> object:
-        if self._weekday is None:
-            self._weekday = self._series.dt.weekday
-        return self._weekday
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _get_is_leapyear(self) -> object:
-        if self._is_leapyear is None:
-            self._is_leapyear = self._series.dt.is_leap_year
-        return self._is_leapyear
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _get_days_of_year(self) -> object:
-        if self._days_of_year is None:
-            self._days_of_year = self._series.dt.day_of_year
-        return self._days_of_year
-
-    @cython.cfunc
-    @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _parse_weekday(self, weekday: object) -> cython.int:
         wday: cython.int
@@ -1193,30 +1636,6 @@ class pddt:
         if not 0 <= wday <= 6:
             raise PddtValueError("<pddt> Invalid weekday: %s" % repr(weekday))
         return wday
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _curr_week(self, weekday: object) -> pddt:
-        if weekday is None:
-            return self
-        else:
-            delta = pd.TimedeltaIndex(
-                self._parse_weekday(weekday) - self._get_weekday().values,
-                unit="D",
-            )
-            return self._new(self._series + delta)
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _to_week(self, offset: cython.int, weekday: object) -> pddt:
-        if weekday is None:
-            return self._new(self._series + pd.Timedelta(days=offset * 7))
-        else:
-            delta = pd.TimedeltaIndex(
-                offset * 7 + self._parse_weekday(weekday) - self._get_weekday().values,
-                unit="D",
-            )
-            return self._new(self._series + delta)
 
     @cython.cfunc
     @cython.inline(True)
@@ -1235,297 +1654,6 @@ class pddt:
 
     @cython.cfunc
     @cython.inline(True)
-    def _curr_month(self, day: cython.int) -> pddt:
-        if day < 1:
-            return self
-        elif day == 1:
-            return self._new(self._get_month_1st())
-        elif 1 < day <= 28:
-            return self._new(self._get_month_1st() + offsets.Day(day - 1))
-        elif 29 <= day < 31:
-            delta = pd.TimedeltaIndex(
-                np.minimum(self._get_month_days().values, day) - 1, unit="D"
-            )
-            return self._new(self._get_month_1st() + delta)
-        else:
-            return self._new(self._get_month_lst())
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _to_month(self, offset: cython.int, day: cython.int) -> pddt:
-        if day < 1:
-            return self._new(self._series + offsets.DateOffset(months=offset))
-        elif day == 1:
-            return self._new(self._get_month_1st() + offsets.DateOffset(months=offset))
-        elif 1 < day <= 28:
-            return self._new(
-                self._get_month_1st() + offsets.DateOffset(months=offset, days=day - 1)
-            )
-        elif 29 <= day < 31:
-            base = self._get_month_1st() + offsets.DateOffset(months=offset)
-            delta = pd.TimedeltaIndex(
-                np.minimum(base.dt.days_in_month.values, day) - 1,
-                unit="D",
-            )
-            return self._new(base + delta)
-        else:
-            return self._new(
-                self._get_month_lst()
-                + offsets.DateOffset(months=offset)
-                + offsets.MonthEnd(0)
-            )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _curr_quarter(self, month: cython.int, day: cython.int) -> pddt:
-        # Validate
-        if not 1 <= month <= 3:
-            raise PddtValueError(
-                "<pddt> Invalid quarter month: %s. Accepts `<int>` 1-3." % repr(month)
-            )
-
-        # Convert
-        if day < 1:
-            base = self._get_quarter_lst() - offsets.QuarterBegin(
-                1, startingMonth=month
-            )
-            delta = pd.TimedeltaIndex(
-                np.minimum(base.dt.days_in_month.values, self._get_day().values) - 1,
-                unit="D",
-            )
-            return self._new(base + delta)
-        elif day == 1:
-            return self._new(
-                self._get_quarter_lst() - offsets.QuarterBegin(1, startingMonth=month)
-            )
-        elif 1 < day <= 28:
-            return self._new(
-                self._get_quarter_lst()
-                - offsets.QuarterBegin(1, startingMonth=month)
-                + offsets.Day(day - 1)
-            )
-        elif 29 <= day < 31:
-            base = self._get_quarter_lst() - offsets.QuarterBegin(
-                1, startingMonth=month
-            )
-            delta = pd.TimedeltaIndex(
-                np.minimum(base.dt.days_in_month.values, day) - 1,
-                unit="D",
-            )
-            return self._new(base + delta)
-        else:
-            return self._new(
-                self._get_quarter_lst()
-                - offsets.QuarterBegin(1, startingMonth=month)
-                + offsets.MonthEnd(0)
-            )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _to_quarter(
-        self,
-        offset: cython.int,
-        month: cython.int,
-        day: cython.int,
-    ) -> pddt:
-        # Validate
-        if not 1 <= month <= 3:
-            raise PddtValueError(
-                "<pddt> Invalid quarter month: %s. Accepts `<int>` 1-3." % repr(month)
-            )
-
-        # Convert
-        if day < 1:
-            base = self._get_quarter_lst() + offsets.DateOffset(
-                months=offset * 3 - 3 + month
-            )
-            delta = pd.TimedeltaIndex(
-                np.minimum(base.dt.days_in_month.values, self._get_day().values)
-                - base.dt.day.values,
-                unit="D",
-            )
-            return self._new(base + delta)
-        elif day == 1:
-            return self._new(
-                self._get_quarter_lst()
-                + offsets.DateOffset(months=offset * 3)
-                - offsets.QuarterBegin(1, startingMonth=month)
-            )
-        elif 1 < day <= 28:
-            return self._new(
-                self._get_quarter_lst()
-                - offsets.QuarterBegin(1, startingMonth=month)
-                + offsets.DateOffset(months=offset * 3, days=day - 1)
-            )
-        elif 29 <= day < 31:
-            base = self._get_quarter_lst() + offsets.DateOffset(
-                months=offset * 3 - 3 + month
-            )
-            delta = pd.TimedeltaIndex(
-                np.minimum(base.dt.days_in_month.values, day) - base.dt.day.values,
-                unit="D",
-            )
-            return self._new(base + delta)
-        else:
-            return self._new(
-                self._get_quarter_lst()
-                + offsets.DateOffset(months=offset * 3 - 3 + month)
-                + offsets.MonthEnd(0)
-            )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _curr_year(self, month: object, day: cython.int) -> pddt:
-        # Validate
-        if month is None:
-            return self._curr_month(day)
-        month: cython.int = self._parse_month(month)
-
-        # Convert
-        if day < 1:
-            base = self._get_year_lst() - offsets.YearBegin(1, month=month)
-            delta = pd.TimedeltaIndex(
-                np.minimum(base.dt.days_in_month.values, self._get_day().values) - 1,
-                unit="D",
-            )
-            return self._new(base + delta)
-        elif day == 1:
-            return self._new(self._get_year_lst() - offsets.YearBegin(1, month=month))
-        elif 1 < day <= 28:
-            return self._new(
-                self._get_year_lst()
-                - offsets.YearBegin(1, month=month)
-                + offsets.Day(day - 1)
-            )
-        elif 29 <= day < 31:
-            base = self._get_year_lst() - offsets.YearBegin(1, month=month)
-            delta = pd.TimedeltaIndex(
-                np.minimum(base.dt.days_in_month.values, day) - 1,
-                unit="D",
-            )
-            return self._new(base + delta)
-        else:
-            return self._new(
-                self._get_year_lst()
-                - offsets.YearBegin(1, month=month)
-                + offsets.MonthEnd(0)
-            )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _to_year(self, offset: cython.int, month: object, day: cython.int) -> pddt:
-        # Validate
-        if month is None:
-            return self._new(
-                self._series + offsets.DateOffset(years=offset)
-            )._curr_month(day)
-        month: cython.int = self._parse_month(month)
-
-        # Convert
-        if day < 1:
-            base = self._get_year_lst() + offsets.DateOffset(
-                years=offset, months=month - 12
-            )
-            delta = pd.TimedeltaIndex(
-                np.minimum(base.dt.days_in_month.values, self._get_day().values)
-                - base.dt.day.values,
-                unit="D",
-            )
-            return self._new(base + delta)
-        elif day == 1:
-            return self._new(
-                self._get_year_lst()
-                + offsets.DateOffset(years=offset)
-                - offsets.YearBegin(1, month=month)
-            )
-        elif 1 < day <= 28:
-            return self._new(
-                self._get_year_lst()
-                - offsets.YearBegin(1, month=month)
-                + offsets.DateOffset(years=offset, days=day - 1)
-            )
-        elif 29 <= day < 31:
-            base = self._get_year_lst() + offsets.DateOffset(
-                years=offset, months=month - 12
-            )
-            delta = pd.TimedeltaIndex(
-                np.minimum(base.dt.days_in_month.values, day) - base.dt.day.values,
-                unit="D",
-            )
-            return self._new(base + delta)
-        else:
-            return self._new(
-                self._get_year_lst()
-                + offsets.DateOffset(years=offset, months=month - 12)
-                + offsets.MonthEnd(0)
-            )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _validate_am_non(self, ambiguous: object, nonexistent: str):
-        if ambiguous == "NaT":
-            raise PddtValueError("<pddt> `ambiguous == 'NaT'` is not supported.")
-        if nonexistent == "NaT":
-            raise PddtValueError("<pddt> `nonexistent == 'NaT'` is not supported.")
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _tz_localize(
-        self,
-        series: pd.Series,
-        tz: object,
-        ambiguous: object,
-        nonexistent: str,
-    ) -> object:
-        self._validate_am_non(ambiguous, nonexistent)
-        try:
-            return series.dt.tz_localize(tz, ambiguous, nonexistent)
-        except Exception as err:
-            if isinstance(tz, str) and tz in str(err):
-                raise PddtValueError("<pddt> Invalid timezone: %s" % repr(tz)) from err
-            else:
-                raise PddtValueError("<pddt> %s" % err) from err
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _tz_convert(self, series: pd.Series, tz: object) -> object:
-        try:
-            return series.dt.tz_convert(cydt.gen_timezone_local() if tz is None else tz)
-        except Exception as err:
-            if isinstance(tz, str) and tz in str(err):
-                raise PddtValueError("<pddt> Invalid timezone: %s" % repr(tz)) from err
-            else:
-                raise PddtValueError("<pddt> %s" % err) from err
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _tz_switch(
-        self,
-        series: pd.Series,
-        targ_tz: object,
-        base_tz: object,
-        ambiguous: object,
-        nonexistent: str,
-        naive: cython.bint,
-    ) -> object:
-        # Already timezone-aware: convert to targ_tz
-        if self.tzinfo is not None:
-            series = self._tz_convert(series, targ_tz)
-        # Localize to base_tz & convert to targ_tz
-        elif isinstance(base_tz, (str, datetime.tzinfo)):
-            series = self._tz_convert(
-                self._tz_localize(series, base_tz, ambiguous, nonexistent), targ_tz
-            )
-        # Invalid base_tz
-        else:
-            raise PddtValueError(
-                "<pddt> Cannot switch timezone without 'base_tz' for naive datetime."
-            )
-        # Return
-        return series.dt.tz_localize(None) if naive else series
-
-    @cython.cfunc
-    @cython.inline(True)
     def _parse_frequency(self, freq: str) -> str:
         frequency = freq.lower()
         if frequency == "m":
@@ -1539,110 +1667,11 @@ class pddt:
 
     @cython.cfunc
     @cython.inline(True)
-    def _round_frequency(self, freq: str, ambiguous: object, nonexistent: str) -> pddt:
-        self._validate_am_non(ambiguous, nonexistent)
-        return self._new(
-            self._series.dt.round(self._parse_frequency(freq), ambiguous, nonexistent)
-        )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _ceil_frequency(self, freq: str, ambiguous: object, nonexistent: str) -> pddt:
-        self._validate_am_non(ambiguous, nonexistent)
-        return self._new(
-            self._series.dt.ceil(self._parse_frequency(freq), ambiguous, nonexistent)
-        )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _floor_frequency(self, freq: str, ambiguous: object, nonexistent: str) -> pddt:
-        self._validate_am_non(ambiguous, nonexistent)
-        return self._new(
-            self._series.dt.floor(self._parse_frequency(freq), ambiguous, nonexistent)
-        )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _delta(
-        self,
-        years: cython.int,
-        months: cython.int,
-        days: cython.int,
-        weeks: cython.int,
-        hours: cython.int,
-        minutes: cython.int,
-        seconds: cython.int,
-        microseconds: cython.int,
-    ) -> pddt:
-        return self._new(
-            self._series
-            + offsets.DateOffset(
-                years=years,
-                months=months,
-                days=days,
-                weeks=weeks,
-                hours=hours,
-                minutes=minutes,
-                seconds=seconds,
-                microseconds=microseconds,
-            )
-        )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _replace(
-        self,
-        year: cython.int,
-        month: cython.int,
-        day: cython.int,
-        hour: cython.int,
-        minute: cython.int,
-        second: cython.int,
-        microsecond: cython.int,
-        tzinfo: object,
-        fold: cython.int,
-    ) -> pddt:
-        return self._new(
-            self._series.apply(
-                lambda dt: cydt.dt_replace(
-                    dt,
-                    year,
-                    month,
-                    day,
-                    hour,
-                    minute,
-                    second,
-                    microsecond,
-                    tzinfo,
-                    fold,
-                )
-            )
-        )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _between(
-        self,
-        other: object,
-        unit: str,
-        inclusive: cython.bint,
-    ) -> object:
-        if isinstance(other, pd.Series):
-            if other.dtype.str.endswith("M8[ns]"):
-                return self._between_series(other, unit, inclusive)
-            if "M8" in other.dtype.str or other.dtype == "object":
-                return self._between_series(
-                    self._parse_datetime(other), unit, inclusive
-                )
-            raise PddtValueError(
-                "<pddt> Can only compare with `pandas.Series` with datetime64 dtype."
-            )
-        elif isinstance(other, pddt):
-            return self._between_pddt(other, unit, inclusive)
-        elif isinstance(other, list):
-            return self._between_series(self._parse_datetime(other), unit, inclusive)
-        else:
-            raise PddtValueError("<pddt> Unsupported data type: %s" % (type(other)))
+    def _validate_am_non(self, ambiguous: object, nonexistent: str):
+        if ambiguous == "NaT":
+            raise PddtValueError("<pddt> `ambiguous == 'NaT'` is not supported.")
+        if nonexistent == "NaT":
+            raise PddtValueError("<pddt> `nonexistent == 'NaT'` is not supported.")
 
     @cython.cfunc
     @cython.inline(True)
@@ -1696,7 +1725,7 @@ class pddt:
         # Return Delta
         return self._np_to_series(delta)
 
-    # Sepcial methods - addition
+    # Sepcial methods - addition --------------------------------------------------------------
     @cython.cfunc
     @cython.inline(True)
     def _to_pddt(self, other: object) -> object:
@@ -1721,7 +1750,7 @@ class pddt:
         except Exception as err:
             raise PddtValueError("<pddt> %s" % err) from err
 
-    # Sepcial methods - substruction
+    # Sepcial methods - substruction ----------------------------------------------------------
     @cython.cfunc
     @cython.inline(True)
     def _adj_other(self, other: object) -> object:
@@ -1755,7 +1784,7 @@ class pddt:
         except Exception as err:
             raise PddtValueError("<pddt> %s" % err) from err
 
-    # Special methods - comparison
+    # Special methods - comparison ------------------------------------------------------------
     def __eq__(self, other: object) -> pd.Series[bool]:
         try:
             return self._series == self._adj_other(other)
@@ -1811,7 +1840,7 @@ class pddt:
         Support comparison between `pddt` and `pandas.Series`."""
         return self._series.equals(self._adj_other(other))
 
-    # Special methods - copy
+    # Special methods - copy ------------------------------------------------------------------
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(check=False)
@@ -1828,7 +1857,7 @@ class pddt:
     def __deepcopy__(self, *args, **kwargs) -> pddt:
         return self._copy()
 
-    # Special methods - represent
+    # Special methods - represent -------------------------------------------------------------
     def __repr__(self) -> str:
         return "<pddt> %s" % self._series.__repr__()
 
