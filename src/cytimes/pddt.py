@@ -1561,6 +1561,9 @@ class pddt:
         # If series is already datetime64[ns], deepcopy directly
         if isinstance(timeobj, pd.Series) and timeobj.dtype.str.endswith("M8[ns]"):
             return timeobj.copy(True)
+        # Is pddt
+        elif isinstance(timeobj, pddt):
+            return timeobj.dt
         # Try parsing
         else:
             return self._parse_datetime(timeobj)

@@ -1835,6 +1835,10 @@ class pydt:
             else:  # combine local date with time
                 return cydt.dt_fr_time(timeobj)
 
+        # Is pydt
+        if isinstance(timeobj, pydt):
+            return timeobj.dt
+
         # Is datetime64
         if cydt.is_dt64(timeobj):
             return cydt.dt64_to_dt(timeobj)
