@@ -1634,14 +1634,14 @@ class pydt:
     @cython.inline(True)
     def _delta(
         self,
-        years: cython.int = 0,
-        months: cython.int = 0,
-        days: cython.int = 0,
-        weeks: cython.int = 0,
-        hours: cython.int = 0,
-        minutes: cython.int = 0,
-        seconds: cython.int = 0,
-        microseconds: cython.int = 0,
+        years: cython.int,
+        months: cython.int,
+        days: cython.int,
+        weeks: cython.int,
+        hours: cython.int,
+        minutes: cython.int,
+        seconds: cython.int,
+        microseconds: cython.int,
     ) -> pydt:
         "(cfunc) Adjustment with delta. Equivalent to `pydt + cytimedelta`."
         return self._add_cytimedelta(
@@ -1693,15 +1693,15 @@ class pydt:
     @cython.inline(True)
     def _replace(
         self,
-        year: cython.int = -1,
-        month: cython.int = -1,
-        day: cython.int = -1,
-        hour: cython.int = -1,
-        minute: cython.int = -1,
-        second: cython.int = -1,
-        microsecond: cython.int = -1,
-        tzinfo: object = -1,
-        fold: cython.int = -1,
+        year: cython.int,
+        month: cython.int,
+        day: cython.int,
+        hour: cython.int,
+        minute: cython.int,
+        second: cython.int,
+        microsecond: cython.int,
+        tzinfo: object,
+        fold: cython.int,
     ) -> pydt:
         "(cfunc) Replace the current datetime. Equivalent to `datetime.replace()`."
         return self._new(
@@ -1758,8 +1758,8 @@ class pydt:
     def _between(
         self,
         other: object,
-        unit: str = "D",
-        inclusive: cython.bint = False,
+        unit: str,
+        inclusive: cython.bint,
     ) -> cython.longlong:
         "(cfunc) Calculate the `ABSOLUTE` delta between two time in the given unit."
         if cydt.is_dt(other):

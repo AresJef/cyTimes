@@ -113,9 +113,11 @@ cdef class pydt:
     cdef pydt _ceil(self, str freq) except *
     cdef pydt _floor(self, str freq) except *
     # Delta adjustment
-    cdef pydt _delta(self, int years=?, int months=?, int days=?, int weeks=?, int hours=?, int minutes=?, int seconds=?, int microseconds=?) except *
-    cdef pydt _replace(self, int year=?, int month=?, int day=?, int hour=?, int minute=?, int second=?, int microsecond=?, object tzinfo=?, int fold=?) noexcept
-    cdef long long _between(self, object obj, str unit=?, bint inclusive=?) except *
+    cdef pydt _delta(self, int years, int months, int days, int weeks, int hours, int minutes, int seconds, int microseconds) except *
+    # Replace adjustment
+    cdef pydt _replace(self, int year, int month, int day, int hour, int minute, int second, int microsecond, object tzinfo, int fold) noexcept
+    # Between calculation
+    cdef long long _between(self, object obj, str unit, bint inclusive) except *
     # Core methods
     cdef pydt _new(self, datetime.datetime) except *
     cdef datetime.datetime _to_datetime(self, object timeobj) except *
