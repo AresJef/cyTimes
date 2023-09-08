@@ -1975,7 +1975,7 @@ class pydt:
         # Week
         if unit == "W":
             delta = delta // cydt.US_DAY
-            if self._compare_datetime(dt, False) > 0:  # find base weekday
+            if self._dt > dt:
                 delta += cydt.get_weekday(dt)
             else:
                 delta += self._weekday()
@@ -2120,101 +2120,35 @@ class pydt:
         return NotImplemented
 
     # Special methods - comparison ------------------------------------------------------------
-    @cython.cfunc
-    @cython.inline(True)
-    def _compare_pydt(self, other: pydt, allow_mixed: cython.bint) -> cython.int:
-        return self._compare_datetime(other._dt, allow_mixed)
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _compare_datetime(
-        self,
-        other: datetime.datetime,
-        allow_mixed: cython.bint,
-    ) -> cython.int:
-        my_tzinfo: object = self._tzinfo()
-        to_tzinfo: object = cydt.get_dt_tzinfo(other)
-        if my_tzinfo is to_tzinfo:
-            return self._compare_datetime_base(other)
-
-        myoff_us: cython.longlong
-        tooff_us: cython.longlong
-        temp_dt: datetime.datetime
-        if my_tzinfo is not None:
-            myoff_us = cydt.delta_to_microseconds(self._dt.utcoffset())
-            if allow_mixed:
-                temp_dt = cydt.dt_replace_fold(self._dt, self._fold() + 1)
-                if myoff_us != cydt.delta_to_microseconds(temp_dt.utcoffset()):
-                    return 2
-        else:
-            myoff_us = 0
-
-        if to_tzinfo is not None:
-            tooff_us = cydt.delta_to_microseconds(other.utcoffset())
-            if allow_mixed:
-                temp_dt = cydt.dt_replace_fold(other, cydt.get_dt_fold(other) + 1)
-                if tooff_us != cydt.delta_to_microseconds(temp_dt.utcoffset()):
-                    return 2
-        else:
-            tooff_us = 0
-
-        if my_tzinfo is None or to_tzinfo is None:
-            if allow_mixed:
-                return 2  # arbitrary non-zero value
-            else:
-                raise PydtValueError("<pydt> Cannot compare naive and aware datetimes.")
-        elif myoff_us == tooff_us:
-            return self._compare_datetime_base(other)
-        else:
-            return self._compare_datetime_delta(other)
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _compare_datetime_base(self, other: datetime.datetime) -> cython.int:
-        mydt_us: cython.longlong = self._microseconds()
-        todt_us: cython.longlong = cydt.dt_to_microseconds(other)
-        if mydt_us == todt_us:
-            return 0
-        elif mydt_us > todt_us:
-            return 1
-        else:
-            return -1
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _compare_datetime_delta(self, other: datetime.datetime) -> cython.int:
-        delta: datetime.timedelta = self._sub_datetime(other)
-        return -1 if cydt.get_delta_days(delta) < 0 else delta and 1 or 0
-
     def __eq__(self, other: object) -> cython.bint:
         if cydt.is_dt(other):
-            return self._compare_datetime(other, True) == 0
+            return self._dt == other
         if isinstance(other, pydt):
-            return self._compare_pydt(other, True) == 0
+            return self._dt == other.dt
         if isinstance(other, str):
-            return self._compare_datetime(self._parse_datetime(other), True) == 0
+            return self._dt == self._parse_datetime(other)
         if cydt.is_date(other):
             return NotImplemented
         return False
 
     def __ne__(self, other: object) -> cython.bint:
         if cydt.is_dt(other):
-            return self._compare_datetime(other, True) != 0
+            return self._dt != other
         if isinstance(other, pydt):
-            return self._compare_pydt(other, True) != 0
+            return self._dt != other.dt
         if isinstance(other, str):
-            return self._compare_datetime(self._parse_datetime(other), True) != 0
+            return self._dt != self._parse_datetime(other)
         if cydt.is_date(other):
             return NotImplemented
         return True
 
     def __gt__(self, other):
         if cydt.is_dt(other):
-            return self._compare_datetime(other, False) > 0
+            return self._dt > other
         if isinstance(other, pydt):
-            return self._compare_pydt(other, False) > 0
+            return self._dt > other.dt
         if isinstance(other, str):
-            return self._compare_datetime(self._parse_datetime(other), False) > 0
+            return self._dt > self._parse_datetime(other)
         if cydt.is_date(other):
             return NotImplemented
         raise PydtValueError(
@@ -2224,11 +2158,11 @@ class pydt:
 
     def __ge__(self, other):
         if cydt.is_dt(other):
-            return self._compare_datetime(other, False) >= 0
+            return self._dt >= other
         if isinstance(other, pydt):
-            return self._compare_pydt(other, False) >= 0
+            return self._dt >= other.dt
         if isinstance(other, str):
-            return self._compare_datetime(self._parse_datetime(other), False) >= 0
+            return self._dt >= self._parse_datetime(other)
         if cydt.is_date(other):
             return NotImplemented
         raise PydtValueError(
@@ -2238,11 +2172,11 @@ class pydt:
 
     def __lt__(self, other):
         if cydt.is_dt(other):
-            return self._compare_datetime(other, False) < 0
+            return self._dt < other
         if isinstance(other, pydt):
-            return self._compare_pydt(other, False) < 0
+            return self._dt < other.dt
         if isinstance(other, str):
-            return self._compare_datetime(self._parse_datetime(other), False) < 0
+            return self._dt < self._parse_datetime(other)
         if cydt.is_date(other):
             return NotImplemented
         raise PydtValueError(
@@ -2252,11 +2186,11 @@ class pydt:
 
     def __le__(self, other):
         if cydt.is_dt(other):
-            return self._compare_datetime(other, False) <= 0
+            return self._dt <= other
         if isinstance(other, pydt):
-            return self._compare_pydt(other, False) <= 0
+            return self._dt <= other.dt
         if isinstance(other, str):
-            return self._compare_datetime(self._parse_datetime(other), False) <= 0
+            return self._dt <= self._parse_datetime(other)
         if cydt.is_date(other):
             return NotImplemented
         raise PydtValueError(

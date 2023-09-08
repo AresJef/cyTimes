@@ -139,8 +139,4 @@ cdef class pydt:
     cdef pydt _sub_cytimedelta(self, cytimedelta other) except *
     cdef pydt _sub_relativedelta(self, object other) except *
     cdef datetime.timedelta _rsub_datetime(self, datetime.datetime other) except *
-    cdef int _compare_pydt(self, pydt other, bint allow_mixed) except *
-    cdef int _compare_datetime(self, datetime.datetime other, bint allow_mixed) except *
-    cdef int _compare_datetime_base(self, datetime.datetime other) except *
-    cdef int _compare_datetime_delta(self, datetime.datetime other) except *
     cdef int _hash(self) noexcept
