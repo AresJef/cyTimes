@@ -1108,7 +1108,7 @@ def dt_to_timestamp(dt: datetime.datetime) -> cython.double:
 @cython.inline(True)
 @cython.exceptval(check=False)
 def dt_fr_dt(dt: datetime.datetime) -> datetime.datetime:
-    "Create `datetime.datetime` from `datetime.datetime` subclass such as `pandas.Timestamp`."
+    "Create `datetime.datetime` from subclass of `datetime.datetime` such as `pandas.Timestamp`."
     return _datetime_new(
         get_year(dt),
         get_month(dt),
@@ -1738,6 +1738,18 @@ def delta_to_microseconds(delta: datetime.timedelta) -> cython.longlong:
     seconds: cython.longlong = get_delta_seconds(delta)
     microseconds: cython.longlong = get_delta_microseconds(delta)
     return days * US_DAY + seconds * US_SECOND + microseconds
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(check=False)
+def delta_fr_delta(delta: datetime.timedelta) -> datetime.timedelta:
+    "Create `datetime.timedelta` from subclass of `datetime.timedelta` such as `pandas.Timedelta`."
+    return _timedelta_new(
+        get_delta_days(delta),
+        get_delta_seconds(delta),
+        get_delta_microseconds(delta),
+    )
 
 
 @cython.cfunc

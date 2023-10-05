@@ -178,6 +178,7 @@ cdef int get_delta_microseconds(datetime.timedelta delta) noexcept
 cdef str delta_to_isoformat(datetime.timedelta delta) noexcept
 cdef double delta_to_seconds(datetime.timedelta delta) noexcept
 cdef long long delta_to_microseconds(datetime.timedelta delta) noexcept
+cdef datetime.timedelta delta_fr_delta(datetime.timedelta delta) noexcept
 cdef datetime.timedelta delta_fr_seconds(double seconds) noexcept
 cdef datetime.timedelta delta_fr_microseconds(long long microseconds) noexcept
 cdef datetime.timedelta delta_add(datetime.timedelta delta, int days=?, long long seconds=?, long long microseconds=?) noexcept
