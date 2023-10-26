@@ -18,8 +18,10 @@ from cython.cimports.cpython.set import PySet_Add as set_add  # type: ignore
 from cython.cimports.cpython.dict import PyDict_Copy as copy_dict  # type: ignore
 from cython.cimports.cpython.dict import PyDict_SetItem as dict_set  # type: ignore
 from cython.cimports.cpython.dict import PyDict_DelItem as dict_del  # type: ignore
+from cython.cimports.cpython.list import PyList_GET_SIZE as list_len  # type: ignore
 from cython.cimports.cpython.list import PyList_Append as list_append  # type: ignore
 from cython.cimports.cpython.list import PyList_GET_SIZE as list_len_noexc  # type: ignore
+from cython.cimports.cpython.unicode import PyUnicode_GET_LENGTH as str_len  # type: ignore
 from cython.cimports import numpy as np  # type: ignore
 from cython.cimports.cpython import datetime  # type: ignore
 from cython.cimports.cytimes import cytime, cymath  # type: ignore
@@ -30,8 +32,9 @@ np.import_array()
 datetime.import_datetime()
 
 # Python imports
-import datetime, time, re
-from typing import Union, Type
+import datetime, time
+from typing import Union
+from re import compile, Pattern
 from dateutil.tz import tz as dateutil_tz
 from dateutil.parser._parser import parserinfo
 from cytimes.cytimedelta import cytimedelta
@@ -58,7 +61,7 @@ def uni_iscomma(char: cython.int) -> cython.bint:
 
 # TimeLex -------------------------------------------------------------------------------------
 # # Fractional seconds are sometimes split by a comma
-SPLIT_DECIMAL_RE: re.Pattern = re.compile("([.,])")
+SPLIT_DECIMAL_RE: Pattern = compile("([.,])")
 
 
 @cython.cclass
@@ -227,7 +230,6 @@ class TimeLex:
 
         return token
 
-    @cython.ccall
     def split(self) -> list[str]:
         """Split the string into list of tokens."""
         return list(self)
@@ -243,6 +245,11 @@ class TimeLex:
         if token is None:
             raise StopIteration
         return token
+
+    def __del__(self):
+        self._string = None
+        self._charstack = None
+        self._tokenstack = None
 
 
 # YMD -----------------------------------------------------------------------------------------
@@ -386,7 +393,7 @@ class YMD:
 
         # Adjustment for large value
         val: cython.int = int(value)
-        if isinstance(value, str) and len(value) > 2 and value.isdigit():
+        if isinstance(value, str) and str_len(value) > 2 and value.isdigit():
             self._century_specified = True
             label = 1  # label as year
         elif val >= 100:
@@ -559,10 +566,16 @@ class YMD:
             self._val2,
         )
 
-    def __len__(self) -> cython.int:
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _length(self) -> cython.int:
         return self._validx + 1
 
-    def __bool__(self) -> cython.bint:
+    def __len__(self) -> int:
+        return self._length()
+
+    def __bool__(self) -> bool:
         return self._validx > -1
 
 
@@ -699,7 +712,7 @@ class Result:
     def __repr__(self) -> str:
         return "<Result (%s)>" % self._represent()
 
-    def __bool__(self) -> cython.bint:
+    def __bool__(self) -> bool:
         return (
             self._year != -1
             or self._month != -1
@@ -1474,6 +1487,16 @@ class ParserInfo:
     def __repr__(self) -> str:
         return "<cytimes.ParserInfo>"
 
+    def __del__(self):
+        self._jump = None
+        self._weekday = None
+        self._month = None
+        self._hms = None
+        self._ampm = None
+        self._utczone = None
+        self._tzoffset = None
+        self._pertain = None
+
 
 DEFAULT_PARSERINFO: ParserInfo = ParserInfo(False, False)
 
@@ -1535,7 +1558,7 @@ class Parser:
         dayfirst: cython.bint = None,
         yearfirst: cython.bint = None,
         ignoretz: cython.bint = False,
-        tzinfos: Union[Type[dateutil_tz.tzfile], dict[str, int], None] = None,
+        tzinfos: Union[type[dateutil_tz.tzfile], dict[str, int], None] = None,
         fuzzy: cython.bint = False,
     ) -> datetime.datetime:
         """Parse a string contains date/time stamp into `datetime.datetime`.
@@ -1606,7 +1629,7 @@ class Parser:
         """
         # Split timestr into tokens
         tokens: list[str] = TimeLex(timestr).split()  # l
-        token_count: cython.int = len(tokens)  # len_l
+        token_count: cython.int = list_len(tokens)  # len_l
         idx: cython.int = 0  # i
 
         # Initialize YMD & Result
@@ -1714,12 +1737,12 @@ class Parser:
         temp_value: cython.int
 
         # Preload token info
-        token_len: cython.int = len(token)  # len_li
+        token_len: cython.int = str_len(token)  # len_li
         next_token: str = tokens[idx + 1] if idx + 1 < token_count else None
 
         # 19990101T23[59]
         if (
-            len(ymd) == 3
+            ymd._length() == 3
             and res._hour == -1
             and (token_len == 2 or token_len == 4)
             and (
@@ -2046,7 +2069,7 @@ class Parser:
             res._hour != -1
             and (res._tzoffset == -1000000 if chech_tzoffset else True)
             and not res._tz_name
-            and len(token) <= 5
+            and str_len(token) <= 5
         ):
             # Could be a UTC timezone
             if self.__info.utczone(token):
@@ -2117,7 +2140,7 @@ class Parser:
             return idx  # wrong guess & exit
 
         # Pre binding
-        token_len: cython.int = len(next_token)
+        token_len: cython.int = str_len(next_token)
         hour_offset: cython.int
         min_offset: cython.int
 
@@ -2349,6 +2372,10 @@ class Parser:
                 return new_dt
         return dt
 
+    # Special methods -----------------------------------------------------------------------
+    def __del__(self):
+        self.__info = None
+
 
 # Parse ---------------------------------------------------------------------------------------
 @cython.ccall
@@ -2358,7 +2385,7 @@ def parse(
     dayfirst: cython.bint = False,
     yearfirst: cython.bint = False,
     ignoretz: cython.bint = False,
-    tzinfos: Union[Type[dateutil_tz.tzfile], dict[str, int], None] = None,
+    tzinfos: Union[type[dateutil_tz.tzfile], dict[str, int], None] = None,
     fuzzy: cython.bint = False,
     parserinfo: Union[ParserInfo, parserinfo, None] = None,
 ) -> datetime.datetime:

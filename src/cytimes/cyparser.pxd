@@ -19,7 +19,6 @@ cdef class TimeLex:
     # Methods
     cdef str _get_nextchar(self) noexcept
     cdef str _get_token(self) except *
-    cpdef list split(self)
 
 # Result
 cdef class Result:
@@ -48,6 +47,8 @@ cdef class YMD:
     cdef bint could_be_day(self, int value) except -1
     cdef append(self, object value, int label=?) except *
     cdef resolve(self, bint dayfirst, bint yearfirst) noexcept
+    # Special method
+    cdef int _length(self) noexcept
 
 # ParserInfo (config)
 cdef class ParserInfo:

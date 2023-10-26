@@ -17,10 +17,12 @@ np.import_umath()
 datetime.import_datetime()
 
 # Python imports
-import datetime, zoneinfo
+import datetime, zoneinfo, numpy as np
 from typing import Union, Literal, Iterator
-import numpy as np, pandas as pd
 from pandas.tseries import offsets
+from pandas.errors import OutOfBoundsDatetime
+from pandas import Series, DataFrame, Timestamp, Timedelta
+from pandas import TimedeltaIndex, DatetimeIndex, to_datetime
 from cytimes.pydt import pydt
 from cytimes import cydatetime as cydt
 
@@ -41,28 +43,28 @@ class pddt:
     _utc: cython.bint
     _format: str
     _exact: cython.bint
-    _series: pd.Series
-    _index: pd.Series
-    _naive: pd.Series
+    _series: Series
+    _index: Series
+    _naive: Series
     # Cache
-    __year: pd.Series
-    __year_1st: pd.Series
-    __year_lst: pd.Series
-    __is_leapyear: pd.Series
-    __days_of_year: pd.Series
-    __quarter: pd.Series
-    __quarter_1st: pd.Series
-    __quarter_lst: pd.Series
-    __month: pd.Series
-    __month_1st: pd.Series
-    __month_lst: pd.Series
-    __days_in_month: pd.Series
-    __day: pd.Series
-    __weekday: pd.Series
+    __year: Series
+    __year_1st: Series
+    __year_lst: Series
+    __is_leapyear: Series
+    __days_of_year: Series
+    __quarter: Series
+    __quarter_1st: Series
+    __quarter_lst: Series
+    __month: Series
+    __month_1st: Series
+    __month_lst: Series
+    __days_in_month: Series
+    __day: Series
+    __weekday: Series
 
     def __init__(
         self,
-        timeobj: Union[pd.Series, list],
+        timeobj: Union[Series, list],
         default: Union[datetime.datetime, datetime.date, None] = None,
         dayfirst: cython.bint = False,
         yearfirst: cython.bint = False,
@@ -74,9 +76,9 @@ class pddt:
         A wrapper for pandas' time Series combined with parsing and delta adjustment.
 
         #### Time object arguments
-        :param timeobj: Accepts `<pd.Series>`/`<list>` that can be converted to 'Series[Timestamp]`.
+        :param timeobj: Accepts `<Series>`/`<list>` that can be converted to 'Series[Timestamp]`.
 
-        #### Datetime parsing arguments (Takes affect when 'timeobj' is not `<pd.Series[datetime64[ns]]>`)
+        #### Datetime parsing arguments (Takes affect when 'timeobj' is not `<Series[datetime64[ns]]>`)
         :param default: `<datetime>` The default date, which will be used to fillin elements that can't be parse into datetime.
             - If set to `None` (default), `<PddtValueError>` will be raise when parsing failed.
 
@@ -114,13 +116,13 @@ class pddt:
         :raises `PddtValueError`: If any error occurs.
 
         #### Addition
-        - Left/Right addition with `pandas.Series[Timedelta]`, `pd.Timedelta`, `pd.tseries.Offset`, etc.
+        - Left/Right addition with `pandas.Series[Timedelta]`, `Timedelta`, `pd.tseries.Offset`, etc.
           returns `pddt`. Equivalent to `pandas.Series[Timestamp] + delta`.
 
         #### Subtraction
         - Left/Right substraction with `pddt`, `pandas.Series[Timestamp]`, `list`, etc.
           returns `pandas.Series[Timedelta]`. Equivalent to `pandas.Series[Timestamp] - pandas.Series[Timestamp]`.
-        - Left substraction with `pandas.Series[Timedelta]`, `pd.Timedelta`, `pd.tseres.Offset`, etc.
+        - Left substraction with `pandas.Series[Timedelta]`, `Timedelta`, `pd.tseres.Offset`, etc.
           returns `pddt`. Equivalent to `pandas.Series[Timestamp] - delta`.
 
         #### Comparison
@@ -162,47 +164,47 @@ class pddt:
 
     # Access ----------------------------------------------------------------------------------
     @property
-    def dt(self) -> pd.Series[pd.Timestamp]:
+    def dt(self) -> Series[Timestamp]:
         "Access datetime as `Series[Timestamp]`."
         return self._series.copy(True)
 
     @property
-    def dtiso(self) -> pd.Series[str]:
+    def dtiso(self) -> Series[str]:
         "Access datetime ISO format as `Series[str]`."
         return self._series.dt.strftime("%Y-%m-%dT%H:%M:%S.%f")
 
     @property
-    def dtisotz(self) -> pd.Series[str]:
+    def dtisotz(self) -> Series[str]:
         "Access datetime ISO format with timzone as `Series[str]`."
         return self._series.dt.strftime("%Y-%m-%dT%H:%M:%S.%f%Z")
 
     @property
-    def date(self) -> pd.Series[datetime.date]:
+    def date(self) -> Series[datetime.date]:
         "Access date as `Series[datetime.date]`."
         return self._series.dt.date
 
     @property
-    def dateiso(self) -> pd.Series[str]:
+    def dateiso(self) -> Series[str]:
         "Access date ISO format as `Series[str]`."
         return self._series.dt.strftime("%Y-%m-%d")
 
     @property
-    def time(self) -> pd.Series[datetime.time]:
+    def time(self) -> Series[datetime.time]:
         "Access time as `Series[datetime.time]`."
         return self._series.dt.time
 
     @property
-    def timeiso(self) -> pd.Series[str]:
+    def timeiso(self) -> Series[str]:
         "Access time ISO format as `Series[str]`."
         return self._series.dt.strftime("%H:%M:%S.%f")
 
     @property
-    def timetz(self) -> pd.Series[datetime.time]:
+    def timetz(self) -> Series[datetime.time]:
         "Access time with timezone as `Series[datetime.time]`."
         return self._series.dt.timetz
 
     @property
-    def timeisotz(self) -> pd.Series[str]:
+    def timeisotz(self) -> Series[str]:
         "Access time ISO format with timezone as `Series[str]`."
         return self._series.dt.strftime("%H:%M:%S.%f%Z")
 
@@ -219,17 +221,17 @@ class pddt:
         return self._series.values
 
     @property
-    def ordinal(self) -> pd.Series[int]:
+    def ordinal(self) -> Series[int]:
         "Access date in ordinal as `Series[int]`."
         return cydt.seriesdt64_to_ordinal(self._get_naive())
 
     @property
-    def seconds(self) -> pd.Series[float]:
+    def seconds(self) -> Series[float]:
         "Access datetime in total seconds (naive) after EPOCH as `Series[float]`."
         return cydt.seriesdt64_to_seconds(self._get_naive())
 
     @property
-    def seconds_utc(self) -> pd.Series[float]:
+    def seconds_utc(self) -> Series[float]:
         """Access datetime in total seconds (naive) after EPOCH as `Series[float]`.
         - If timezone-aware, return total seconds in UTC.
         - If timezone-naive, requivalent to `seconds`.
@@ -241,12 +243,12 @@ class pddt:
         return cydt.seriesdt64_to_seconds(self._series)
 
     @property
-    def microseconds(self) -> pd.Series[int]:
+    def microseconds(self) -> Series[int]:
         "Access datetime in total microseconds (naive) after EPOCH as `Series[int]`."
         return cydt.seriesdt64_to_microseconds(self._get_naive())
 
     @property
-    def microseconds_utc(self) -> pd.Series[int]:
+    def microseconds_utc(self) -> Series[int]:
         """Access datetime in total microseconds (naive) after EPOCH as `Series[int]`.
         - If timezone-aware, return total microseconds in UTC.
         - If timezone-naive, requivalent to `microseconds`.
@@ -258,7 +260,7 @@ class pddt:
         return cydt.seriesdt64_to_microseconds(self._series)
 
     @property
-    def timestamp(self) -> pd.Series[float]:
+    def timestamp(self) -> Series[float]:
         "Access datetime in timestamp as `Series[float]`."
         return cydt.seriesdt64_to_seconds(self._series)
 
@@ -273,7 +275,7 @@ class pddt:
         return self.__year
 
     @property
-    def year(self) -> pd.Series[int]:
+    def year(self) -> Series[int]:
         "Access year as `Series[int]`."
         return self._year()
 
@@ -287,7 +289,7 @@ class pddt:
         return self.__month
 
     @property
-    def month(self) -> pd.Series[int]:
+    def month(self) -> Series[int]:
         "Access month as `Series[int]`."
         return self._month()
 
@@ -301,27 +303,27 @@ class pddt:
         return self.__day
 
     @property
-    def day(self) -> pd.Series[int]:
+    def day(self) -> Series[int]:
         "Access day as `Series[int]`."
         return self._day()
 
     @property
-    def hour(self) -> pd.Series[int]:
+    def hour(self) -> Series[int]:
         "Access hour as `Series[int]`."
         return self._series.dt.hour
 
     @property
-    def minute(self) -> pd.Series[int]:
+    def minute(self) -> Series[int]:
         "Access minute as `Series[int]`."
         return self._series.dt.minute
 
     @property
-    def second(self) -> pd.Series[int]:
+    def second(self) -> Series[int]:
         "Access second as `Series[int]`."
         return self._series.dt.second
 
     @property
-    def microsecond(self) -> pd.Series[int]:
+    def microsecond(self) -> Series[int]:
         "Access microsecond as `Series[int]`."
         return self._series.dt.microsecond
 
@@ -341,17 +343,17 @@ class pddt:
         return self.__is_leapyear
 
     @property
-    def is_leapyear(self) -> pd.Series[bool]:
+    def is_leapyear(self) -> Series[bool]:
         "Whether is a leap year as `Series[bool]`."
         return self._is_leapyear()
 
     @property
-    def days_in_year(self) -> pd.Series[int]:
+    def days_in_year(self) -> Series[int]:
         "Number of days in the year as `Series[int]`."
         return self._np_to_series(self._is_leapyear().values + 365)
 
     @property
-    def days_bf_year(self) -> pd.Series[int]:
+    def days_bf_year(self) -> Series[int]:
         "Number of days before January 1st of the year as `Series[int]`."
         return self._np_to_series(self.ordinal.values - self._days_of_year().values)
 
@@ -365,7 +367,7 @@ class pddt:
         return self.__days_of_year
 
     @property
-    def days_of_year(self) -> pd.Series[int]:
+    def days_of_year(self) -> Series[int]:
         "Number of days into the year as `Series[int]`."
         return self._days_of_year()
 
@@ -379,19 +381,19 @@ class pddt:
         return self.__quarter
 
     @property
-    def quarter(self) -> pd.Series[int]:
+    def quarter(self) -> Series[int]:
         "The quarter of the date as `Series[int]`."
         return self._quarter()
 
     @property
-    def days_in_quarter(self) -> pd.Series[int]:
+    def days_in_quarter(self) -> Series[int]:
         "Number of days in the quarter as `Series[int]`."
         quarter = self._quarter().values
         days = DAYS_BR_QUARTER[quarter] - DAYS_BR_QUARTER[quarter - 1]
         return self._np_to_series(days + self._is_leapyear().values)
 
     @property
-    def days_bf_quarter(self) -> pd.Series[int]:
+    def days_bf_quarter(self) -> Series[int]:
         "Number of days in the year preceding first day of the quarter as `Series[int]`."
         quarter = self._quarter().values
         days = DAYS_BR_QUARTER[quarter - 1]
@@ -399,7 +401,7 @@ class pddt:
         return self._np_to_series(days + leap)
 
     @property
-    def days_of_quarter(self) -> pd.Series[int]:
+    def days_of_quarter(self) -> Series[int]:
         "Number of days into the quarter as `Series[int]`."
         days_y = self._days_of_year().values
         quarter = self._quarter().values
@@ -417,12 +419,12 @@ class pddt:
         return self.__days_in_month
 
     @property
-    def days_in_month(self) -> pd.Series[int]:
+    def days_in_month(self) -> Series[int]:
         "Number of days in the month as `Series[int]`."
         return self._days_in_month()
 
     @property
-    def days_bf_month(self) -> pd.Series[int]:
+    def days_bf_month(self) -> Series[int]:
         "Number of days in the year preceding first day of the month as `Series[int]`."
         return self._np_to_series(self._days_of_year().values - self._day().values)
 
@@ -436,27 +438,27 @@ class pddt:
         return self.__weekday
 
     @property
-    def weekday(self) -> pd.Series[int]:
+    def weekday(self) -> Series[int]:
         "The weekday, where Monday == 0 ... Sunday == 6, as `Series[int]`."
         return self._weekday()
 
     @property
-    def isoweekday(self) -> pd.Series[int]:
+    def isoweekday(self) -> Series[int]:
         "The ISO weekday, where Monday == 1 ... Sunday == 7, as `Series[int]`."
         return self._np_to_series(self._weekday().values + 1)
 
     @property
-    def isoweek(self) -> pd.Series[int]:
+    def isoweek(self) -> Series[int]:
         "The ISO calendar week number as `Series[int]`."
         return self._series.dt.isocalendar().week
 
     @property
-    def isoyear(self) -> pd.Series[int]:
+    def isoyear(self) -> Series[int]:
         "The ISO calendar year as `Series[int]`."
         return self._series.dt.isocalendar().year
 
     @property
-    def isocalendar(self) -> pd.DataFrame[int]:
+    def isocalendar(self) -> DataFrame[int]:
         "Access ISO calendar as `DataFrame[int]`."
         return self._series.dt.isocalendar()
 
@@ -488,48 +490,48 @@ class pddt:
     @property
     def monday(self) -> pddt:
         "Monday of the current week."
-        return self._new(self._series - pd.TimedeltaIndex(self._weekday(), unit="D"))
+        return self._new(self._series - TimedeltaIndex(self._weekday(), unit="D"))
 
     @property
     def tuesday(self) -> pddt:
         "Tuesday of the current week."
         return self._new(
-            self._series - pd.TimedeltaIndex(self._weekday() - 1, unit="D")
+            self._series - TimedeltaIndex(self._weekday() - 1, unit="D")
         )
 
     @property
     def wednesday(self) -> pddt:
         "Wednesday of the current week."
         return self._new(
-            self._series - pd.TimedeltaIndex(self._weekday() - 2, unit="D")
+            self._series - TimedeltaIndex(self._weekday() - 2, unit="D")
         )
 
     @property
     def thursday(self) -> pddt:
         "Thursday of the current week."
         return self._new(
-            self._series - pd.TimedeltaIndex(self._weekday() - 3, unit="D")
+            self._series - TimedeltaIndex(self._weekday() - 3, unit="D")
         )
 
     @property
     def friday(self) -> pddt:
         "Friday of the current week."
         return self._new(
-            self._series - pd.TimedeltaIndex(self._weekday() - 4, unit="D")
+            self._series - TimedeltaIndex(self._weekday() - 4, unit="D")
         )
 
     @property
     def saturday(self) -> pddt:
         "Saturday of the current week."
         return self._new(
-            self._series - pd.TimedeltaIndex(self._weekday() - 5, unit="D")
+            self._series - TimedeltaIndex(self._weekday() - 5, unit="D")
         )
 
     @property
     def sunday(self) -> pddt:
         "Sunday of the current week."
         return self._new(
-            self._series - pd.TimedeltaIndex(self._weekday() - 6, unit="D")
+            self._series - TimedeltaIndex(self._weekday() - 6, unit="D")
         )
 
     @cython.cfunc
@@ -539,7 +541,7 @@ class pddt:
         if weekday is None:
             return self
         else:
-            delta = pd.TimedeltaIndex(
+            delta = TimedeltaIndex(
                 self._parse_weekday(weekday) - self._weekday().values,
                 unit="D",
             )
@@ -556,9 +558,9 @@ class pddt:
     def _to_week(self, offset: cython.int, weekday: object) -> pddt:
         "(cfunc) Return specific weekday of the week (+/-) offset."
         if weekday is None:
-            return self._new(self._series + pd.Timedelta(days=offset * 7))
+            return self._new(self._series + Timedelta(days=offset * 7))
         else:
-            delta = pd.TimedeltaIndex(
+            delta = TimedeltaIndex(
                 offset * 7 + self._parse_weekday(weekday) - self._weekday().values,
                 unit="D",
             )
@@ -586,12 +588,12 @@ class pddt:
         """
         return self._to_week(offset, weekday)
 
-    def is_weekday(self, weekday: Union[int, str]) -> pd.Series[bool]:
+    def is_weekday(self, weekday: Union[int, str]) -> Series[bool]:
         """Whether the current datetime is a specific weekday as `Seires[bool]`.
         :param weekday: `<int>` 0 as Monday to 6 as Sunday / `<str>` 'mon', 'tuesday', etc.
         """
         if weekday is None:
-            return pd.Series(True, index=self._get_index())
+            return Series(True, index=self._get_index())
         else:
             return self._weekday() == self._parse_weekday(weekday)
 
@@ -609,7 +611,7 @@ class pddt:
         "First day of the current month."
         return self._new(self._month_1st())
 
-    def is_month_1st(self) -> pd.Series[bool]:
+    def is_month_1st(self) -> Series[bool]:
         "Whether the current datetime is the first day of the month as `Seires[bool]`."
         return self._series.dt.is_month_start
 
@@ -626,7 +628,7 @@ class pddt:
         "Last day of the current month."
         return self._new(self._month_lst())
 
-    def is_month_lst(self) -> pd.Series[bool]:
+    def is_month_lst(self) -> Series[bool]:
         "Whether the current datetime is the last day of the month as `Seires[bool]`."
         return self._series.dt.is_month_end
 
@@ -641,7 +643,7 @@ class pddt:
         elif 1 < day <= 28:
             return self._new(self._month_1st() + offsets.Day(day - 1))
         elif 29 <= day < 31:
-            delta = pd.TimedeltaIndex(
+            delta = TimedeltaIndex(
                 np.minimum(self._days_in_month().values, day) - 1, unit="D"
             )
             return self._new(self._month_1st() + delta)
@@ -669,7 +671,7 @@ class pddt:
             )
         elif 29 <= day < 31:
             base = self._month_1st() + offsets.DateOffset(months=offset)
-            delta = pd.TimedeltaIndex(
+            delta = TimedeltaIndex(
                 np.minimum(base.dt.days_in_month.values, day) - 1,
                 unit="D",
             )
@@ -703,12 +705,12 @@ class pddt:
         """
         return self._to_month(offset, day)
 
-    def is_month(self, month: Union[int, str]) -> pd.Series[bool]:
+    def is_month(self, month: Union[int, str]) -> Series[bool]:
         """Whether the current datetime is a specific month as `Seires[bool]`.
         :param month: `<int>` 1 as January to 12 as December / `<str>` 'jan', 'feb', etc.
         """
         if month is None:
-            return pd.Series(True, index=self._get_index())
+            return Series(True, index=self._get_index())
         else:
             return self._month() == self._parse_month(month)
 
@@ -728,7 +730,7 @@ class pddt:
         "First day of the current quarter."
         return self._new(self._quarter_1st())
 
-    def is_quarter_1st(self) -> pd.Series[bool]:
+    def is_quarter_1st(self) -> Series[bool]:
         "Whether the current datetime is the first day of the quarter as `Seires[bool]`."
         return self._series.dt.is_quarter_start
 
@@ -745,7 +747,7 @@ class pddt:
         "Last day of the current quarter."
         return self._new(self._quarter_lst())
 
-    def is_quarter_lst(self) -> pd.Series[bool]:
+    def is_quarter_lst(self) -> Series[bool]:
         "Whether the current datetime is the last day of the quarter as `Seires[bool]`."
         return self._series.dt.is_quarter_end
 
@@ -762,7 +764,7 @@ class pddt:
         # Convert
         if day < 1:
             base = self._quarter_lst() - offsets.QuarterBegin(1, startingMonth=month)
-            delta = pd.TimedeltaIndex(
+            delta = TimedeltaIndex(
                 np.minimum(base.dt.days_in_month.values, self._day().values) - 1,
                 unit="D",
             )
@@ -779,7 +781,7 @@ class pddt:
             )
         elif 29 <= day < 31:
             base = self._quarter_lst() - offsets.QuarterBegin(1, startingMonth=month)
-            delta = pd.TimedeltaIndex(
+            delta = TimedeltaIndex(
                 np.minimum(base.dt.days_in_month.values, day) - 1,
                 unit="D",
             )
@@ -819,7 +821,7 @@ class pddt:
             base = self._quarter_lst() + offsets.DateOffset(
                 months=offset * 3 - 3 + month
             )
-            delta = pd.TimedeltaIndex(
+            delta = TimedeltaIndex(
                 np.minimum(base.dt.days_in_month.values, self._day().values)
                 - base.dt.day.values,
                 unit="D",
@@ -841,7 +843,7 @@ class pddt:
             base = self._quarter_lst() + offsets.DateOffset(
                 months=offset * 3 - 3 + month
             )
-            delta = pd.TimedeltaIndex(
+            delta = TimedeltaIndex(
                 np.minimum(base.dt.days_in_month.values, day) - base.dt.day.values,
                 unit="D",
             )
@@ -878,7 +880,7 @@ class pddt:
         """
         return self._to_quarter(offset, month, day)
 
-    def is_quarter(self, quarter: int) -> pd.Series[bool]:
+    def is_quarter(self, quarter: int) -> Series[bool]:
         """Whether the current datetime is a specific quarter as `Seires[bool]`.
         :param quarter: `<int>` 1 as 1st quarter to 4 as 4th quarter.
         """
@@ -898,7 +900,7 @@ class pddt:
         "First day of the current year."
         return self._new(self._year_1st())
 
-    def is_year_1st(self) -> pd.Series[bool]:
+    def is_year_1st(self) -> Series[bool]:
         "Whether the current datetime is the first day of the year as `Seires[bool]`."
         return self._series.dt.is_year_start
 
@@ -915,7 +917,7 @@ class pddt:
         "Last day of the current year."
         return self._new(self._year_lst())
 
-    def is_year_lst(self) -> pd.Series[bool]:
+    def is_year_lst(self) -> Series[bool]:
         "Whether the current datetime is the last day of the year as `Seires[bool]`."
         return self._series.dt.is_year_end
 
@@ -931,7 +933,7 @@ class pddt:
         # Convert
         if day < 1:
             base = self._year_lst() - offsets.YearBegin(1, month=month)
-            delta = pd.TimedeltaIndex(
+            delta = TimedeltaIndex(
                 np.minimum(base.dt.days_in_month.values, self._day().values) - 1,
                 unit="D",
             )
@@ -946,7 +948,7 @@ class pddt:
             )
         elif 29 <= day < 31:
             base = self._year_lst() - offsets.YearBegin(1, month=month)
-            delta = pd.TimedeltaIndex(
+            delta = TimedeltaIndex(
                 np.minimum(base.dt.days_in_month.values, day) - 1,
                 unit="D",
             )
@@ -983,7 +985,7 @@ class pddt:
             base = self._year_lst() + offsets.DateOffset(
                 years=offset, months=month - 12
             )
-            delta = pd.TimedeltaIndex(
+            delta = TimedeltaIndex(
                 np.minimum(base.dt.days_in_month.values, self._day().values)
                 - base.dt.day.values,
                 unit="D",
@@ -1005,7 +1007,7 @@ class pddt:
             base = self._year_lst() + offsets.DateOffset(
                 years=offset, months=month - 12
             )
-            delta = pd.TimedeltaIndex(
+            delta = TimedeltaIndex(
                 np.minimum(base.dt.days_in_month.values, day) - base.dt.day.values,
                 unit="D",
             )
@@ -1050,7 +1052,7 @@ class pddt:
         """
         return self._to_year(offset, month, day)
 
-    def is_year(self, year: int) -> pd.Series[bool]:
+    def is_year(self, year: int) -> Series[bool]:
         """Whether the current datetime is a specific year as `Seires[bool]`.
         :param year: `<int>` year.
         """
@@ -1066,7 +1068,7 @@ class pddt:
     @cython.inline(True)
     def _tz_localize(
         self,
-        series: pd.Series,
+        series: Series,
         tz: object,
         ambiguous: object,
         nonexistent: str,
@@ -1086,7 +1088,7 @@ class pddt:
     def tz_localize(
         self,
         tz: Union[datetime.tzinfo, str, None],
-        ambiguous: Union[bool, pd.Series[bool], Literal["raise", "infer"]] = "raise",
+        ambiguous: Union[bool, Series[bool], Literal["raise", "infer"]] = "raise",
         nonexistent: Literal["shift_forward", "shift_backward", "raise"] = "raise",
     ) -> pddt:
         """Localize to a specific timezone. Equivalent to `Series.dt.tz_localize`.
@@ -1123,7 +1125,7 @@ class pddt:
 
     @cython.cfunc
     @cython.inline(True)
-    def _tz_convert(self, series: pd.Series, tz: object) -> object:
+    def _tz_convert(self, series: Series, tz: object) -> object:
         """(cfunc) Convert to a specific timezone. Equivalent to `Series.dt.tz_convert`.
         - Notice: This method returns `pandas.Series` instead of `pddt`.
         """
@@ -1151,7 +1153,7 @@ class pddt:
     @cython.inline(True)
     def _tz_switch(
         self,
-        series: pd.Series,
+        series: Series,
         targ_tz: object,
         base_tz: object,
         ambiguous: object,
@@ -1181,7 +1183,7 @@ class pddt:
         self,
         targ_tz: Union[datetime.tzinfo, str, None],
         base_tz: Union[datetime.tzinfo, str] = None,
-        ambiguous: Union[bool, pd.Series[bool], Literal["raise", "infer"]] = "raise",
+        ambiguous: Union[bool, Series[bool], Literal["raise", "infer"]] = "raise",
         nonexistent: Literal["shift_forward", "shift_backward", "raise"] = "raise",
         naive: bool = False,
     ) -> pddt:
@@ -1248,7 +1250,7 @@ class pddt:
     def round(
         self,
         freq: Literal["D", "h", "m", "s", "ms", "us", "ns"],
-        ambiguous: Union[bool, pd.Series[bool], Literal["raise", "infer"]] = "raise",
+        ambiguous: Union[bool, Series[bool], Literal["raise", "infer"]] = "raise",
         nonexistent: Literal["shift_forward", "shift_backward", "raise"] = "raise",
     ) -> pddt:
         """Perform round operation to specified freqency.
@@ -1292,7 +1294,7 @@ class pddt:
     def ceil(
         self,
         freq: Literal["D", "h", "m", "s", "ms", "us", "ns"],
-        ambiguous: Union[bool, pd.Series[bool], Literal["raise", "infer"]] = "raise",
+        ambiguous: Union[bool, Series[bool], Literal["raise", "infer"]] = "raise",
         nonexistent: Literal["shift_forward", "shift_backward", "raise"] = "raise",
     ) -> pddt:
         """Perform ceil operation to specified freqency.
@@ -1336,7 +1338,7 @@ class pddt:
     def floor(
         self,
         freq: Literal["D", "h", "m", "s", "ms", "us", "ns"],
-        ambiguous: Union[bool, pd.Series[bool], Literal["raise", "infer"]] = "raise",
+        ambiguous: Union[bool, Series[bool], Literal["raise", "infer"]] = "raise",
         nonexistent: Literal["shift_forward", "shift_backward", "raise"] = "raise",
     ) -> pddt:
         """Perform floor operation to specified freqency.
@@ -1499,7 +1501,7 @@ class pddt:
     @cython.cfunc
     @cython.inline(True)
     def _between(self, other: object, unit: str, inclusive: cython.bint) -> object:
-        if isinstance(other, pd.Series):
+        if isinstance(other, Series):
             if other.dtype.str.endswith("M8[ns]"):
                 return self._between_series(other, unit, inclusive)
             if "M8" in other.dtype.str or other.dtype == "object":
@@ -1518,10 +1520,10 @@ class pddt:
 
     def between(
         self,
-        other: Union[pd.Series, pddt, list],
+        other: Union[Series, pddt, list],
         unit: Literal["Y", "M", "W", "D", "h", "m", "s", "ms", "us"] = "D",
         inclusive: bool = False,
-    ) -> pd.Series[int]:
+    ) -> Series[int]:
         """Calculate the `ABSOLUTE` delta between two time in the given unit.
 
         :param other: `<Series>`/`<pddt>`/`list` The other time to compare with.
@@ -1529,7 +1531,7 @@ class pddt:
         :param inclusive: `<bool>` Setting to `True` will add 1 to the final result.
             Take 'Y' (year) as an example. If `True`, 'Y' (year) delta between 2023-01-01 and
             2024-01-01 will be 2. If `False`, delta between 2023-01-01 and 2024-01-01 will be 1.
-        :return: `<pd.Sereis[int]>` The `ABSOLUTE` delta between two time.
+        :return: `<Sereis[int]>` The `ABSOLUTE` delta between two time.
         """
         try:
             return self._between(other, unit, inclusive)
@@ -1559,7 +1561,7 @@ class pddt:
     @cython.inline(True)
     def _to_datetime(self, timeobj: object) -> object:
         # If series is already datetime64[ns], deepcopy directly
-        if isinstance(timeobj, pd.Series) and timeobj.dtype.str.endswith("M8[ns]"):
+        if isinstance(timeobj, Series) and timeobj.dtype.str.endswith("M8[ns]"):
             return timeobj.copy(True)
         # Is pddt
         elif isinstance(timeobj, pddt):
@@ -1572,19 +1574,24 @@ class pddt:
     @cython.inline(True)
     def _parse_datetime(self, timeobj: object) -> object:
         # Try parsing
-        res = pd.to_datetime(
-            timeobj,
-            errors="raise" if self._default is None else "coerce",
-            dayfirst=self._dayfirst,
-            yearfirst=self._yearfirst,
-            utc=self._utc,
-            format=self._format,
-            exact=self._exact,
-            unit="ns",
-            origin="unix",
-            cache=True,
-        )
-        if isinstance(res, pd.Series):
+        try:
+            res = to_datetime(
+                timeobj,
+                errors="raise" if self._default is None else "coerce",
+                dayfirst=self._dayfirst,
+                yearfirst=self._yearfirst,
+                utc=self._utc,
+                format=self._format,
+                exact=self._exact,
+                unit="ns",
+                origin="unix",
+                cache=True,
+            )
+        except OutOfBoundsDatetime as err:
+            raise PddtOutOfBoundsDatetime(
+                "<pddt> Cannot covert `Series` to 'datetime64[ns]: %s" % err
+            ) from err
+        if isinstance(res, Series):
             try:
                 res = cydt.seriesdt64_adjust_to_ns(res)
             except Exception as err:
@@ -1593,14 +1600,14 @@ class pddt:
                     % (res, err)
                 ) from err
             return self._fill_default(res)
-        elif isinstance(res, pd.DatetimeIndex):
-            return self._fill_default(pd.Series(res))
+        elif isinstance(res, DatetimeIndex):
+            return self._fill_default(Series(res))
         else:
             raise PddtValueError("<pddt> Unsupported data type: %s" % type(timeobj))
 
     @cython.cfunc
     @cython.inline(True)
-    def _fill_default(self, series: pd.Series) -> object:
+    def _fill_default(self, series: Series) -> object:
         if self._default is not None and series.hasnans:
             return series.fillna(cydt.dt_replace_tzinfo(self._default, series.dt.tz))
         else:
@@ -1609,7 +1616,7 @@ class pddt:
     @cython.cfunc
     @cython.inline(True)
     def _np_to_series(self, array: np.ndarray) -> object:
-        return pd.Series(array, index=self._get_index())
+        return Series(array, index=self._get_index())
 
     @cython.cfunc
     @cython.inline(True)
@@ -1685,7 +1692,7 @@ class pddt:
     @cython.inline(True)
     def _between_series(
         self,
-        series: pd.Series,
+        series: Series,
         unit: str,
         inclusive: cython.bint,
     ) -> object:
@@ -1718,7 +1725,7 @@ class pddt:
         # Adjustment for week
         if unit == "W":
             base: np.ndarray = np.minimum(self._series.values, series.values)
-            base = pd.DatetimeIndex(base).weekday.values
+            base = DatetimeIndex(base).weekday.values
             delta = (delta + base) // 7
 
         # Adjustment for inclusive
@@ -1732,12 +1739,12 @@ class pddt:
     @cython.cfunc
     @cython.inline(True)
     def _to_pddt(self, other: object) -> object:
-        if isinstance(other, pd.Series) and "M8" in other.dtype.str:
+        if isinstance(other, Series) and "M8" in other.dtype.str:
             return self._new(other)
         else:
             return other
 
-    def __add__(self, other: object) -> Union[pddt, pd.Series]:
+    def __add__(self, other: object) -> Union[pddt, Series]:
         try:
             return self._to_pddt(self._series + other)
         except PddtValueError:
@@ -1745,7 +1752,7 @@ class pddt:
         except Exception as err:
             raise PddtValueError("<pddt> %s" % err) from err
 
-    def __radd__(self, other: object) -> Union[pddt, pd.Series]:
+    def __radd__(self, other: object) -> Union[pddt, Series]:
         try:
             return self._to_pddt(other + self._series)
         except PddtValueError:
@@ -1757,7 +1764,7 @@ class pddt:
     @cython.cfunc
     @cython.inline(True)
     def _adj_other(self, other: object) -> object:
-        if isinstance(other, pd.Series):
+        if isinstance(other, Series):
             if other.dtype.str.endswith("M8[ns]"):
                 return other
             elif "M8" in other.dtype.str or other.dtype == "object":
@@ -1771,7 +1778,7 @@ class pddt:
         else:
             return other
 
-    def __sub__(self, other: object) -> Union[pddt, pd.Series]:
+    def __sub__(self, other: object) -> Union[pddt, Series]:
         try:
             return self._to_pddt(self._series - self._adj_other(other))
         except PddtValueError:
@@ -1779,7 +1786,7 @@ class pddt:
         except Exception as err:
             raise PddtValueError("<pddt> %s" % err) from err
 
-    def __rsub__(self, other: object) -> Union[pddt, pd.Series]:
+    def __rsub__(self, other: object) -> Union[pddt, Series]:
         try:
             return self._to_pddt(self._adj_other(other) - self._series)
         except PddtValueError:
@@ -1788,7 +1795,7 @@ class pddt:
             raise PddtValueError("<pddt> %s" % err) from err
 
     # Special methods - comparison ------------------------------------------------------------
-    def __eq__(self, other: object) -> pd.Series[bool]:
+    def __eq__(self, other: object) -> Series[bool]:
         try:
             return self._series == self._adj_other(other)
         except PddtValueError:
@@ -1796,7 +1803,7 @@ class pddt:
         except Exception as err:
             raise PddtValueError("<pddt> %s" % err) from err
 
-    def __ne__(self, other: object) -> pd.Series[bool]:
+    def __ne__(self, other: object) -> Series[bool]:
         try:
             return self._series != self._adj_other(other)
         except PddtValueError:
@@ -1804,7 +1811,7 @@ class pddt:
         except Exception as err:
             raise PddtValueError("<pddt> %s" % err) from err
 
-    def __gt__(self, other: object) -> pd.Series[bool]:
+    def __gt__(self, other: object) -> Series[bool]:
         try:
             return self._series > self._adj_other(other)
         except PddtValueError:
@@ -1812,7 +1819,7 @@ class pddt:
         except Exception as err:
             raise PddtValueError("<pddt> %s" % err) from err
 
-    def __ge__(self, other: object) -> pd.Series[bool]:
+    def __ge__(self, other: object) -> Series[bool]:
         try:
             return self._series >= self._adj_other(other)
         except PddtValueError:
@@ -1820,7 +1827,7 @@ class pddt:
         except Exception as err:
             raise PddtValueError("<pddt> %s" % err) from err
 
-    def __lt__(self, other: object) -> pd.Series[bool]:
+    def __lt__(self, other: object) -> Series[bool]:
         try:
             return self._series < self._adj_other(other)
         except PddtValueError:
@@ -1828,7 +1835,7 @@ class pddt:
         except Exception as err:
             raise PddtValueError("<pddt> %s" % err) from err
 
-    def __le__(self, other: object) -> pd.Series[bool]:
+    def __le__(self, other: object) -> Series[bool]:
         try:
             return self._series <= self._adj_other(other)
         except PddtValueError:
@@ -1836,7 +1843,7 @@ class pddt:
         except Exception as err:
             raise PddtValueError("<pddt> %s" % err) from err
 
-    def equals(self, other: Union[pd.Series, list]) -> bool:
+    def equals(self, other: Union[Series, list]) -> bool:
         """Test whether two objects contain the same elements.
         (Equivalent to `pandas.Series.equal` method).
 
@@ -1874,16 +1881,43 @@ class pddt:
         "True if the key is in the info axis"
         return self._series.__contains__(key)
 
-    def __getitem__(self, key) -> pd.Timestamp:
+    def __getitem__(self, key) -> Timestamp:
         return self._series.__getitem__(key)
 
-    def __iter__(self) -> Iterator[pd.Timestamp]:
+    def __iter__(self) -> Iterator[Timestamp]:
         return self._series.__iter__()
 
     def __array__(self) -> np.ndarray:
         return self._series.__array__()
 
+    def __del__(self):
+        self._default = None
+        self._format = None
+        self._series = None
+        self._index = None
+        self._naive = None
+        self.__year = None
+        self.__year_1st = None
+        self.__year_lst = None
+        self.__is_leapyear = None
+        self.__days_of_year = None
+        self.__quarter = None
+        self.__quarter_1st = None
+        self.__quarter_lst = None
+        self.__month = None
+        self.__month_1st = None
+        self.__month_lst = None
+        self.__days_in_month = None
+        self.__day = None
+        self.__weekday = None
+
 
 # Exceptions ----------------------------------------------------------------------------------
 class PddtValueError(ValueError):
-    """The one and only exception this module will raise."""
+    """The primary exception this module will raise."""
+
+
+class PddtOutOfBoundsDatetime(PddtValueError, OutOfBoundsDatetime):
+    """Raise when series datatime out of pandas.Timestamp range.
+    (Can't convert to datetime64[ns]).
+    """

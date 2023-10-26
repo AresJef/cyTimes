@@ -132,7 +132,7 @@ class Weekday:
         else:
             return "%s(%+d)" % (self._weekcode, self._week_offset)
 
-    def __hash__(self) -> cython.int:
+    def __hash__(self) -> int:
         return hash((self._weekday, self._week_offset))
 
     @cython.cfunc
@@ -161,7 +161,7 @@ class Weekday:
         except Exception:
             return False
 
-    def __eq__(self, other: object) -> cython.bint:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, Weekday):
             return self._equal_weekday(other)
         elif isinstance(other, relweekday):
@@ -169,8 +169,11 @@ class Weekday:
         else:
             return False
 
-    def __bool__(self) -> cython.bint:
+    def __bool__(self) -> bool:
         return self._weekday != -1
+
+    def __del__(self):
+        self._weekcode = None
 
 
 WEEKDAY_NULL: Weekday = Weekday(-1, 0)
@@ -1319,7 +1322,7 @@ class cytimedelta:
     def __repr__(self) -> str:
         return "<cytimedelta (%s)>" % self._represent()
 
-    def __hash__(self) -> cython.int:
+    def __hash__(self) -> int:
         return hash(
             (
                 self._years,

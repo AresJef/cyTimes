@@ -17,9 +17,9 @@ np.import_array()
 datetime.import_datetime()
 
 # Python imports
-import datetime, zoneinfo
-from typing import Union, Type, Literal
-import numpy as np, pandas as pd
+from typing import Union, Literal
+import datetime, zoneinfo, numpy as np
+from pandas import Timestamp
 from dateutil.parser._parser import parserinfo
 from dateutil.relativedelta import relativedelta
 from cytimes import cydatetime as cydt
@@ -67,7 +67,7 @@ class pydt:
         dayfirst: cython.bint = False,
         yearfirst: cython.bint = False,
         ignoretz: cython.bint = False,
-        tzinfos: Union[Type[datetime.timezone], dict[str, int], None] = None,
+        tzinfos: Union[type[datetime.timezone], dict[str, int], None] = None,
         fuzzy: cython.bint = False,
         parserinfo: Union[ParserInfo, parserinfo, None] = None,
     ) -> None:
@@ -327,9 +327,9 @@ class pydt:
         return self._timeisotz()
 
     @property
-    def ts(self) -> pd.Timestamp:
+    def ts(self) -> Timestamp:
         "Access as `pandas.Timestamp`."
-        return pd.Timestamp(self._dt)
+        return Timestamp(self._dt)
 
     @property
     def dt64(self) -> np.datetime64:
@@ -2120,7 +2120,7 @@ class pydt:
         return NotImplemented
 
     # Special methods - comparison ------------------------------------------------------------
-    def __eq__(self, other: object) -> cython.bint:
+    def __eq__(self, other: object) -> bool:
         if cydt.is_dt(other):
             return self._dt == other
         if isinstance(other, pydt):
@@ -2131,7 +2131,7 @@ class pydt:
             return NotImplemented
         return False
 
-    def __ne__(self, other: object) -> cython.bint:
+    def __ne__(self, other: object) -> bool:
         if cydt.is_dt(other):
             return self._dt != other
         if isinstance(other, pydt):
@@ -2142,7 +2142,7 @@ class pydt:
             return NotImplemented
         return True
 
-    def __gt__(self, other):
+    def __gt__(self, other: object) -> bool:
         if cydt.is_dt(other):
             return self._dt > other
         if isinstance(other, pydt):
@@ -2156,7 +2156,7 @@ class pydt:
             % (type(self).__name__, type(other).__name__)
         )
 
-    def __ge__(self, other):
+    def __ge__(self, other: object) -> bool:
         if cydt.is_dt(other):
             return self._dt >= other
         if isinstance(other, pydt):
@@ -2170,7 +2170,7 @@ class pydt:
             % (type(self).__name__, type(other).__name__)
         )
 
-    def __lt__(self, other):
+    def __lt__(self, other: object) -> bool:
         if cydt.is_dt(other):
             return self._dt < other
         if isinstance(other, pydt):
@@ -2184,7 +2184,7 @@ class pydt:
             % (type(self).__name__, type(other).__name__)
         )
 
-    def __le__(self, other):
+    def __le__(self, other: object) -> bool:
         if cydt.is_dt(other):
             return self._dt <= other
         if isinstance(other, pydt):
@@ -2232,6 +2232,13 @@ class pydt:
 
     def __hash__(self) -> int:
         return self._hash()
+
+    def __del__(self):
+        self._default = None
+        self._tzinfos = None
+        self._parserinfo = None
+        self._dt = None
+        self.__tzinfo = None
 
 
 # Exceptions ----------------------------------------------------------------------------------

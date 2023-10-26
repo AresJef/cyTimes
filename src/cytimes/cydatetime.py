@@ -29,8 +29,9 @@ datetime.import_datetime()
 
 # Python imports
 from cytimes import cymath
+import datetime, numpy as np
 from time import localtime as _localtime
-import datetime, numpy as np, pandas as pd
+from pandas import Series, DatetimeIndex, TimedeltaIndex
 
 
 # Constants --------------------------------------------------------------------------------------------
@@ -3628,7 +3629,7 @@ def arraydelta64_to_arrayint_ns(arr: np.ndarray) -> np.ndarray:
 # pandas.Series[datetime64] ----------------------------------------------------------------------------
 @cython.cfunc
 @cython.inline(True)
-def seriesdt64_to_arrayint(series: pd.Series, unit: str) -> np.ndarray:
+def seriesdt64_to_arrayint(series: Series, unit: str) -> np.ndarray:
     """Convert pandas.Series[datetime64] to ndarray[int] based on time unit.
 
     - Support units from `'D'` to `'ns'`.
@@ -3639,7 +3640,7 @@ def seriesdt64_to_arrayint(series: pd.Series, unit: str) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdt64_to_arrayint_day(series: pd.Series) -> np.ndarray:
+def seriesdt64_to_arrayint_day(series: Series) -> np.ndarray:
     """Convert pandas.Series[datetime64] to ndarray[int] (days).
 
     - Percision will be lost if the original datetime64 unit is smaller than 'days'.
@@ -3649,7 +3650,7 @@ def seriesdt64_to_arrayint_day(series: pd.Series) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdt64_to_arrayint_hour(series: pd.Series) -> np.ndarray:
+def seriesdt64_to_arrayint_hour(series: Series) -> np.ndarray:
     """Convert pandas.Series[datetime64] to ndarray[int] (hours).
 
     - Percision will be lost if the original datetime64 unit is smaller than 'hours'.
@@ -3659,7 +3660,7 @@ def seriesdt64_to_arrayint_hour(series: pd.Series) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdt64_to_arrayint_min(series: pd.Series) -> np.ndarray:
+def seriesdt64_to_arrayint_min(series: Series) -> np.ndarray:
     """Convert pandas.Series[datetime64] to ndarray[int] (minutes).
 
     - Percision will be lost if the original datetime64 unit is smaller than 'minutes'.
@@ -3669,7 +3670,7 @@ def seriesdt64_to_arrayint_min(series: pd.Series) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdt64_to_arrayint_sec(series: pd.Series) -> np.ndarray:
+def seriesdt64_to_arrayint_sec(series: Series) -> np.ndarray:
     """Convert pandas.Series[datetime64] to ndarray[int] (seconds).
 
     - Percision will be lost if the original datetime64 unit is smaller than 'seconds'.
@@ -3679,7 +3680,7 @@ def seriesdt64_to_arrayint_sec(series: pd.Series) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdt64_to_arrayint_ms(series: pd.Series) -> np.ndarray:
+def seriesdt64_to_arrayint_ms(series: Series) -> np.ndarray:
     """Convert pandas.Series[datetime64] to ndarray[int] (miliseconds).
 
     - Percision will be lost if the original datetime64 unit is smaller than 'miliseconds'.
@@ -3689,7 +3690,7 @@ def seriesdt64_to_arrayint_ms(series: pd.Series) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdt64_to_arrayint_us(series: pd.Series) -> np.ndarray:
+def seriesdt64_to_arrayint_us(series: Series) -> np.ndarray:
     """Convert pandas.Series[datetime64] to ndarray[int] (microseconds).
 
     - Percision will be lost if the original datetime64 unit is smaller than 'microseconds'.
@@ -3699,7 +3700,7 @@ def seriesdt64_to_arrayint_us(series: pd.Series) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdt64_to_arrayint_ns(series: pd.Series) -> np.ndarray:
+def seriesdt64_to_arrayint_ns(series: Series) -> np.ndarray:
     """Convert pandas.Series[datetime64] to ndarray[int] (nanoseconds).
 
     - Percision will be lost if the original datetime64 unit is smaller than 'nanoseconds'.
@@ -3709,7 +3710,7 @@ def seriesdt64_to_arrayint_ns(series: pd.Series) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdt64_adjust_to_ns(series: pd.Series) -> object:
+def seriesdt64_adjust_to_ns(series: Series) -> object:
     """Adjust pandas.Series[datetime64] to 'datetime64[ns]'
     Support both timezone-naive and timezone-aware series.
 
@@ -3724,7 +3725,7 @@ def seriesdt64_adjust_to_ns(series: pd.Series) -> object:
         # Timestamp to nanosecond
         values: np.ndarray = arraydt64_to_arrayint_ns(series.values)
         # Reconstruction
-        return pd.Series(pd.DatetimeIndex(values, tz=series.dt.tz))
+        return Series(DatetimeIndex(values, tz=series.dt.tz))
     else:
         raise ValueError(
             "Not a Series of datetime64: %s (dtype: %s)" % (series, series.dtype)
@@ -3733,38 +3734,38 @@ def seriesdt64_adjust_to_ns(series: pd.Series) -> object:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdt64_to_ordinal(series: pd.Series) -> object:
+def seriesdt64_to_ordinal(series: Series) -> object:
     "Convert Series[datetime64] to Series[int] (ordinal)."
     # Convert to days
     values: np.ndarray = seriesdt64_to_arrayint_day(series) + EPOCH_DAY
     # Reconstruction
-    return pd.Series(values, index=series.index)
+    return Series(values, index=series.index)
 
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdt64_to_seconds(series: pd.Series) -> object:
+def seriesdt64_to_seconds(series: Series) -> object:
     "Convert Series[datetime64] to Series[float] (total seconds)."
     # Convert to seconds
     values: np.ndarray = seriesdt64_to_arrayint_us(series) / US_SECOND
     # Reconstruction
-    return pd.Series(values, index=series.index)
+    return Series(values, index=series.index)
 
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdt64_to_microseconds(series: pd.Series) -> object:
+def seriesdt64_to_microseconds(series: Series) -> object:
     "Convert Series[datetime64] to Series[float] (total seconds)."
     # Convert to seconds
     values: np.ndarray = seriesdt64_to_arrayint_us(series)
     # Reconstruction
-    return pd.Series(values, index=series.index)
+    return Series(values, index=series.index)
 
 
 # pandas.Series[timedelta64] ---------------------------------------------------------------------------
 @cython.cfunc
 @cython.inline(True)
-def seriesdelta64_to_arrayint(series: pd.Series, unit: str) -> np.ndarray:
+def seriesdelta64_to_arrayint(series: Series, unit: str) -> np.ndarray:
     """Convert pandas.Series[timedelta64] to ndarray[int] based on time unit.
 
     - Support units from `'D'` to `'ns'`.
@@ -3775,7 +3776,7 @@ def seriesdelta64_to_arrayint(series: pd.Series, unit: str) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdelta64_to_arrayint_day(series: pd.Series) -> np.ndarray:
+def seriesdelta64_to_arrayint_day(series: Series) -> np.ndarray:
     """Convert pandas.Series[timedelta64] to ndarray[int] (days).
 
     - Percision will be lost if the original timedelta64 unit is smaller than 'days'.
@@ -3785,7 +3786,7 @@ def seriesdelta64_to_arrayint_day(series: pd.Series) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdelta64_to_arrayint_hour(series: pd.Series) -> np.ndarray:
+def seriesdelta64_to_arrayint_hour(series: Series) -> np.ndarray:
     """Convert pandas.Series[timedelta64] to ndarray[int] (hours).
 
     - Percision will be lost if the original timedelta64 unit is smaller than 'hours'.
@@ -3795,7 +3796,7 @@ def seriesdelta64_to_arrayint_hour(series: pd.Series) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdelta64_to_arrayint_min(series: pd.Series) -> np.ndarray:
+def seriesdelta64_to_arrayint_min(series: Series) -> np.ndarray:
     """Convert pandas.Series[timedelta64] to ndarray[int] (minutes).
 
     - Percision will be lost if the original timedelta64 unit is smaller than 'minutes'.
@@ -3805,7 +3806,7 @@ def seriesdelta64_to_arrayint_min(series: pd.Series) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdelta64_to_arrayint_sec(series: pd.Series) -> np.ndarray:
+def seriesdelta64_to_arrayint_sec(series: Series) -> np.ndarray:
     """Convert pandas.Series[timedelta64] to ndarray[int] (seconds).
 
     - Percision will be lost if the original timedelta64 unit is smaller than 'seconds'.
@@ -3815,7 +3816,7 @@ def seriesdelta64_to_arrayint_sec(series: pd.Series) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdelta64_to_arrayint_ms(series: pd.Series) -> np.ndarray:
+def seriesdelta64_to_arrayint_ms(series: Series) -> np.ndarray:
     """Convert pandas.Series[timedelta64] to ndarray[int] (miliseconds).
 
     - Percision will be lost if the original timedelta64 unit is smaller than 'miliseconds'.
@@ -3825,7 +3826,7 @@ def seriesdelta64_to_arrayint_ms(series: pd.Series) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdelta64_to_arrayint_us(series: pd.Series) -> np.ndarray:
+def seriesdelta64_to_arrayint_us(series: Series) -> np.ndarray:
     """Convert pandas.Series[timedelta64] to ndarray[int] (microseconds).
 
     - Percision will be lost if the original timedelta64 unit is smaller than 'microseconds'.
@@ -3835,7 +3836,7 @@ def seriesdelta64_to_arrayint_us(series: pd.Series) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdelta64_to_arrayint_ns(series: pd.Series) -> np.ndarray:
+def seriesdelta64_to_arrayint_ns(series: Series) -> np.ndarray:
     """Convert pandas.Series[timedelta64] to ndarray[int] (nanoseconds).
 
     - Percision will be lost if the original timedelta64 unit is smaller than 'nanoseconds'.
@@ -3845,7 +3846,7 @@ def seriesdelta64_to_arrayint_ns(series: pd.Series) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def seriesdelta64_adjust_to_ns(series: pd.Series) -> object:
+def seriesdelta64_adjust_to_ns(series: Series) -> object:
     """Adjust pandas.Series[datetime64] to 'datetime64[ns]'
     Support both timezone-naive and timezone-aware series.
     """
@@ -3858,7 +3859,7 @@ def seriesdelta64_adjust_to_ns(series: pd.Series) -> object:
         # Timedelta to nanosecond
         values: np.ndarray = arraydelta64_to_arrayint_ns(series.values)
         # Reconstruction
-        return pd.Series(pd.TimedeltaIndex(values, unit="ns"))
+        return Series(TimedeltaIndex(values, unit="ns"))
     else:
         raise ValueError(
             "Not a Series of timedelta64: %s (dtype: %s)" % (series, series.dtype)
