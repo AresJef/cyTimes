@@ -1847,7 +1847,7 @@ def gen_timezone(offset_seconds: cython.int, tzname: str = None) -> datetime.tzi
             % offset_seconds
         )
     delta: datetime.timedelta = _timedelta_new(0, offset_seconds, 0)
-    if tzname:
+    if tzname is not None and tzname:
         return datetime.PyTimeZone_FromOffsetAndName(delta, tzname)
     else:
         return datetime.PyTimeZone_FromOffset(delta)
