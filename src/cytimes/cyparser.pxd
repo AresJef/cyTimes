@@ -1,6 +1,4 @@
 # cython: language_level=3
-# cython: wraparound=False
-# cython: boundscheck=False
 
 from cpython cimport datetime
 

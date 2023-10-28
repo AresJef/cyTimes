@@ -1,6 +1,4 @@
 # cython: language_level=3
-# cython: wraparound=False
-# cython: boundscheck=False
 
 # Absolute
 cdef int abs(int num) except -1
