@@ -491,7 +491,7 @@ def gen_date(
 @cython.cfunc
 @cython.inline(True)
 @cython.exceptval(check=False)
-def gen_date_local() -> datetime.date:
+def gen_date_now() -> datetime.date:
     "Generate datetime.date from local time. Equivalent to `datetime.date.today()`."
     tms = cytime.localtime()
     return _date_new(tms.tm_year, tms.tm_mon, tms.tm_mday)
@@ -848,7 +848,7 @@ def gen_dt(
 @cython.cfunc
 @cython.inline(True)
 @cython.exceptval(check=False)
-def gen_dt_local() -> datetime.datetime:
+def gen_dt_now() -> datetime.datetime:
     "Generate datetime.datetime from local time. Equivalent to `datetime.now()`."
     microseconds: cython.longlong = int(_time() % 1 * US_SECOND)
     tms = cytime.localtime()
@@ -863,6 +863,14 @@ def gen_dt_local() -> datetime.datetime:
         None,
         0,
     )
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(check=False)
+def gen_dt_utcnow() -> datetime.datetime:
+    "Generate datetime.datetime from utc time. Equivalent to `datetime.utcnow()`."
+    return dt_fr_timestamp(_time(), UTC)
 
 
 @cython.cfunc
@@ -1394,11 +1402,19 @@ def gen_time(
 @cython.cfunc
 @cython.inline(True)
 @cython.exceptval(check=False)
-def gen_time_local() -> datetime.time:
+def gen_time_now() -> datetime.time:
     "Generate datetime.time from local time. Equivalent to `datetime.time.now()`."
     tms = cytime.localtime()
     microseconds: cython.int = int(_time() % 1 * US_SECOND)
     return _time_new(tms.tm_hour, tms.tm_min, tms.tm_sec, microseconds, None, 0)
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(check=False)
+def gen_time_utcnow() -> datetime.time:
+    "Generate datetime.time from utc time. Equivalent to `datetime.utcnow().time()`."
+    return time_fr_dt_tz(gen_dt_utcnow())
 
 
 # Datetime.Time: Check Types ---------------------------------------------------------------------------

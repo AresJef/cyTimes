@@ -138,7 +138,7 @@ class pydt:
         # To datetime
         try:
             if timeobj is None:
-                self._dt = cydt.gen_dt_local()
+                self._dt = cydt.gen_dt_now()
             else:
                 self._dt = self._to_datetime(timeobj)
         except PydtValueError:

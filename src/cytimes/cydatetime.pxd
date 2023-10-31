@@ -71,7 +71,7 @@ cdef cytime.tm localize_time(double timestamp) except *
 cdef long long localize_timestamp(double timestamp) except *
 # Date
 cdef datetime.date gen_date(int year=?, int month=?, int day=?) except *
-cdef datetime.date gen_date_local() noexcept
+cdef datetime.date gen_date_now() noexcept
 cdef long long date_mktime(datetime.date date) except *
 cdef bint is_date(object obj) except -1
 cdef bint is_date_exact(object obj) except -1
@@ -112,7 +112,8 @@ cdef datetime.timedelta date_sub_date(datetime.date date_l, datetime.date date_r
 cdef datetime.date date_replace(datetime.date date, int year=?, int month=?, int day=?) noexcept
 # Datetime
 cdef datetime.datetime gen_dt(int year=?, int month=?, int day=?, int hour=?, int minute=?, int second=?, int microsecond=?, object tzinfo=?, int fold=?) except *
-cdef datetime.datetime gen_dt_local() noexcept
+cdef datetime.datetime gen_dt_now() noexcept
+cdef datetime.datetime gen_dt_utcnow() noexcept
 cdef long long dt_mktime(datetime.datetime dt) except *
 cdef bint is_dt(object obj) except -1
 cdef bint is_dt_exact(object obj) except -1
@@ -146,7 +147,8 @@ cdef datetime.datetime dt_replace_tzinfo(datetime.datetime dt, object tzinfo=?) 
 cdef datetime.datetime dt_replace_fold(datetime.datetime dt, int fold=?) noexcept
 # Datetime.Time
 cdef datetime.time gen_time(int hour=?, int minute=?, int second=?, int microsecond=?, object tzinfo=?, int fold=?) except *
-cdef datetime.time gen_time_local() noexcept
+cdef datetime.time gen_time_now() noexcept
+cdef datetime.time gen_time_utcnow() noexcept
 cdef bint is_time(object obj) except -1
 cdef bint is_time_exact(object obj) except -1
 cdef int get_time_hour(datetime.time time) except -1
