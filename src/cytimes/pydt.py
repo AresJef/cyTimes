@@ -17,8 +17,9 @@ np.import_array()
 datetime.import_datetime()
 
 # Python imports
+import datetime, numpy as np
 from typing import Union, Literal
-import datetime, zoneinfo, numpy as np
+from zoneinfo import ZoneInfo, available_timezones
 from pandas import Timestamp
 from dateutil.parser._parser import parserinfo
 from dateutil.relativedelta import relativedelta
@@ -1449,7 +1450,7 @@ class pydt:
     @property
     def tz_available(self) -> set[str]:
         "`<set[str]>` All available timezone names accept by localize/convert/switch methods."
-        return zoneinfo.available_timezones()
+        return available_timezones()
 
     @cython.cfunc
     @cython.inline(True)
@@ -1901,7 +1902,7 @@ class pydt:
     def _parse_tzinfo(self, tz: object) -> datetime.tzinfo:
         if isinstance(tz, str):
             try:
-                return zoneinfo.ZoneInfo(tz)
+                return ZoneInfo(tz)
             except Exception as err:
                 raise PydtValueError("<pydt> Invalid timezone: %s" % repr(tz)) from err
         if tz is None:

@@ -17,7 +17,8 @@ np.import_umath()
 datetime.import_datetime()
 
 # Python imports
-import datetime, zoneinfo, numpy as np
+import datetime, numpy as np
+from zoneinfo import available_timezones
 from typing import Union, Literal, Iterator
 from pandas.tseries import offsets
 from pandas.errors import OutOfBoundsDatetime
@@ -1062,7 +1063,7 @@ class pddt:
     @property
     def tz_available(self) -> set[str]:
         "All available timezone names accept by localize/convert/switch methods `<set[str]>`."
-        return zoneinfo.available_timezones()
+        return available_timezones()
 
     @cython.cfunc
     @cython.inline(True)
