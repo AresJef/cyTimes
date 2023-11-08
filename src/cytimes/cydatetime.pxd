@@ -9,7 +9,7 @@ cdef:
     int MAX_ORD, DI400Y, DI100Y, DI4Y, DI1Y
     int[13] DAYS_BR_MONTH
     int[5] DAYS_BR_QUARTER
-    object UTC
+    datetime.tzinfo UTC
     datetime.datetime EPOCH_NAI, EPOCH_UTC
     long long EPOCH_US, EPOCH_SEC, EPOCH_DAY
     long long DT_MIN_US, DT_MAX_US

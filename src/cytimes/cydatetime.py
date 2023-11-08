@@ -45,7 +45,7 @@ DI1Y: cython.int = 365
 DAYS_BR_MONTH: cython.int[13] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365]
 DAYS_BR_QUARTER: cython.int[5] = [0, 90, 181, 273, 365]
 
-UTC: datetime.timezone = datetime.get_utc()
+UTC: datetime.tzinfo = datetime.get_utc()
 EPOCH_NAI: datetime.datetime = _datetime_new(1970, 1, 1, 0, 0, 0, 0, None, 0)  # type: ignore
 EPOCH_UTC: datetime.datetime = _datetime_new(1970, 1, 1, 0, 0, 0, 0, UTC, 0)  # type: ignore
 EPOCH_US: cython.longlong = 62135683200000000
@@ -1856,7 +1856,7 @@ def delta_sub_delta(
 @cython.cfunc
 @cython.inline(True)
 def gen_timezone(offset_seconds: cython.int, tzname: str = None) -> datetime.tzinfo:
-    "Generate `datetime.timezone` from tzname & offset (seconds)."
+    "Generate `datetime.tzinfo` from tzname & offset (seconds)."
     if not -86340 <= offset_seconds <= 86340:
         raise ValueError(
             "Timezone expected offset between -86340 and 86340 (seconds), got %s"

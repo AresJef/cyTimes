@@ -68,7 +68,7 @@ class pydt:
         dayfirst: cython.bint = False,
         yearfirst: cython.bint = False,
         ignoretz: cython.bint = False,
-        tzinfos: Union[type[datetime.timezone], dict[str, int], None] = None,
+        tzinfos: Union[type[datetime.tzinfo], dict[str, int], None] = None,
         fuzzy: cython.bint = False,
         parserinfo: Union[ParserInfo, parserinfo, None] = None,
     ) -> None:
@@ -1465,11 +1465,11 @@ class pydt:
         except Exception as err:
             raise PydtValueError("<pydt> %s" % err) from err
 
-    def tz_localize(self, tz: Union[datetime.timezone, str, None]) -> pydt:
+    def tz_localize(self, tz: Union[datetime.tzinfo, str, None]) -> pydt:
         """Localize to a specific timezone. Equivalent to `datetime.replace(tzinfo=tz)`.
 
-        :param tz: `<datetime.timezone>`/`<str (timezone name)>`/`None (remove timezone)`.
-            - `<datetime.timezone>`: The timezone to localize to. Only native python
+        :param tz: `<datetime.tzinfo>`/`<str (timezone name)>`/`None (remove timezone)`.
+            - `<datetime.tzinfo>`: The timezone to localize to. Only native python
               timezone is supported, which means `tzinfo` from pytz and dateutil will
               `NOT` work properly.
             - `<str>`: The timezone name to localize to. Must be one of the timezone
@@ -1491,11 +1491,11 @@ class pydt:
         except Exception as err:
             raise PydtValueError("<pydt> %s" % err) from err
 
-    def tz_convert(self, tz: Union[datetime.timezone, str, None]) -> pydt:
+    def tz_convert(self, tz: Union[datetime.tzinfo, str, None]) -> pydt:
         """Convert to a specific timezone. Equivalent to `datetime.astimezone(tz)`.
 
-        :param tz: `<datetime.timezone>`/`<str (timezone name)>`/`None (local timezone)`.
-            - `<datetime.timezone>`: The timezone to convert to. Only native python
+        :param tz: `<datetime.tzinfo>`/`<str (timezone name)>`/`None (local timezone)`.
+            - `<datetime.tzinfo>`: The timezone to convert to. Only native python
               timezone is supported, which means `tzinfo` from pytz and dateutil will
               `NOT` work properly.
             - `<str>`: The timezone name to convert to. Must be one of the timezone
@@ -1532,8 +1532,8 @@ class pydt:
 
     def tz_switch(
         self,
-        targ_tz: Union[datetime.timezone, str, None],
-        base_tz: Union[datetime.timezone, str] = None,
+        targ_tz: Union[datetime.tzinfo, str, None],
+        base_tz: Union[datetime.tzinfo, str] = None,
         naive: bool = False,
     ) -> pydt:
         """Switch from base timezone to target timezone.
@@ -1544,7 +1544,7 @@ class pydt:
           to the `base_tz`, and then `tz_convert` to the `targ_tz`.
 
         :param targ_tz: `<datetime.tzinfo>`/`<str (timezone name)>`/`None (local timezone)`.
-            - `<datetime.timezone>`: The timezone to convert to. Only native python
+            - `<datetime.tzinfo>`: The timezone to convert to. Only native python
               timezone is supported, which means `tzinfo` from pytz and dateutil will
               `NOT` work properly.
             - `<str>`: The timezone name to convert to. Must be one of the timezone
@@ -1552,7 +1552,7 @@ class pydt:
             - `None`: Convert to system's local timezone.
 
         :param base_tz: `<datetime.tzinfo>`/`<str (timezone name)>`.
-            - `<datetime.timezone>`: The timezone to localize to. Only native python
+            - `<datetime.tzinfo>`: The timezone to localize to. Only native python
               timezone is supported, which means `tzinfo` from pytz and dateutil will
               `NOT` work properly.
             - `<str>`: The timezone name to localize to. Must be one of the timezone
@@ -1900,18 +1900,12 @@ class pydt:
     @cython.cfunc
     @cython.inline(True)
     def _parse_tzinfo(self, tz: object) -> datetime.tzinfo:
-        if isinstance(tz, str):
-            try:
-                return ZoneInfo(tz)
-            except Exception as err:
-                raise PydtValueError("<pydt> Invalid timezone: %s" % repr(tz)) from err
-        if tz is None:
+        if tz is None or isinstance(tz, datetime.tzinfo):
             return tz
-        if isinstance(tz, datetime.tzinfo):
-            return tz
-        raise PydtValueError(
-            "<pydt> Invalid tzinfo: %s. Accept: `<tzinfo>`, `<str>` or None." % repr(tz)
-        )
+        try:
+            return ZoneInfo(tz)
+        except Exception as err:
+            raise PydtValueError("<pydt> Invalid timezone: %s" % repr(tz)) from err
 
     @cython.cfunc
     @cython.inline(True)
