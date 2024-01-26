@@ -1,7 +1,6 @@
 # cython: language_level=3
 # cython: wraparound=False
 # cython: boundscheck=False
-
 from __future__ import annotations
 
 # Cython imports
@@ -84,7 +83,6 @@ class TimeLex:
             timestr = "2023-08-08T23:59:59.000001"
             tokens = Timelex(timestr).split()
         """
-
         if not is_unicode(string):
             raise ValueError(
                 "<TimeLex> Invalid 'string': %s %s. Only accepts unicode <str>."
@@ -730,35 +728,39 @@ class Result:
 DEFAULT_INFO_JUMP: set[str] = {
     " ", ".", ",", ";", "-", "/", "'",
     "at", "on", "and", "ad", "m", "t", "of",
-    "st", "nd", "rd", "th", "年" ,"月", "日"}
+    "st", "nd", "rd", "th", "年" ,"月", "日" }
 DEFAULT_INFO_WEEKDAY: dict[str, int] = {
+    # EN(a)   # EN            # CN        # CN(a)
     "mon": 0, "monday": 0,    "星期一": 0, "周一": 0,
     "tue": 1, "tuesday": 1,   "星期二": 1, "周二": 1,
     "wed": 2, "wednesday": 2, "星期三": 2, "周三": 2,
     "thu": 3, "thursday": 3,  "星期四": 3, "周四": 3,
     "fri": 4, "friday": 4,    "星期五": 4, "周五": 4,
     "sat": 5, "saturday": 5,  "星期六": 5, "周六": 5,
-    "sun": 6, "sunday": 6,    "星期日": 6, "周日": 6}
+    "sun": 6, "sunday": 6,    "星期日": 6, "周日": 6 }
 DEFAULT_INFO_MONTH: dict[str, int] = {
-    "jan": 1, "january": 1, "januar": 1, "janvier": 1, "gennaio": 1, "enero": 1, "一月": 1,
-    "feb": 2, "february": 2, "febr": 2, "februar": 2, "février": 2, "febbraio": 2, "febrero": 2, "二月": 2,
-    "mar": 3, "march": 3, "märz": 3, "mars": 3, "marzo": 3, "三月": 3,
-    "apr": 4, "april": 4, "avril": 4, "aprile": 4, "abril": 4, "四月": 4,
-    "may": 5, "mai": 5, "maggio": 5, "mayo": 5, "五月": 5,
-    "jun": 6, "june": 6, "juni": 6, "juin": 6, "giugno": 6, "junio": 6, "六月": 6,
-    "jul": 7, "july": 7, "juli": 7, "juillet": 7, "luglio": 7, "julio": 7, "七月": 7,
-    "aug": 8, "august": 8, "août": 8, "agosto": 8, "八月": 8,
-    "sep": 9, "september": 9, "sept": 9, "septembre": 9, "settembre": 9, "septiembre": 9, "九月": 9,
-    "oct": 10, "october": 10, "oktober": 10, "octobre": 10, "ottobre": 10, "octubre": 10, "十月": 10,
-    "nov": 11, "november": 11, "novembre": 11, "novembre": 11, "noviembre": 11, "十一月": 11,
-    "dec": 12, "december": 12, "dezember": 12, "décembre": 12, "dicembre": 12, "diciembre": 12, "十二月": 12}
+    # EN(a)   # EN             # DE            # FR            # IT            # ES             # PT            # NL            # SE            #PL                 # TR          # CN       # Special
+    "jan": 1,  "january": 1,   "januar": 1,    "janvier": 1,   "gennaio": 1,   "enero": 1,      "janeiro": 1,   "januari": 1,   "januari": 1,   "stycznia": 1,      "ocak": 1,    "一月": 1,
+    "feb": 2,  "february": 2,  "februar": 2,   "février": 2,   "febbraio": 2,  "febrero": 2,    "fevereiro": 2, "februari": 2,  "februari": 2,  "lutego": 2,        "şubat": 2,   "二月": 2,  "febr": 2,
+    "mar": 3,  "march": 3,     "märz": 3,      "mars": 3,      "marzo": 3,     "marzo": 3,      "março": 3,     "maart": 3,     "mars": 3,      "marca": 3,         "mart": 3,    "三月": 3,
+    "apr": 4,  "april": 4,     "april": 4,     "avril": 4,     "aprile": 4,    "abril": 4,      "abril": 4,     "april": 4,     "april": 4,     "kwietnia": 4,      "nisan": 4,   "四月": 4,
+    "may": 5,  "may": 5,       "mai": 5,       "mai": 5,       "maggio": 5,    "mayo": 5,       "maio": 5,      "mei": 5,       "maj": 5,       "maja": 5,          "mayıs": 5,   "五月": 5,
+    "jun": 6,  "june": 6,      "juni": 6,      "juin": 6,      "giugno": 6,    "junio": 6,      "junho": 6,     "juni": 6,      "juni": 6,      "czerwca": 6,       "haziran": 5, "六月": 6,
+    "jul": 7,  "july": 7,      "juli": 7,      "juillet": 7,   "luglio": 7,    "julio": 7,      "julho": 7,     "juli": 7,      "juli": 7,      "lipca": 7,         "temmuz": 7,  "七月": 7,
+    "aug": 8,  "august": 8,    "august": 8,    "août": 8,      "agosto": 8,    "agosto": 8,     "agosto": 8,    "augustus": 8,  "augusti": 8,   "sierpnia": 8,      "ağustos": 8, "八月": 8,
+    "sep": 9,  "september": 9, "september": 9, "septembre": 9, "settembre": 9, "septiembre": 9, "setembro": 9,  "september": 9, "september": 9, "września": 9,      "eylül": 9,   "九月": 9,  "sept": 9, 
+    "oct": 10, "october": 10,  "oktober": 10,  "octobre": 10,  "ottobre": 10,  "octubre": 10,   "outubro": 10,  "oktober": 10,  "oktober": 10,  "października": 10, "ekim": 10,   "十月": 10,
+    "nov": 11, "november": 11, "november": 11, "novembre": 11, "novembre": 11, "noviembre": 11, "novembro": 11, "november": 11, "november": 11, "listopada": 11,    "kasım": 11,  "十一月": 11,
+    "dec": 12, "december": 12, "dezember": 12, "décembre": 12, "dicembre": 12, "diciembre": 12, "dezembro": 12, "december": 12, "december": 12, "grudnia": 12,      "aralık": 12, "十二月": 12 }
 DEFAULT_INFO_HMS: dict[str, int] = {
-    "h": 0, "hour": 0, "hours": 0, "小时": 0, "时": 0,
+    # EN(a) # EN         # EN          # CN      # CN(a)
+    "h": 0, "hour": 0,   "hours": 0,   "小时": 0, "时": 0,
     "m": 1, "minute": 1, "minutes": 1, "分钟": 1, "分": 1,
-    "s": 2, "second": 2, "seconds": 2, "秒": 2}
+    "s": 2, "second": 2, "seconds": 2, "秒": 2 }
 DEFAULT_INFO_AMPM: dict[str, int] = {
+    # EN(a) # EN     # CN     
     "am": 0, "a": 0, "上午": 0,
-    "pm": 1, "p": 1, "下午": 1}
+    "pm": 1, "p": 1, "下午": 1 }
 DEFAULT_INFO_UTCTIMEZONE: set[str] = {"utc", "gmt", "z"}
 DEFAULT_INFO_TZOFFSET: dict[str, int] = {}
 DEFAULT_INFO_PERTAIN: set[str] = {"of"}
