@@ -42,7 +42,7 @@ else:
         extension("cydatetime.py", True, "-Wno-unreachable-code"),
         extension("cymath.py", False, "-Wno-unreachable-code"),
         extension("cyparser.py", True, "-Wno-unreachable-code"),
-        extension("cytime.pyx", False, "-Wno-unreachable-code"),
+        extension("cytime.py", False, "-Wno-unreachable-code"),
         extension("cytimedelta.py", True, "-Wno-unreachable-code"),
         extension("pydt.py", True, "-Wno-unreachable-code"),
         extension("pddt.py", True, "-Wno-unreachable-code"),
