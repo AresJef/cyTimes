@@ -2,17 +2,9 @@
 # cython: wraparound=False
 # cython: boundscheck=False
 
+# Cython imports
 import cython
-from cython.cimports.libc.stdlib import abs as _abs, labs as _labs, llabs as _llabs  # type: ignore
-from cython.cimports.libc.math import fabs as _fabas, fabsl as _fbasl  # type: ignore
-from cython.cimports.libc.math import ceil as _ceil, ceill as _ceill  # type: ignore
-from cython.cimports.libc.math import floor as _floor, floorl as _floorl  # type: ignore
-from cython.cimports.libc.math import round as _round, roundl as _roundl  # type: ignore
-from cython.cimports.libc.math import fmax as _fmax, fmaxl as _fmaxl  # type: ignore
-from cython.cimports.libc.math import fmin as _fmin, fminl as _fminl  # type: ignore
-from cython.cimports.libc.math import copysign as _copysign, copysignl as _copysignl  # type: ignore
-from cython.cimports.libc.math import isinf as _isinf, isfinite as _isfinite  # type: ignore
-from cython.cimports.libc.math import isnan as _isnan, isnormal as _isnormal  # type: ignore
+from cython.cimports.libc import stdlib, math  # type: ignore
 
 
 # Absolute ------------------------------------------------------------------------------
@@ -25,7 +17,7 @@ def abs(num: cython.int) -> cython.int:
     :param num `<int>`: An integer.
     :return `<int>`: The absolute value of the integer.
     """
-    return _abs(num)
+    return stdlib.abs(num)
 
 
 @cython.cfunc
@@ -37,7 +29,7 @@ def abs_l(num: cython.long) -> cython.long:
     :param num `<long>`: A (long) integer.
     :return `<long>`: The absolute value of the (long) integer.
     """
-    return _labs(num)
+    return stdlib.labs(num)
 
 
 @cython.cfunc
@@ -49,7 +41,7 @@ def abs_ll(num: cython.longlong) -> cython.longlong:
     :param num `<long long>`: A (long long) integer.
     :return `<long long>`: The absolute value of the (long long) integer.
     """
-    return _llabs(num)
+    return stdlib.llabs(num)
 
 
 @cython.cfunc
@@ -61,7 +53,7 @@ def abs_f(num: cython.double) -> cython.double:
     :param num `<float/double>`: A (float/double) number.
     :return `<float/double>`: The absolute value of the (float/double) number.
     """
-    return _fabas(num)
+    return math.fabs(num)
 
 
 @cython.cfunc
@@ -73,7 +65,7 @@ def abs_lf(num: cython.longdouble) -> cython.longdouble:
     :param num `<long double>`: A (long double) number.
     :return `<long double>`: The absolute value of the (long double) number.
     """
-    return _fbasl(num)
+    return math.fabsl(num)
 
 
 # Ceil -------------------------------------------------------------------------------------------------
@@ -86,7 +78,7 @@ def ceil(num: cython.double) -> cython.long:
     :param num `<float/double>`: A (float/double) number.
     :return `<long>`: The ceil value of the (float/double) number.
     """
-    return int(_ceil(num))
+    return int(math.ceil(num))
 
 
 @cython.cfunc
@@ -98,7 +90,7 @@ def ceil_l(num: cython.longdouble) -> cython.longlong:
     :param num `<long double>`: A (long double) number.
     :return `<long long>`: The ceil value of the (long double) number.
     """
-    return int(_ceill(num))
+    return int(math.ceill(num))
 
 
 # Floor ------------------------------------------------------------------------------------------------
@@ -111,7 +103,7 @@ def floor(num: cython.double) -> cython.long:
     :param num `<float/double>`: A (float/double) number.
     :return `<long>`: The floor value of the (float/double) number.
     """
-    return int(_floor(num))
+    return int(math.floor(num))
 
 
 @cython.cfunc
@@ -123,7 +115,7 @@ def floor_l(num: cython.longdouble) -> cython.longlong:
     :param num `<long double>`: A (long double) number.
     :return `<long long>`: The floor value of the (long double) number.
     """
-    return int(_floorl(num))
+    return int(math.floorl(num))
 
 
 # Round ------------------------------------------------------------------------------------------------
@@ -136,7 +128,7 @@ def round(num: cython.double) -> cython.long:
     :param num `<float/double>`: A (float/double) number.
     :return `<long>`: The round value of the (float/double) number.
     """
-    return int(_round(num))
+    return int(math.round(num))
 
 
 @cython.cfunc
@@ -148,7 +140,7 @@ def round_l(num: cython.longdouble) -> cython.longlong:
     :param num `<long double>`: A (long double) number.
     :return `<long long>`: The round value of the (long double) number.
     """
-    return int(_roundl(num))
+    return int(math.roundl(num))
 
 
 @cython.cfunc
@@ -238,7 +230,7 @@ def max_f(num1: cython.double, num2: cython.double) -> cython.double:
     :param num2 `<float/double>`: (float/double) number.
     :return `<float/double>`: The maximum value between the two (float/double) numbers.
     """
-    return _fmax(num1, num2)
+    return math.fmax(num1, num2)
 
 
 @cython.cfunc
@@ -251,7 +243,7 @@ def max_lf(num1: cython.longdouble, num2: cython.longdouble) -> cython.longdoubl
     :param num2 `<long double>`: (long double) number.
     :return `<long double>`: The maximum value between the two (long double) numbers.
     """
-    return _fmaxl(num1, num2)
+    return math.fmaxl(num1, num2)
 
 
 # Minimum -------------------------------------------------------------------------------
@@ -265,7 +257,7 @@ def min_f(num1: cython.double, num2: cython.double) -> cython.double:
     :param num2 `<float/double>`: (float/double) number.
     :return `<float/double>`: The minimum value between the two (float/double) numbers.
     """
-    return _fmin(num1, num2)
+    return math.fmin(num1, num2)
 
 
 @cython.cfunc
@@ -278,7 +270,7 @@ def min_lf(num1: cython.longdouble, num2: cython.longdouble) -> cython.longdoubl
     :param num2 `<long double>`: (long double) number.
     :return `<long double>`: The minimum value between the two (long double) numbers.
     """
-    return _fminl(num1, num2)
+    return math.fminl(num1, num2)
 
 
 # Clipping ------------------------------------------------------------------------------
@@ -315,7 +307,7 @@ def clip_f(
     :param max_val `<float/double>`: The maximum value.
     :return `<float/double>`: The clipped value.
     """
-    return _fmax(_fmin(num, max_val), min_val)
+    return math.fmax(math.fmin(num, max_val), min_val)
 
 
 @cython.cfunc
@@ -333,7 +325,7 @@ def clip_lf(
     :param max_val `<long double>`: The maximum value.
     :return `<long double>`: The clipped value.
     """
-    return _fmaxl(_fminl(num, max_val), min_val)
+    return math.fmaxl(math.fminl(num, max_val), min_val)
 
 
 # Sign ----------------------------------------------------------------------------------
@@ -347,7 +339,7 @@ def copysign(num: cython.double, sign: cython.double) -> cython.double:
     :param sign `<float/double>`: The sign to copy from.
     :return `<float/double>`: The number with the sign copied.
     """
-    return _copysign(num, sign)
+    return math.copysign(num, sign)
 
 
 @cython.cfunc
@@ -360,7 +352,7 @@ def copysign_l(num: cython.longdouble, sign: cython.longdouble) -> cython.longdo
     :param sign `<long double>`: The sign to copy from.
     :return `<long double>`: The number with the sign copied.
     """
-    return _copysignl(num, sign)
+    return math.copysignl(num, sign)
 
 
 @cython.cfunc
@@ -372,7 +364,7 @@ def signfactor(num: cython.double) -> cython.int:
     :param num `<float/double>`: A (float/double) number.
     :return `<int>`: The sign factor (1 or -1) of the number.
     """
-    return int(_copysign(1, num))
+    return int(math.copysign(1, num))
 
 
 @cython.cfunc
@@ -384,7 +376,7 @@ def signfactor_l(num: cython.longdouble) -> cython.int:
     :param num `<long double>`: A (long double) number.
     :return `<int>`: The sign factor (1 or -1) of the number.
     """
-    return int(_copysignl(1, num))
+    return int(math.copysignl(1, num))
 
 
 # Validation ----------------------------------------------------------------------------
@@ -397,7 +389,7 @@ def is_inf(num: cython.longdouble) -> cython.bint:
     :param `<long double>`: The number to check.
     :return `<bool>`: Whether the number is infinite.
     """
-    return _isinf(num)
+    return math.isinf(num)
 
 
 @cython.cfunc
@@ -409,7 +401,7 @@ def is_finite(num: cython.longdouble) -> cython.bint:
     :param `<long double>`: The number to check.
     :return `<bool>`: Whether the number is finite.
     """
-    return _isfinite(num)
+    return math.isfinite(num)
 
 
 @cython.cfunc
@@ -421,7 +413,7 @@ def is_nan(num: cython.longdouble) -> cython.bint:
     :param `<long double>`: The number to check.
     :return `<bool>`: Whether the number is `nan`.
     """
-    return _isnan(num)
+    return math.isnan(num)
 
 
 @cython.cfunc
@@ -433,4 +425,4 @@ def is_normal(num: cython.longdouble) -> cython.bint:
     :param `<long double>`: The number to check.
     :return `<bool>`: Whether the number is normal.
     """
-    return _isnormal(num)
+    return math.isnormal(num)
