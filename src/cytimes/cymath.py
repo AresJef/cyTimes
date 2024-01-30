@@ -145,7 +145,6 @@ def round_l(num: cython.longdouble) -> cython.longlong:
 
 @cython.cfunc
 @cython.inline(True)
-@cython.cdivision(True)
 @cython.exceptval(check=False)
 def round_half_away(
     num: cython.double,
@@ -163,7 +162,6 @@ def round_half_away(
 
 @cython.cfunc
 @cython.inline(True)
-@cython.cdivision(True)
 @cython.exceptval(check=False)
 def round_half_away_factor(
     num: cython.double,
@@ -183,7 +181,6 @@ def round_half_away_factor(
 
 @cython.cfunc
 @cython.inline(True)
-@cython.cdivision(True)
 @cython.exceptval(check=False)
 def round_half_away_l(
     num: cython.longdouble,
@@ -201,7 +198,6 @@ def round_half_away_l(
 
 @cython.cfunc
 @cython.inline(True)
-@cython.cdivision(True)
 @cython.exceptval(check=False)
 def round_half_away_factor_l(
     num: cython.longdouble,

@@ -2065,11 +2065,15 @@ def pddt_demo() -> None:
 
 
 if __name__ == "__main__":
-    validate_cytimedelta_relative()
-    validate_cytimedelta_absolute()
-    cytimedelta_performance()
-    cytimedelta_demo()
-    cyparser_validate()
-    cyparser_performance()
-    pydt_demo()
-    pddt_demo()
+    # validate_cytimedelta_relative()
+    # validate_cytimedelta_absolute()
+    # cytimedelta_performance()
+    # cytimedelta_demo()
+    # cyparser_validate()
+    # cyparser_performance()
+    # pydt_demo()
+    # pddt_demo()
+
+    from cytimes.cydatetime import test
+
+    print(test(1000))
