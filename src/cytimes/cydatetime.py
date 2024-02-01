@@ -809,7 +809,7 @@ def date_fr_seconds(seconds: cython.double) -> datetime.date:
 @cython.exceptval(check=False)
 def date_fr_microseconds(microseconds: cython.longlong) -> datetime.date:
     """Convert total microseconds after POSIX epoch to `<datetime.date>`."""
-    return date_fr_ordinal(microseconds + EPOCH_US // US_DAY)
+    return date_fr_ordinal(microseconds // US_DAY + EPOCH_DAY)
 
 
 @cython.cfunc
@@ -886,6 +886,20 @@ def date_replace(
         month,
         min(day if day > 0 else access_day(date), days_in_month(year, month)),
     )
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(check=False)
+def date_adj_weekday(date: datetime.date, weekday: cython.uint) -> datetime.date:
+    """Adjust `<datetime.date>` to the nearest weekday,
+    where Monday is 0 and Sunday is 6. Equivalent to:
+    `date + timedelta(days=weekday - date.weekday())`."""
+    weekday = weekday % 7
+    date_wday: cython.uint = date_weekday(date)
+    if weekday == date_wday:
+        return date
+    return date_add(date, days=weekday - date_wday)
 
 
 # Datetime.datetime ====================================================================================
@@ -1519,6 +1533,20 @@ def dt_replace_fold(dt: datetime.datetime, fold: cython.uint) -> datetime.dateti
         access_dt_tzinfo(dt),
         1 if fold > 0 else 0,
     )
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(check=False)
+def dt_adj_weekday(dt: datetime.datetime, weekday: cython.uint) -> datetime.datetime:
+    """Adjust `<datetime.datetime>` to the nearest weekday,
+    where Monday is 0 and Sunday is 6. Equivalent to:
+    `datetime + timedelta(days=weekday - dt.weekday())`."""
+    weekday = weekday % 7
+    dt_wday: cython.uint = date_weekday(dt)
+    if weekday == dt_wday:
+        return dt
+    return dt_add(dt, days=weekday - dt_wday)
 
 
 # Datetime.time ========================================================================================

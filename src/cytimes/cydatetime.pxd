@@ -127,6 +127,7 @@ cdef datetime.timedelta date_sub_date(datetime.date date_l, datetime.date date_r
 cdef int date_sub_date_days(datetime.date date_l, datetime.date date_r) noexcept
 # Datetime.date: manipulation
 cdef datetime.date date_replace(datetime.date date, int year=?, int month=?, int day=?) noexcept
+cdef datetime.date date_adj_weekday(datetime.date date, unsigned int weekday) noexcept
 
 # Datetime.datetime: generate
 cdef datetime.datetime gen_dt(
@@ -176,6 +177,7 @@ cdef datetime.datetime dt_replace(
     int minute=?, int second=?, int microsecond=?, object tzinfo=?, int fold=?) noexcept
 cdef datetime.datetime dt_replace_tzinfo(datetime.datetime dt, datetime.tzinfo tzinfo) noexcept
 cdef datetime.datetime dt_replace_fold(datetime.datetime dt, unsigned int fold) noexcept
+cdef datetime.datetime dt_adj_weekday(datetime.datetime dt, unsigned int weekday) noexcept
 
 # Datetime.time: generate
 cdef datetime.time gen_time(
