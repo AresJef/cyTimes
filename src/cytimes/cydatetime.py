@@ -8,7 +8,6 @@ from cython.cimports.cpython import datetime  # type: ignore
 from cython.cimports.cpython.time import time as unix_time  # type: ignore
 from cython.cimports import numpy as np  # type: ignore
 from cython.cimports.cytimes import cytime  # type: ignore
-from cython.cimports.cytimes import cymath  # type: ignore
 
 np.import_array()
 np.import_umath()
@@ -19,7 +18,6 @@ from typing import Literal
 import datetime, numpy as np
 from time import localtime as time_localtime
 from pandas import Series, DatetimeIndex, TimedeltaIndex
-from cytimes import cymath
 
 # Constants --------------------------------------------------------------------------------------------
 # fmt: off
@@ -353,7 +351,7 @@ def ordinal_to_ymd(ordinal: cython.int) -> ymd:
     # from that boundary to n.  Life is much clearer if we subtract 1 from
     # n first -- then the values of n at 400-year boundaries are exactly
     # those divisible by _DI400Y:
-    n: cython.uint = cymath.clip(ordinal, 1, 3_652_059) - 1
+    n: cython.uint = min(max(ordinal, 1), 3_652_059) - 1
     n400: cython.uint = n // 146_097
     n = n % 146_097
     year: cython.uint = n400 * 400 + 1
@@ -1357,7 +1355,7 @@ def dt_fr_microseconds(
     """Convert total microseconds after POSIX epoch to `<datetime.datetime>`."""
     # Add back epoch microseconds
     microseconds += EPOCH_US
-    microseconds = cymath.clip(microseconds, DT_MIN_US, DT_MAX_US)
+    microseconds = min(max(microseconds, DT_MIN_US), DT_MAX_US)
     # Calculate ymd
     ymd = ordinal_to_ymd(microseconds // US_DAY)
     # Calculate hms
@@ -1736,8 +1734,7 @@ def time_fr_microseconds(
     # Add back epoch microseconds
     if microseconds < 0:
         microseconds += EPOCH_US
-    # Clip microseconds
-    microseconds = cymath.clip(microseconds, 0, DT_MAX_US)
+    microseconds = min(max(microseconds, 0), DT_MAX_US)
     # Calculate hms
     hms = microseconds_to_hms(microseconds)
     # Generate time
@@ -2103,7 +2100,7 @@ def dt64_to_isoformat(dt64: object) -> str:
     '%Y-%m-%dT%H:%M:%S.f' `<str>`."""
     # Add back epoch seconds
     microseconds: cython.longlong = dt64_to_microseconds(dt64) + EPOCH_US
-    microseconds = cymath.clip(microseconds, DT_MIN_US, DT_MAX_US)
+    microseconds = min(max(microseconds, DT_MIN_US), DT_MAX_US)
     # Calculate ymd
     ymd = ordinal_to_ymd(microseconds // US_DAY)
     # Calculate hms
