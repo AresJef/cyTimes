@@ -360,7 +360,7 @@ def signfactor(num: cython.double) -> cython.int:
     :param num `<float/double>`: A (float/double) number.
     :return `<int>`: The sign factor (1 or -1) of the number.
     """
-    return int(math.copysign(1, num))
+    return -1 if num < 0 else 1
 
 
 @cython.cfunc
@@ -372,7 +372,7 @@ def signfactor_l(num: cython.longdouble) -> cython.int:
     :param num `<long double>`: A (long double) number.
     :return `<int>`: The sign factor (1 or -1) of the number.
     """
-    return int(math.copysignl(1, num))
+    return -1 if num < 0 else 1
 
 
 # Validation ----------------------------------------------------------------------------
