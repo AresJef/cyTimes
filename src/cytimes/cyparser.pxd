@@ -2,104 +2,110 @@
 
 from cpython cimport datetime
 
-# Unicode
-cdef bint uni_isdot(int obj) except -1
-cdef bint uni_iscomma(int obj) except -1
+# Constants
+cdef:
+    # . charactors
+    Py_UCS4 CHAR_NULL, CHAR_PERIOD, CHAR_COMMA
+    # . timezone
+    set LOCAL_TZNAMES
+    # . default config
+    set CONFIG_PERTAIN, CONFIG_JUMP, CONFIG_UTC
+    dict CONFIG_MONTH, CONFIG_WEEKDAY, CONFIG_HMS
+    dict CONFIG_AMPM, CONFIG_TZINFO
 
-# TimeLex
-cdef class TimeLex:
-    # Attributes
-    cdef:
-        str _string
-        int _strlen, _idx
-        list _charstack, _tokenstack
-        bint _ended
-    # Methods
-    cdef str _get_nextchar(self) noexcept
-    cdef str _get_token(self) except *
+# Timelex
+cdef unsigned int str_count(str s, str char) except -1
+cdef list parse_timelex(str timestr, bint lowercase) except *
 
 # Result
 cdef class Result:
-    # Attributes
-    cdef: 
-        int _year, _month, _day, _weekday, _ampm
-        int _hour, _minute, _second, _microsecond
-        str _tz_name
-        int _tzoffset
-        bint _century_specified
-    # Special methods
-    cdef str _represent(self) noexcept
-
-# YMD
-cdef class YMD:
-    # Attributes
     cdef:
+        # YMD
+        int[3] _ymd
+        int _ymd_idx, _ymd_yidx, _ymd_midx, _ymd_didx
+        # Result
+        int year, month, day, weekday
+        int hour, minute, second, microsecond
+        int ampm, tzoffset
+        str tzname
         bint _century_specified
-        int _year, _month, _day
-        int _validx, _val0, _val1, _val2
-        int _yidx, _midx, _didx
-    # Resolve
-    cdef int _get(self, int idx) noexcept
-    cdef _set(self, int val) noexcept
-    cdef int _solved_values(self) noexcept
-    cdef bint could_be_day(self, int value) except -1
-    cdef append(self, object value, int label=?) except *
-    cdef resolve(self, bint dayfirst, bint yearfirst) noexcept
-    # Special method
-    cdef int _length(self) noexcept
+    # YMD
+    cdef bint append_ymd(Result self, object value, unsigned int label) except -1
+    cdef unsigned int ymd_values(Result self) except -1
+    cdef bint could_be_day(Result self, int value) except -1
+    cdef bint _set_ymd(Result self, int value) except -1
+    cdef unsigned int _labeled_ymd(Result self) except -1
+    cdef bint _resolve_ymd(Result self, bint day1st, bint year1st) except -1
+    # Result
+    cdef bint prepare(Result self, bint day1st, bint year1st) except -1
 
-# ParserInfo (config)
-cdef class ParserInfo:
-    # Attributes
+# Config
+cdef class Config:
     cdef:
-        set _jump, _utczone, _pertain
-        dict _weekday, _month, _hms, _ampm, _tzoffset
-        bint _dayfirst, _yearfirst
-    # Methods
-    cpdef bint jump(self, str word)
-    cpdef int weekday(self, str word)
-    cpdef int month(self, str word)
-    cpdef int hms(self, str word)
-    cpdef int ampm(self, str word)
-    cpdef bint utczone(self, str word)
-    cpdef int tzoffset(self, str tz)
-    cpdef bint pertain(self, str word)
-    # Utils
-    cdef list _validate_str(self, tuple values) except *
-    cdef _add_to_set(self, set set_, tuple values) except *
-    cdef _add_to_dict(self, dict dict_, int val, tuple keys) except *
-    cdef _set_to_dict(self, dict dict_, int val, tuple keys) except *
-    # Conversion
-    cpdef from_parserinfo(self, object info)
-    # Validate Result
-    cdef int _convert_year(self, int year, bint century_specified) noexcept
-    cdef Result _adjust_result(self, Result res) noexcept
+        # Settings
+        bint _day1st, _year1st
+        set _pertain, _jump, _utc
+        dict _month, _weekday, _hms
+        dict _ampm, _tzinfo
+        # Keywords
+        set _keywords
+    # Validate
+    cdef bint _construct_keywords(Config self) except -1
+    cdef object _validate_keyword(Config self, str setting, object word) except *
+    cdef object _validate_value(Config self, str setting, object value, int min, int max) except *
 
-cdef ParserInfo DEFAULT_PARSERINFO
 # Parser
 cdef class Parser:
-    # Attributes
-    cdef ParserInfo __info
-    # Parse
-    cdef datetime.datetime _parse(self, str timestr, object default, bint dayfirst, bint yearfirst, bint ignoretz, object tzinfos, bint fuzzy) except *
+    cdef:
+        # Config
+        bint _day1st, _year1st, _ignoretz, _fuzzy
+        set _pertain, _jump, _utc
+        dict _month, _weekday, _hms, _ampm, _tzinfo
+        # Result
+        Result _result
+        # Process
+        list _tokens
+        int _tokens_count, _index
+        str _token_r1, _token_r2, _token_r3, _token_r4
+    # Parsing
+    cdef bint _process(Parser self, str timestr) except -1
+    cdef datetime.datetime _build(Parser self, object default) except *
+    cdef datetime.datetime _build_datetime(Parser self, object default, object tzinfo) except *
+    cdef datetime.datetime _handle_ambiguous_time(Parser self, datetime.datetime dt, str tzname) except *
     # Numeric token
-    cdef int _parse_numeric_token(self, int idx, str token, list tokens, int token_count, bint fuzzy, YMD ymd, Result res) except -1
-    cdef bint _is_numeric_token(self, str token) except -1
-    cdef double _convert_numeric_token(self, str token) except *
-    cdef _set_hour_min(self, double value, Result res) noexcept
-    cdef _set_min_sec(self, double value, Result res) noexcept
-    cdef _set_sec_us(self, str token, Result res) noexcept
-    cdef int _find_hms_idx(self, int idx, str next_token, list tokens, int token_count, bint allow_jump) except *
+    cdef bint _parse_numeric_token(Parser self, str token) except -1
+    cdef double _covnert_numeric_token(Parser self, str token) except *
     # Month token
-    cdef int _parse_month_token(self, int idx, list tokens, int token_count, int month, YMD ymd) except -1
+    cdef bint _parse_month_token(Parser self, str token) except -1
+    # Weekday token
+    cdef bint _parse_weekday_token(Parser self, str token) except -1
+    # HMS token
+    cdef bint _parse_hms_token(Parser self, str token, double value) except -1
+    cdef bint _set_hms_result(Parser self, str token, double value, int hms) except -1
+    cdef bint _set_hour_and_minite(Parser self, double value) except -1
+    cdef bint _set_minite_and_second(Parser self, double value) except -1
+    cdef bint _set_second_and_us(Parser self, str token) except -1
     # AM/PM token
-    cdef bint _valid_ampm_flag(self, Result res, bint fuzzy) except -1
-    cdef int _adjust_ampm(self, int hour, int ampm) except *
-    # Timezone token
-    cdef bint _could_be_tzname(self, str token, bint check_tzoffset, Result res) except -1
-    cdef int _parse_tzname(self, int idx, str token, list tokens, int token_count, Result res) except -1
-    cdef int _prase_tzoffset(self, int idx, str token, list tokens, int token_count, Result res) except -1
-    # Build
-    cdef datetime.datetime _build(self, Result res, object default, object tzinfos, bint ignoretz) except *
-    cdef datetime.datetime _build_datetime(self, Result res, object default, object tzinfos) except *
-    cdef datetime.datetime _handle_anbiguous_time(self, datetime.datetime dt, str tzname) noexcept
+    cdef bint _parse_ampm_token(Parser self, str token) except -1
+    cdef unsigned int _adjust_ampm_hour(Parser self, int hour, int ampm) except -1
+    # Tzname token
+    cdef bint _parse_tzname_token(Parser self, str token) except -1
+    cdef unsigned int _could_be_tzname(Parser self, str token) except -1
+    # Tzoffset token
+    cdef bint _parse_tzoffset_token(Parser self, str token) except -1
+    cdef int _calculate_tzoffset(Parser self, str token_r1, int sign, int offset) noexcept
+    # Get token
+    cdef str _get_token(Parser self, int index) noexcept
+    cdef str _get_token_r1(Parser self) noexcept
+    cdef str _get_token_r2(Parser self) noexcept
+    cdef str _get_token_r3(Parser self) noexcept
+    cdef str _get_token_r4(Parser self) noexcept
+    # Config
+    cdef bint _is_token_pertain(Parser self, object token) except -1
+    cdef bint _is_token_jump(Parser self, object token) except -1
+    cdef bint _is_token_utc(Parser self, object token) except -1
+    cdef int _token_to_month(Parser self, object token) noexcept
+    cdef int _token_to_weekday(Parser self, object token) noexcept
+    cdef int _token_to_hms(Parser self, object token) noexcept
+    cdef int _token_to_ampm(Parser self, object token) noexcept
+    cdef int _token_to_tzoffset(Parser self, object token) noexcept

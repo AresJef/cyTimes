@@ -1,744 +1,56 @@
 # cython: language_level=3
 # cython: wraparound=False
 # cython: boundscheck=False
+
 from __future__ import annotations
 
 # Cython imports
 import cython
-from cython.cimports.cpython.unicode import PyUnicode_Check as is_unicode  # type: ignore
-from cython.cimports.cpython.unicode import PyUnicode_READ_CHAR as uni_loc  # type: ignore
-from cython.cimports.cpython.unicode import PyUnicode_GET_LENGTH as str_len  # type: ignore
-from cython.cimports.cpython.unicode import PyUnicode_Contains as str_contains  # type: ignore
-from cython.cimports.cpython.unicode import Py_UNICODE_ISALPHA as uni_isalpha  # type: ignore
-from cython.cimports.cpython.unicode import Py_UNICODE_ISDIGIT as uni_isdigit  # type: ignore
-from cython.cimports.cpython.unicode import Py_UNICODE_ISSPACE as uni_isspace  # type: ignore
-from cython.cimports.cpython.set import PySet_New as gen_set  # type: ignore
-from cython.cimports.cpython.set import PySet_Add as set_add  # type: ignore
-from cython.cimports.cpython.dict import PyDict_Copy as copy_dict  # type: ignore
-from cython.cimports.cpython.dict import PyDict_SetItem as dict_set  # type: ignore
-from cython.cimports.cpython.dict import PyDict_DelItem as dict_del  # type: ignore
-from cython.cimports.cpython.list import PyList_GET_SIZE as list_len  # type: ignore
-from cython.cimports.cpython.list import PyList_Append as list_append  # type: ignore
-from cython.cimports.cpython.list import PyList_GET_SIZE as list_len_noexc  # type: ignore
-from cython.cimports.cpython.unicode import PyUnicode_GET_LENGTH as str_len  # type: ignore
-from cython.cimports import numpy as np  # type: ignore
+from cython.cimports.libc import math  # type: ignore
 from cython.cimports.cpython import datetime  # type: ignore
-from cython.cimports.cytimes import cytime, cymath  # type: ignore
-from cython.cimports.cytimes import cydatetime as cydt  # type: ignore
-from cython.cimports.cytimes.cytimedelta import cytimedelta  # type: ignore
+from cython.cimports.cpython.unicode import PyUnicode_READ_CHAR as str_loc  # type: ignore
+from cython.cimports.cpython.unicode import PyUnicode_GET_LENGTH as str_len  # type: ignore
+from cython.cimports.cpython.unicode import PyUnicode_Replace as str_replace  # type: ignore
+from cython.cimports.cpython.unicode import PyUnicode_Contains as str_contains  # type: ignore
+from cython.cimports.cpython.unicode import PyUnicode_FromOrdinal as str_fr_ucs4  # type: ignore
+from cython.cimports.cpython.set import PySet_Add as set_add  # type: ignore
+from cython.cimports.cpython.set import PySet_Discard as set_discard  # type: ignore
+from cython.cimports.cpython.set import PySet_Contains as set_contains  # type: ignore
+from cython.cimports.cpython.dict import PyDict_SetItem as dict_setitem  # type: ignore
+from cython.cimports.cpython.dict import PyDict_GetItem as dict_getitem  # type: ignore
+from cython.cimports.cpython.dict import PyDict_DelItem as dict_delitem  # type: ignore
+from cython.cimports.cpython.dict import PyDict_Contains as dict_contains  # type: ignore
+from cython.cimports.cpython.list import PyList_GET_SIZE as list_len  # type: ignore
+from cython.cimports.cpython.list import PyList_GET_ITEM as list_getitem  # type: ignore
+from cython.cimports.cpython.list import PyList_SET_ITEM as list_setitem  # type: ignore
+from cython.cimports.cytimes import cytime, cydatetime as cydt  # type: ignore
 
-np.import_array()
 datetime.import_datetime()
 
 # Python imports
 import datetime, time
-from typing import Union
-from re import compile, Pattern
-from dateutil.tz import tz as dateutil_tz
 from dateutil.parser._parser import parserinfo
-from cytimes.cytimedelta import cytimedelta
-from cytimes import cymath, cydatetime as cydt
-
-
-__all__ = ["ParserInfo", "Parser", "parse", "TimeLex"]
-
-
-# Unicode -------------------------------------------------------------------------------------
-@cython.cfunc
-@cython.inline(True)
-@cython.exceptval(-1, check=False)
-def uni_isdot(char: cython.int) -> cython.bint:
-    return char == 46
-
-
-@cython.cfunc
-@cython.inline(True)
-@cython.exceptval(-1, check=False)
-def uni_iscomma(char: cython.int) -> cython.bint:
-    return char == 44
-
-
-# TimeLex -------------------------------------------------------------------------------------
-# # Fractional seconds are sometimes split by a comma
-SPLIT_DECIMAL_RE: Pattern = compile("([.,])")
-
-
-@cython.cclass
-class TimeLex:
-    _string: str
-    _strlen: cython.int
-    _idx: cython.int
-    _charstack: list[str]
-    _tokenstack: list[str]
-    _ended: cython.bint
-
-    def __init__(self, string: str) -> None:
-        """Parse string into list of tokens
-
-        :param string: `<str>` Unicode string.
-        :raise `ValueError`: if string is not unicode formated.
-
-        ### Example:
-        >>> from cytimes import TimeLex
-            timestr = "2023-08-08T23:59:59.000001"
-            tokens = Timelex(timestr).split()
-        """
-        if not is_unicode(string):
-            raise ValueError(
-                "<TimeLex> Invalid 'string': %s %s. Only accepts unicode <str>."
-                % (repr(string), type(string))
-            )
-        self._string = string
-        self._strlen = str_len(self._string)
-        self._idx = 0
-        self._charstack = []
-        self._tokenstack = []
-        self._ended = False
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(check=False)
-    def _get_nextchar(self) -> str:
-        """Get the next char from string (Internal use only)."""
-
-        if self._idx < self._strlen:
-            nextchar = self._string[self._idx]
-            self._idx += 1
-            return nextchar
-        else:
-            return None
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.wraparound(True)
-    def _get_token(self) -> str:
-        """Parse the next token from string (Internal use only)."""
-
-        # Token stack exist
-        if self._tokenstack:
-            return self._tokenstack.pop(0)
-
-        # Parse token
-        state: cython.int = 0
-        seenchar: cython.bint = False
-        token: str = None
-        nextchar: str
-        nextcuni: cython.int
-
-        while not self._ended:
-            # We only realize that we've reached the end of a token when we
-            # find a character that's not part of the current token - since
-            # that character may be part of the next token, it's stored in the
-            # charstack.
-            if self._charstack:
-                nextchar = self._charstack.pop(0)
-            # Get the nextchar from string
-            else:
-                nextchar = self._get_nextchar()
-                while nextchar == "\x00":
-                    nextchar = self._get_nextchar()
-            # End of token
-            if not nextchar:
-                self._ended = True
-                break
-
-            # First character of the token - determines if we're starting
-            # to parse a word, a number or something else.
-            nextcuni = uni_loc(self._string, self._idx - 1)
-            if state == 0:  # None
-                token = nextchar
-                if uni_isdigit(nextcuni):
-                    state = 1  # "digit"
-                elif uni_isalpha(nextcuni):
-                    state = 2  # "alpha"
-                elif uni_isspace(nextcuni):
-                    token = " "
-                    break  # emit token
-                else:
-                    break  # emit token
-
-            # If we've already started reading a number, we keep reading
-            # numbers until we find something that doesn't fit.
-            elif state == 1:  # "digit"
-                if uni_isdigit(nextcuni):
-                    token += nextchar
-                elif uni_isdot(nextcuni):
-                    token += nextchar
-                    state = 3  # "digit" w/t "."
-                elif uni_iscomma(nextcuni) and str_len(token) >= 2:
-                    token += nextchar
-                    state = 3  # "digit" w/t "."
-                else:
-                    list_append(self._charstack, nextchar)
-                    break  # emit token
-
-            # If we've seen at least one dot separator, keep going, we'll
-            # break up the tokens later.
-            elif state == 3:  # "digit" w/t "."
-                if uni_isdot(nextcuni) or uni_isdigit(nextcuni):
-                    token += nextchar
-                elif uni_isalpha(nextcuni) and token[-1] == ".":
-                    token += nextchar
-                    state = 4  # "aplha w/t "."
-                else:
-                    list_append(self._charstack, nextchar)
-                    break  # emit token
-
-            # If we've already started reading a word, we keep reading
-            # letters until we find something that's not part of a word.
-            elif state == 2:  # "alpha"
-                seenchar = True
-                if uni_isalpha(nextcuni):
-                    token += nextchar
-                elif uni_isdot(nextcuni):
-                    token += nextchar
-                    state = 4  # "aplha w/t "."
-                else:
-                    list_append(self._charstack, nextchar)
-                    break  # emit token
-
-            # If we've seen some letters and a dot separator, continue
-            # parsing, and the tokens will be broken up later.
-            elif state == 4:  # "aplha w/t "."
-                seenchar = True
-                if uni_isdot(nextcuni) or uni_isalpha(nextcuni):
-                    token += nextchar
-                elif uni_isdigit(nextcuni) and token[-1] == ".":
-                    token += nextchar
-                    state = 3  # "digit" w/t "."
-                else:
-                    list_append(self._charstack, nextchar)
-                    break  # emit token
-
-        # Case: token with "."
-        if state == 3 or state == 4:
-            # Stack the token
-            if seenchar or token.count(".") > 1 or str_contains(".,", token[-1]):
-                tokenlst: list = SPLIT_DECIMAL_RE.split(token)
-                tokencnt: cython.int = list_len_noexc(tokenlst)
-                token: str = tokenlst[0]
-                tok: str
-                for tok in tokenlst[1:tokencnt]:
-                    if tok:
-                        list_append(self._tokenstack, tok)
-
-            # Alpha token with only ","
-            if state == 3 and not str_contains(token, "."):
-                token = token.replace(",", ".")
-
-        return token
-
-    def split(self) -> list[str]:
-        """Split the string into list of tokens."""
-        return list(self)
-
-    def __repr__(self) -> str:
-        return "<TimeLex (string='%s')>" % self._string
-
-    def __iter__(self) -> str:
-        return self
-
-    def __next__(self) -> str:
-        token = self._get_token()
-        if token is None:
-            raise StopIteration
-        return token
-
-    def __del__(self):
-        self._string = None
-        self._charstack = None
-        self._tokenstack = None
-
-
-# YMD -----------------------------------------------------------------------------------------
-@cython.cclass
-class YMD:
-    _century_specified: cython.bint
-    _year: cython.int
-    _month: cython.int
-    _day: cython.int
-    _validx: cython.int
-    _val0: cython.int
-    _val1: cython.int
-    _val2: cython.int
-    _yidx: cython.int
-    _midx: cython.int
-    _didx: cython.int
-
-    def __init__(self) -> None:
-        """Store time integers, and try be best to resolve which is year, month & day."""
-
-        # Values
-        self._century_specified = False
-        self._year = -1
-        self._month = -1
-        self._day = -1
-        # Index
-        self._validx = -1
-        self._val0 = -1
-        self._val1 = -1
-        self._val2 = -1
-        self._yidx = -1
-        self._midx = -1
-        self._didx = -1
-
-    # Values
-    @property
-    def year(self) -> int:
-        """Year of the date. Always return -1 before calling `resolve()`."""
-        return self._year
-
-    @property
-    def month(self) -> int:
-        """Month of the date. Always return -1 before calling `resolve()`."""
-        return self._month
-
-    @property
-    def day(self) -> int:
-        """Day of the date. Always return -1 before calling `resolve()`."""
-        return self._day
-
-    # Resolve
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(check=False)
-    def _get(self, idx: cython.int) -> cython.int:
-        """Get store value (Internal use only).
-
-        :param idx: `<int>` The index for the value, for index not between 0 and 2, -1 will be returned.
-        :return: `<int>` The value corresponds to the index.
-        """
-
-        if idx == 0:
-            return self._val0
-        elif idx == 1:
-            return self._val1
-        elif idx == 2:
-            return self._val2
-        else:
-            return -1
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(check=False)
-    def _set(self, val: cython.int):
-        """Set (store) a time interger value (Internal use only).
-
-        :param val: `<int>` The value to be stored.
-        """
-
-        self._validx += 1
-        if self._validx == 0:
-            self._val0 = val
-        elif self._validx == 1:
-            self._val1 = val
-        elif self._validx == 2:
-            self._val2 = val
-        else:
-            self._validx -= 1
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(check=False)
-    def _solved_values(self) -> cython.int:
-        """Get the how many values have been solved (Internal use only).
-
-        For exmaple: solved_values starts from 0. if one of the values has been
-        labeled as `year`, solved_values += 1. If all values are labeled,
-        solved_values will be 3.
-
-        :return: `<int>` The number of values that have been solved (labeled).
-        """
-
-        count: cython.int = 0
-        if self._yidx != -1:
-            count += 1
-        if self._midx != -1:
-            count += 1
-        if self._didx != -1:
-            count += 1
-        return count
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def could_be_day(self, value: cython.int) -> cython.bint:
-        """Determine if a time intger could be the day of a date.
-
-        :param value: `<int>` A time integer.
-        :return: `<bool>` Whether the intger has the possibility to be the day of date.
-        """
-
-        if self._didx != -1:
-            return False
-        elif self._midx == -1:
-            return 1 <= value <= 31
-        elif self._yidx == -1:
-            month = self._get(self._midx)
-            return 1 <= value <= cydt.days_in_month(2000, month)
-        else:
-            month = self._get(self._midx)
-            year = self._get(self._yidx)
-            return 1 <= value <= cydt.days_in_month(year, month)
-
-    @cython.cfunc
-    def append(self, value: object, label: cython.int = 0):
-        """Append (store) a time integer
-
-        :param value: `<int> or <str>` A time info object.
-        :param label: `<int>` Set the label of the time integer, where 1 as `Year`, 2 as `Month` and 3 as `Day`. 0 means undetermined.
-        """
-
-        # Adjustment for large value
-        val: cython.int = int(value)
-        if isinstance(value, str) and str_len(value) > 2 and value.isdigit():
-            self._century_specified = True
-            label = 1  # label as year
-        elif val >= 100:
-            self._century_specified = True
-            label = 1  # label as year
-
-        # Set (Store) value
-        self._set(val)
-
-        if label == 2 and self._midx == -1:  # label as month
-            self._midx = self._validx
-        elif label == 3 and self._didx == -1:  # label as day
-            self._didx = self._validx
-        elif label == 1 and self._yidx == -1:  # label as year
-            self._yidx = self._validx
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(check=False)
-    def resolve(self, dayfirst: cython.bint, yearfirst: cython.bint):
-        """Try the best to sort out which value is year,
-        month & day base on the giving integer.
-
-        :param dayfirst: `<bool>` Whether the date is dayfirst.
-        :param yearfirst: `<bool>` Whether the date is yearfirst.
-
-        After resolve, the corresponding property `year`, `month` & `day`
-        of YMD will be updated.
-        """
-
-        len_ymd: cython.int = self._validx + 1
-        solved: cython.int = self._solved_values()
-        year: cython.int = -1
-        month: cython.int = -1
-        day: cython.int = -1
-
-        # All resolved
-        if len_ymd == solved > 0:
-            year = self._get(self._yidx)
-            month = self._get(self._midx)
-            day = self._get(self._didx)
-
-        # One member
-        elif len_ymd == 1:
-            if self._midx != -1:
-                month = self._val0
-            elif self._val0 > 31:
-                year = self._val0
-            else:
-                day = self._val0
-
-        # Two members
-        elif len_ymd == 2:
-            # With month label
-            if self._midx != -1:
-                if self._midx == 0:
-                    month = self._val0
-                    if self._val1 > 31:
-                        year = self._val1
-                    else:
-                        day = self._val1
-                else:
-                    month = self._val1
-                    if self._val0 > 31:
-                        year = self._val0
-                    else:
-                        day = self._val0
-            # Without month label
-            elif self._val0 > 31:
-                # 99-Jan
-                year, month = self._val0, self._val1
-            elif self._val1 > 31:
-                # Jan-99
-                month, year = self._val0, self._val1
-            elif dayfirst and 0 < self._val1 <= 12:
-                # 01-Jan
-                day, month = self._val0, self._val1
-            else:
-                # Jan-01
-                month, day = self._val0, self._val1
-
-        # Three members
-        elif len_ymd == 3:
-            # Missing only one label
-            if solved == 2:
-                # Start with year
-                if self._yidx != -1:
-                    year = self._get(self._yidx)
-                    if self._midx != -1:
-                        month = self._get(self._midx)
-                        day = self._get(3 - self._yidx - self._midx)
-                    else:
-                        month = self._get(3 - self._yidx - self._didx)
-                        day = self._get(self._didx)
-                # Start with month
-                elif self._midx != -1:
-                    month = self._get(self._midx)
-                    if self._yidx != -1:
-                        year = self._get(self._yidx)
-                        day = self._get(3 - self._yidx - self._midx)
-                    else:
-                        year = self._get(3 - self._midx - self._didx)
-                        day = self._get(self._didx)
-                # Start with day
-                else:
-                    day = self._get(self._didx)
-                    if self._yidx != -1:
-                        year = self._get(self._yidx)
-                        month = self._get(3 - self._yidx - self._didx)
-                    else:
-                        year = self._get(3 - self._midx - self._didx)
-                        month = self._get(self._midx)
-            # Missing more than one label
-            elif self._midx == 0:
-                if self._val1 > 31:
-                    # Apr-2003-25
-                    month, year, day = self._val0, self._val1, self._val2
-                else:
-                    month, day, year = self._val0, self._val1, self._val2
-            elif self._midx == 1:
-                if self._val0 > 31 or (yearfirst and 0 < self._val2 <= 31):
-                    # 99-Jan-01
-                    year, month, day = self._val0, self._val1, self._val2
-                else:
-                    # 01-Jan-99
-                    day, month, year = self._val0, self._val1, self._val2
-            elif self._midx == 2:
-                # WTF!?
-                if self._val1 > 31:
-                    # 01-99-Jan
-                    day, year, month = self._val0, self._val1, self._val2
-                else:
-                    # 99-01-Jan
-                    year, day, month = self._val0, self._val1, self._val2
-            else:
-                if (
-                    self._val0 > 31
-                    or self._yidx == 0
-                    or (yearfirst and 0 < self._val1 <= 12 and 0 < self._val2 <= 31)
-                ):
-                    if dayfirst and 0 < self._val2 <= 12:
-                        # 99-01-Jan
-                        year, day, month = self._val0, self._val1, self._val2
-                    else:
-                        # 99-Jan-01
-                        year, month, day = self._val0, self._val1, self._val2
-                elif self._val0 > 12 or (dayfirst and 0 < self._val1 <= 12):
-                    # 01-Jan-99
-                    day, month, year = self._val0, self._val1, self._val2
-                else:
-                    # Jan-01-99
-                    month, day, year = self._val0, self._val1, self._val2
-
-        # Final adjustment
-        if month > 12 and 0 < day <= 12:
-            month, day = day, month
-
-        # Assign values
-        self._year = year
-        self._month = month
-        self._day = day
-
-    def __repr__(self) -> str:
-        return "<YMD (year=%d, month=%d, day=%d, values=[%d, %d, %d])>" % (
-            self._year,
-            self._month,
-            self._day,
-            self._val0,
-            self._val1,
-            self._val2,
-        )
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(check=False)
-    def _length(self) -> cython.int:
-        return self._validx + 1
-
-    def __len__(self) -> int:
-        return self._length()
-
-    def __bool__(self) -> bool:
-        return self._validx > -1
-
-
-# Result --------------------------------------------------------------------------------------
-@cython.cclass
-class Result:
-    _year: cython.int
-    _month: cython.int
-    _day: cython.int
-    _weekday: cython.int
-    _hour: cython.int
-    _minute: cython.int
-    _second: cython.int
-    _microsecond: cython.int
-    _ampm: cython.int
-    _tz_name: str
-    _tzoffset: cython.int
-    _century_specified: cython.bint
-
-    def __init__(self) -> None:
-        self._year = -1
-        self._month = -1
-        self._day = -1
-        self._weekday = -1
-        self._hour = -1
-        self._minute = -1
-        self._second = -1
-        self._microsecond = -1
-        self._ampm = -1
-        self._tz_name = None
-        self._tzoffset = -1000000
-        self._century_specified = False
-
-    # Info
-    @property
-    def year(self) -> int:
-        """Parsed result for year, -1 means `None`."""
-        return self._year
-
-    @property
-    def month(self) -> int:
-        """Parsed result for month, -1 means `None`."""
-        return self._month
-
-    @property
-    def day(self) -> int:
-        """Parsed result for day, -1 means `None`."""
-        return self._day
-
-    # Weekday
-    @property
-    def weekday(self) -> int:
-        """Parsed result for weekday, -1 means `None`."""
-        return self._weekday
-
-    # Hour
-    @property
-    def hour(self) -> int:
-        """Parsed result for hour, -1 means `None`."""
-        return self._hour
-
-    # Minute
-    @property
-    def minute(self) -> int:
-        """Parsed result for minute, -1 means `None`."""
-        return self._minute
-
-    # Second
-    @property
-    def second(self) -> int:
-        """Parsed result for second, -1 means `None`."""
-        return self._second
-
-    # Microsecond
-    @property
-    def microsecond(self) -> int:
-        """Parsed result for microsecond, -1 means `None`."""
-        return self._microsecond
-
-    # AM/PM
-    @property
-    def ampm(self) -> int:
-        """Parsed result for AM/PM. 0 mean AM, 1 mean PM, -1 means `None`."""
-        return self._ampm
-
-    # Timezone name
-    @property
-    def tzname(self) -> str:
-        """Parsed result for timezone name."""
-        return self._tz_name
-
-    # Timezone offset
-    @property
-    def tzoffset(self) -> int:
-        """Parsed result for timezone offset in seconds. -1000000 means `None`."""
-        return self._tzoffset
-
-    # Country specified
-    @property
-    def century_specified(self) -> bool:
-        """Whether parsed result is century specified."""
-        return self._century_specified
-
-    # Special methods
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(check=False)
-    def _represent(self) -> str:
-        reprs: list[str] = []
-        if self._year != -1:
-            reprs.append("year=%d" % self._year)
-        if self._month != -1:
-            reprs.append("month=%d" % self._month)
-        if self._day != -1:
-            reprs.append("day=%d" % self._day)
-        if self._weekday != -1:
-            reprs.append("weekday=%d" % self._weekday)
-        if self._hour != -1:
-            reprs.append("hour=%d" % self._hour)
-        if self._minute != -1:
-            reprs.append("minute=%d" % self._minute)
-        if self._second != -1:
-            reprs.append("second=%d" % self._second)
-        if self._microsecond != -1:
-            reprs.append("microsecond=%d" % self._microsecond)
-        if self._ampm != -1:
-            reprs.append("ampm=%d" % self._ampm)
-        if self._tz_name:
-            reprs.append("tzname='%s'" % self._tz_name)
-        if self._tzoffset != -1000000:
-            reprs.append("tzoffset=%d" % self._tzoffset)
-        return ", ".join(reprs)
-
-    def __repr__(self) -> str:
-        return "<Result (%s)>" % self._represent()
-
-    def __bool__(self) -> bool:
-        return (
-            self._year != -1
-            or self._month != -1
-            or self._day != -1
-            or self._weekday != -1
-            or self._hour != -1
-            or self._minute != -1
-            or self._second != -1
-            or self._microsecond != -1
-        )
-
-
-# ParserInfo (config) -------------------------------------------------------------------------
+from cytimes import errors, cydatetime as cydt
+
+__all__ = ["Config", "Parser"]
+
+# Constants -----------------------------------------------------------------------------------
+# . charactors
+CHAR_NULL: cython.Py_UCS4 = 0  # '' null
+CHAR_COMMA: cython.Py_UCS4 = 44  # ","
+CHAR_PERIOD: cython.Py_UCS4 = 46  # "."
+# . timezone
+LOCAL_TZNAMES: set[str] = set(time.tzname)
+# . default config
 # fmt: off
-DEFAULT_INFO_JUMP: set[str] = {
+CONFIG_PERTAIN: set[str] = {"of"}
+CONFIG_JUMP: set[str] = {
     " ", ".", ",", ";", "-", "/", "'",
-    "at", "on", "and", "ad", "m", "t", "of",
+    "at", "on", "and", "ad", "m", "t", "of", 
     "st", "nd", "rd", "th", "年" ,"月", "日" }
-DEFAULT_INFO_WEEKDAY: dict[str, int] = {
-    # EN(a)   # EN            # CN        # CN(a)
-    "mon": 0, "monday": 0,    "星期一": 0, "周一": 0,
-    "tue": 1, "tuesday": 1,   "星期二": 1, "周二": 1,
-    "wed": 2, "wednesday": 2, "星期三": 2, "周三": 2,
-    "thu": 3, "thursday": 3,  "星期四": 3, "周四": 3,
-    "fri": 4, "friday": 4,    "星期五": 4, "周五": 4,
-    "sat": 5, "saturday": 5,  "星期六": 5, "周六": 5,
-    "sun": 6, "sunday": 6,    "星期日": 6, "周日": 6 }
-DEFAULT_INFO_MONTH: dict[str, int] = {
+CONFIG_UTC: set[str] = { 
+    "utc", "gmt", "z" }
+CONFIG_MONTH: dict[str, int] = {
     # EN(a)   # EN             # DE            # FR            # IT            # ES             # PT            # NL            # SE            #PL                 # TR          # CN       # Special
     "jan": 1,  "january": 1,   "januar": 1,    "janvier": 1,   "gennaio": 1,   "enero": 1,      "janeiro": 1,   "januari": 1,   "januari": 1,   "stycznia": 1,      "ocak": 1,    "一月": 1,
     "feb": 2,  "february": 2,  "februar": 2,   "février": 2,   "febbraio": 2,  "febrero": 2,    "fevereiro": 2, "februari": 2,  "februari": 2,  "lutego": 2,        "şubat": 2,   "二月": 2,  "febr": 2,
@@ -748,1603 +60,1681 @@ DEFAULT_INFO_MONTH: dict[str, int] = {
     "jun": 6,  "june": 6,      "juni": 6,      "juin": 6,      "giugno": 6,    "junio": 6,      "junho": 6,     "juni": 6,      "juni": 6,      "czerwca": 6,       "haziran": 5, "六月": 6,
     "jul": 7,  "july": 7,      "juli": 7,      "juillet": 7,   "luglio": 7,    "julio": 7,      "julho": 7,     "juli": 7,      "juli": 7,      "lipca": 7,         "temmuz": 7,  "七月": 7,
     "aug": 8,  "august": 8,    "august": 8,    "août": 8,      "agosto": 8,    "agosto": 8,     "agosto": 8,    "augustus": 8,  "augusti": 8,   "sierpnia": 8,      "ağustos": 8, "八月": 8,
-    "sep": 9,  "september": 9, "september": 9, "septembre": 9, "settembre": 9, "septiembre": 9, "setembro": 9,  "september": 9, "september": 9, "września": 9,      "eylül": 9,   "九月": 9,  "sept": 9, 
+    "sep": 9,  "september": 9, "september": 9, "septembre": 9, "settembre": 9, "septiembre": 9, "setembro": 9,  "september": 9, "september": 9, "września": 9,      "eylül": 9,   "九月": 9,  "sept": 9,
     "oct": 10, "october": 10,  "oktober": 10,  "octobre": 10,  "ottobre": 10,  "octubre": 10,   "outubro": 10,  "oktober": 10,  "oktober": 10,  "października": 10, "ekim": 10,   "十月": 10,
     "nov": 11, "november": 11, "november": 11, "novembre": 11, "novembre": 11, "noviembre": 11, "novembro": 11, "november": 11, "november": 11, "listopada": 11,    "kasım": 11,  "十一月": 11,
     "dec": 12, "december": 12, "dezember": 12, "décembre": 12, "dicembre": 12, "diciembre": 12, "dezembro": 12, "december": 12, "december": 12, "grudnia": 12,      "aralık": 12, "十二月": 12 }
-DEFAULT_INFO_HMS: dict[str, int] = {
-    # EN(a) # EN         # EN          # CN      # CN(a)
-    "h": 0, "hour": 0,   "hours": 0,   "小时": 0, "时": 0,
-    "m": 1, "minute": 1, "minutes": 1, "分钟": 1, "分": 1,
-    "s": 2, "second": 2, "seconds": 2, "秒": 2 }
-DEFAULT_INFO_AMPM: dict[str, int] = {
-    # EN(a) # EN     # CN     
-    "am": 0, "a": 0, "上午": 0,
-    "pm": 1, "p": 1, "下午": 1 }
-DEFAULT_INFO_UTCTIMEZONE: set[str] = {"utc", "gmt", "z"}
-DEFAULT_INFO_TZOFFSET: dict[str, int] = {}
-DEFAULT_INFO_PERTAIN: set[str] = {"of"}
+CONFIG_WEEKDAY: dict[str, int] = {
+    # EN(a)   # EN            # DE             # FR           # IT            # ES            # NL            # SE          # PL               # TR            # CN        # CN(a)
+    "mon": 0, "monday": 0,    "montag": 0,     "lundi": 0,    "lunedì": 0,    "lunes": 0,     "maandag": 0,   "måndag": 0,  "poniedziałek": 0, "pazartesi": 0, "星期一": 0, "周一": 0,
+    "tue": 1, "tuesday": 1,   "dienstag": 1,   "mardi": 1,    "martedì": 1,   "martes": 1,    "dinsdag": 1,   "tisdag": 1,  "wtorek": 1,       "salı": 1,      "星期二": 1, "周二": 1,
+    "wed": 2, "wednesday": 2, "mittwoch": 2,   "mercredi": 2, "mercoledì": 2, "miércoles": 2, "woensdag": 2,  "onsdag": 2,  "środa": 2,        "çarşamba": 2,  "星期三": 2, "周三": 2,
+    "thu": 3, "thursday": 3,  "donnerstag": 3, "jeudi": 3,    "giovedì": 3,   "jueves": 3,    "donderdag": 3, "torsdag": 3, "czwartek": 3,     "perşembe": 3,  "星期四": 3, "周四": 3,
+    "fri": 4, "friday": 4,    "freitag": 4,    "vendredi": 4, "venerdì": 4,   "viernes": 4,   "vrijdag": 4,   "fredag": 4,  "piątek": 4,       "cuma": 4,      "星期五": 4, "周五": 4,
+    "sat": 5, "saturday": 5,  "samstag": 5,    "samedi": 5,   "sabato": 5,    "sábado": 5,    "zaterdag": 5,  "lördag": 5,  "sobota": 5,       "cumartesi": 5, "星期六": 5, "周六": 5,
+    "sun": 6, "sunday": 6,    "sonntag": 6,    "dimanche": 6, "domenica": 6,  "domingo": 6,   "zondag": 6,    "söndag": 6,  "niedziela": 6,    "pazar": 6,     "星期日": 6, "周日": 6 }
+CONFIG_HMS: dict[str, int] = {
+    # EN(a)   # EN         # # DE          # FR           IT            # ES           # PT           # NL           # SE           # PL          # TR            # CN
+    "h": 0,   "hour": 0,    "stunde": 0,   "heure": 0,    "ora": 0,     "hora": 0,     "hora": 0,     "uur": 0,      "timme": 0,    "godzina": 0, "saat": 0,      "时": 0,
+    "hr": 0,  "hours": 0,   "stunden": 0,  "heures": 0,   "ore": 0,     "horas": 0,    "horas": 0,    "uren": 0,     "timmar": 0,   "godziny": 0, "saatler": 0,   "小时": 0,
+    "m": 1,   "minute": 1,  "minute": 1,   "minute": 1,   "minuto": 1,  "minuto": 1,   "minuto": 1,   "minuut": 1,   "minut": 1,    "minuta": 1,  "dakika": 1,    "分": 1,
+    "min": 1, "minutes": 1, "minuten": 1,  "minutes": 1,  "minuti": 1,  "minutos": 1,  "minutos": 1,  "minuten": 1,  "minuter": 1,  "minuty": 1,  "dakikalar": 1, "分钟": 1,
+    "s": 2,   "second": 2,  "sekunde": 2,  "seconde": 2,  "secondo": 2, "segundo": 2,  "segundo": 2,  "seconde": 2,  "sekund": 2,   "sekunda": 2, "saniye": 2,    "秒": 2,
+    "sec": 2, "seconds": 2, "sekunden": 2, "secondes": 2, "secondi": 2, "segundos": 2, "segundos": 2, "seconden": 2, "sekunder": 2, "sekundy": 2, "saniyeler": 2, 
+                                                                                                                                    "godzin": 0,                                                            
+    
+}
+CONFIG_AMPM: dict[str, int] = {
+    # EN(a)  # EN(a)  #EN             # DE             # IT             # ES         # PT        # NL          # SE              # PL             # TR          # CN
+    "a": 0,  "am": 0, "morning": 0,   "morgen": 0,     "mattina": 0,    "mañana": 0, "manhã": 0, "ochtend": 0, "morgon": 0,      "rano": 0,       "sabah": 0,   "上午": 0,
+    "p": 1,  "pm": 1, "afternoon": 1, "nachmittag": 1, "pomeriggio": 1, "tarde": 1,  "tarde": 1, "middag": 1,  "eftermiddag": 1, "popołudnie": 1, "öğleden": 1, "下午": 1 }
+CONFIG_TZINFO: dict[str, int] = {
+    "ast": -4 * 3_600, # Atlantic Standard Time
+    "adt": -3 * 3_600, # Atlantic Daylight Time
+    "est": -5 * 3_600, # Eastern Standard Time
+    "edt": -4 * 3_600, # Eastern Daylight Time
+    "cst": -6 * 3_600, # Central Standard Time
+    "cdt": -5 * 3_600, # Central Daylight Time
+    "mst": -7 * 3_600, # Mountain Standard Time
+    "mdt": -6 * 3_600, # Mountain Daylight Time
+    "pst": -8 * 3_600, # Pacific Standard Time
+    "pdt": -7 * 3_600, # Pacific Daylight Time
+    "bst":  1 * 3_600, # British Summer Time
+    "wet":  0 * 3_600, # Western European Time
+    "west": 1 * 3_600, # Western European Summer Time
+    "cet":  1 * 3_600, # Central European Time
+    "cest": 2 * 3_600, # Central European Summer Time
+    "eet":  2 * 3_600, # Eastern European Time
+    "eest": 3 * 3_600, # Eastern European Summer Time
+}
 # fmt: on
 
 
+# Timelex -------------------------------------------------------------------------------------
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(-1, check=False)
+def str_count(s: str, char: str) -> cython.uint:
+    """Count the number of occurrences of a character in a string `<int>`.
+    Equivalent to `s.count(char)`."""
+    return s.count(char)
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.wraparound(True)
+def parse_timelex(timestr: str, lowercase: cython.bint) -> list[str]:
+    """This function breaks the time string into lexical units (tokens),
+    which can be parsed by the Parser. Lexical units are demarcated by
+    changes in the character set, so any continuous string of letters or
+    number is considered one unit."""
+    # Validate timestr
+    if timestr is None:
+        raise errors.InvalidTimestrError(
+            "Only support 'timestr' as a string, instead got: "
+            "{} {}.".format(type(timestr), timestr)
+        )
+    if lowercase:
+        timestr = timestr.lower()
+    tokens: list[str] = []
+    index: cython.int = -1
+    max_index: cython.int = str_len(timestr) - 1
+    temp_char: cython.Py_UCS4 = CHAR_NULL  # '' null
+
+    # Main string loop
+    while index <= max_index:
+        curr_char: cython.Py_UCS4
+        has_alpha: cython.bint = False
+        token_state: cython.int = 0
+        token: str = None
+
+        # Nested token loop
+        while index <= max_index:
+            # Retrieve the charactor for the current token.
+            if temp_char == CHAR_NULL:
+                index += 1
+                if index > max_index:
+                    # Reached end of the string:
+                    # 1. exit the nested token loop.
+                    # 2. main loop will also be stopped.
+                    break
+                while (curr_char := str_loc(timestr, index)) == CHAR_NULL:
+                    index += 1
+                    if index > max_index:
+                        break
+                if not curr_char:
+                    # No more valid charactor:
+                    # 1. exit the nested token loop.
+                    # 2. main loop will also be stopped.
+                    break
+            # Retrieve the cached charactor for the next token.
+            else:
+                curr_char, temp_char = temp_char, CHAR_NULL
+
+            # Token state 0: the 1st charactor of the token.
+            if token_state == 0:
+                # . assign the 1st charactor to the currnet token.
+                token = str_fr_ucs4(curr_char)
+                if curr_char.isalpha():
+                    token_state = 1  # alpha token
+                elif curr_char.isdigit():
+                    token_state = 2  # digit token
+                elif curr_char.isspace():
+                    token = " "
+                    break  # exit token loop: space token
+                else:
+                    break  # exit token loop: single charactor token
+
+            # Token state 1: alpha token
+            elif token_state == 1:
+                has_alpha = True  # mark the token contains alpha.
+                if curr_char.isalpha():
+                    token += str_fr_ucs4(curr_char)
+                elif curr_char == CHAR_PERIOD:  # "."
+                    token += "."
+                    token_state = 3  # alpha token w/t "."
+                else:
+                    # exit token loop, and cache the
+                    # charactor for the next token.
+                    temp_char = curr_char
+                    break
+
+            # Token state 2: digit token
+            elif token_state == 2:
+                if curr_char.isdigit():
+                    token += str_fr_ucs4(curr_char)
+                elif curr_char == CHAR_PERIOD:  # "."
+                    token += "."
+                    token_state = 4  # digit token w/t "."
+                elif curr_char == CHAR_COMMA and str_len(token) >= 2:  # ","
+                    token += ","
+                    token_state = 4  # digit token w/t ","
+                else:
+                    # exit token loop, and cache the
+                    # charactor for the next token.
+                    temp_char = curr_char
+                    break
+
+            # Token state 3: alpha token w/t "."
+            elif token_state == 3:
+                has_alpha = True  # mark the token contains alpha.
+                if curr_char == CHAR_PERIOD or curr_char.isalpha():
+                    token += str_fr_ucs4(curr_char)
+                elif curr_char.isdigit() and token[-1] == ".":
+                    token += str_fr_ucs4(curr_char)
+                    token_state = 4  # digit token w/t "."
+                else:
+                    # exit token loop, and cache the
+                    # charactor for the next token.
+                    temp_char = curr_char
+                    break
+
+            # Token state 4: digit token w/t "."
+            elif token_state == 4:
+                if curr_char == CHAR_PERIOD or curr_char.isdigit():
+                    token += str_fr_ucs4(curr_char)
+                elif curr_char.isalpha() and token[-1] == ".":
+                    token += str_fr_ucs4(curr_char)
+                    token_state = 3  # alpha token w/t "."
+                else:
+                    # exit token loop, and cache the
+                    # charactor for the next token.
+                    temp_char = curr_char
+                    break
+
+        # Further handle token with "." / ","
+        if 3 <= token_state <= 4:
+            if has_alpha or token[-1] in ".," or str_count(token, ".") > 1:
+                tok: str = None
+                for i in range(str_len(token)):
+                    chr: cython.Py_UCS4 = str_loc(token, i)
+                    if chr == CHAR_PERIOD:  # "."
+                        if tok is not None:
+                            tokens.append(tok)
+                            tok = None
+                        tokens.append(".")
+                    elif chr == CHAR_COMMA:  # ","
+                        if tok is not None:
+                            tokens.append(tok)
+                            tok = None
+                        tokens.append(",")
+                    elif tok is not None:
+                        tok += str_fr_ucs4(chr)
+                    else:
+                        tok = str_fr_ucs4(chr)
+                if tok is not None:
+                    tokens.append(tok)
+            else:
+                if token_state == 4 and not str_contains(token, "."):
+                    token = str_replace(token, ",", ".", -1)
+                tokens.append(token)
+
+        # Token that is None means the end of the charactor set.
+        elif token is not None:
+            tokens.append(token)
+
+    # Return the time lexical tokens
+    return tokens
+
+
+# Result --------------------------------------------------------------------------------------
 @cython.cclass
-class ParserInfo:
-    _jump: set[str]
-    _weekday: dict[str, int]
-    _month: dict[str, int]
-    _hms: dict[str, int]
-    _ampm: dict[str, int]
-    _utczone: set[str]
-    _tzoffset: dict[str, int]
-    _pertain: set[str]
-    _dayfirst: cython.bint
-    _yearfirst: cython.bint
-
-    def __init__(
-        self,
-        dayfirst: cython.bint = False,
-        yearfirst: cython.bint = False,
-    ):
-        """The infomation that affect how `<Parser>` parse time.
-
-        :param dayfirst: `<bool>` Whether to interpret the first value in an ambiguous date (e.g. 01/05/09) as the day (`True`) or month (`False`).
-            When `yearfirst` is `True`, this distinguishes between Y/D/M and Y/M/D. This settings
-            only takes affect when the `parse()` method set it's `dayfirst` to `None`.
-        :param yearfirst: `<bool>` Whether to interpret the first value in an ambiguous date (e.g. 01/05/09) as the year.
-            If `True`, the first number is taken as year, otherwise the last number. This settings
-            only takes affect when the `parse()` method set it's `yearfirst` to `None`.
-
-        ### Configuration
-        The following settings can be modified through `set_xxx()` or `add_xxx()` method.
-        If there is an existing `dateutil.parserinfo` you want to use, call instance method
-        `from_parserinfo()` to import settings from a `<dateutil.parserinfo>` instance.
-
-        - jump: Words should be jump (skipped) when parsing, e.g: `'and'`, `'at'`, `'on'`.
-        - weekday: Words should recognized as weekday when parsing, e.g: `'monday'`, `'tuesday'`.
-        - month: Words should recognized as month when parsing, e.g: `'january'`, `'february'`.
-        - hms: Words should recognized as HH/MM/SS when parsing, e.g: `'hour'`, `'minute'`.
-        - ampm: Words should recognized as AM/PM when parsing, e.g: `'am'`, `'pm'`.
-        - utczone: Words should be recognized as UTC timezone when parsing, e.g: `'utc'`, `'gmt'`.
-        - tzoffset: Words should be recognized as timezone offset when parsing, e.g: `'PST'`.
-        - pertain: Words should be recognized as pertain when parsing, e.g: `'of'`.
-        """
-
-        self._jump = gen_set(DEFAULT_INFO_JUMP)
-        self._weekday = copy_dict(DEFAULT_INFO_WEEKDAY)
-        self._month = copy_dict(DEFAULT_INFO_MONTH)
-        self._hms = copy_dict(DEFAULT_INFO_HMS)
-        self._ampm = copy_dict(DEFAULT_INFO_AMPM)
-        self._utczone = gen_set(DEFAULT_INFO_UTCTIMEZONE)
-        self._tzoffset = copy_dict(DEFAULT_INFO_TZOFFSET)
-        self._pertain = gen_set(DEFAULT_INFO_PERTAIN)
-        self._dayfirst = dayfirst
-        self._yearfirst = yearfirst
-
-    # Day & Year first ------------------------------------------------------------
-    @property
-    def dayfirst(self) -> bool:
-        """The default dayfirst behavior for a `<Parser>` when loading this info."""
-        return self._dayfirst
-
-    @property
-    def yearfirst(self) -> bool:
-        """The default yearfirst behavior for a `<Parser>` when loading this info."""
-        return self._yearfirst
-
-    # Jump ------------------------------------------------------------------------
-    def add_jump(self, *values: str):
-        """Add words that should be `jump (skipped)` when parsing.
-        Calling this method will add to the existing jump words.
-        """
-        self._add_to_set(self._jump, values)
-
-    def set_jump(self, *values: str):
-        """Set words that should be `jump (skipped)` when parsing.
-        Calling this method will clear the existing jump words.
-        """
-        self._jump = gen_set(self._validate_str(values))
-
-    @cython.ccall
-    def jump(self, word: str) -> cython.bint:
-        """Determine whether the giving `word` should be jumped
-        when parsing. return boolean."""
-        return word.lower() in self._jump
-
-    @property
-    def jump_words(self) -> list[str]:
-        """Get the current Jump words in a list."""
-        return sorted(self._jump)
-
-    # Weekday ---------------------------------------------------------------------
-    def add_monday(self, *values: str):
-        """Add words that should be recognized as `Monday` when parsing.
-        Calling this method will add to the existing `Monday` words.
-        """
-        self._add_to_dict(self._weekday, 0, values)
-
-    def set_monday(self, *values: str):
-        """Set words that should be recognized as `Monday` when parsing.
-        Calling this method will clear the existing `Monday` words.
-        """
-        self._set_to_dict(self._weekday, 0, values)
-
-    def add_tuesday(self, *values: str):
-        """Add words that should be recognized as `Tuesday` when parsing.
-        Calling this method will add to the existing `Tuesday` words.
-        """
-        self._add_to_dict(self._weekday, 1, values)
-
-    def set_tuesday(self, *values: str):
-        """Set words that should be recognized as `Tuesday` when parsing.
-        Calling this method will clear the existing `Tuesday` words.
-        """
-        self._set_to_dict(self._weekday, 1, values)
-
-    def add_wednesday(self, *values: str):
-        """Add words that should be recognized as `Wednesday` when parsing.
-        Calling this method will add to the existing `Wednesday` words.
-        """
-        self._add_to_dict(self._weekday, 2, values)
-
-    def set_wednesday(self, *values: str):
-        """Set words that should be recognized as `Wednesday` when parsing.
-        Calling this method will clear the existing `Wednesday` words.
-        """
-        self._set_to_dict(self._weekday, 2, values)
-
-    def add_thursday(self, *values: str):
-        """Add words that should be recognized as `Thursday` when parsing.
-        Calling this method will add to the existing `Thursday` words.
-        """
-        self._add_to_dict(self._weekday, 3, values)
-
-    def set_thursday(self, *values: str):
-        """Set words that should be recognized as `Thursday` when parsing.
-        Calling this method will clear the existing `Thursday` words.
-        """
-        self._set_to_dict(self._weekday, 3, values)
-
-    def add_friday(self, *values: str):
-        """Add words that should be recognized as `Friday` when parsing.
-        Calling this method will add to the existing `Friday` words.
-        """
-        self._add_to_dict(self._weekday, 4, values)
-
-    def set_friday(self, *values: str):
-        """Set words that should be recognized as `Friday` when parsing.
-        Calling this method will clear the existing `Friday` words.
-        """
-        self._set_to_dict(self._weekday, 4, values)
-
-    def add_saturday(self, *values: str):
-        """Add words that should be recognized as `Saturday` when parsing.
-        Calling this method will add to the existing `Saturday` words.
-        """
-        self._add_to_dict(self._weekday, 5, values)
-
-    def set_saturday(self, *values: str):
-        """Set words that should be recognized as `Saturday` when parsing.
-        Calling this method will clear the existing `Saturday` words.
-        """
-        self._set_to_dict(self._weekday, 5, values)
-
-    def add_sunday(self, *values: str):
-        """Add words that should be recognized as `Sunday` when parsing.
-        Calling this method will add to the existing `Sunday` words.
-        """
-        self._add_to_dict(self._weekday, 6, values)
-
-    def set_sunday(self, *values: str):
-        """Set words that should be recognized as `Sunday` when parsing.
-        Calling this method will clear the existing `Sunday` words.
-        """
-        self._set_to_dict(self._weekday, 6, values)
-
-    @cython.ccall
-    def weekday(self, word: str) -> cython.int:
-        """If the given 'word' can be recognized as a weekday, the weekday interger
-        will be returned (0 Monday - 6 Sunday). Otherwise, -1 will be returned.
-        """
-        return self._weekday.get(word.lower(), -1)
-
-    @property
-    def weekday_words(self) -> dict[int, list[str]]:
-        """Get the current weekday words in a dict, where key is the weekday interger
-        (0 Monday - 6 Sunday), and value is a list of corresponding weekday words.
-        """
-
-        res: dict[int, list[str]] = {}
-        for k, v in self._weekday.items():
-            res.setdefault(v, []).append(k)
-        return res
-
-    # Month -----------------------------------------------------------------------
-    def add_jan(self, *values: str):
-        """Add words that should be recognized as `January` when parsing.
-        Calling this method will add to the existing `January` words.
-        """
-        self._add_to_dict(self._month, 1, values)
-
-    def set_jan(self, *values: str):
-        """Set words that should be recognized as `January` when parsing.
-        Calling this method will clear the existing `January` words.
-        """
-        self._set_to_dict(self._month, 1, values)
-
-    def add_feb(self, *values: str):
-        """Add words that should be recognized as `February` when parsing.
-        Calling this method will add to the existing `February` words.
-        """
-        self._add_to_dict(self._month, 2, values)
-
-    def set_feb(self, *values: str):
-        """Set words that should be recognized as `February` when parsing.
-        Calling this method will clear the existing `February` words.
-        """
-        self._set_to_dict(self._month, 2, values)
-
-    def add_mar(self, *values: str):
-        """Add words that should be recognized as `March` when parsing.
-        Calling this method will add to the existing `March` words.
-        """
-        self._add_to_dict(self._month, 3, values)
-
-    def set_mar(self, *values: str):
-        """Set words that should be recognized as `March` when parsing.
-        Calling this method will clear the existing `March` words.
-        """
-        self._set_to_dict(self._month, 3, values)
-
-    def add_apr(self, *values: str):
-        """Add words that should be recognized as `April` when parsing.
-        Calling this method will add to the existing `April` words.
-        """
-        self._add_to_dict(self._month, 4, values)
-
-    def set_apr(self, *values: str):
-        """Set words that should be recognized as `April` when parsing.
-        Calling this method will clear the existing `April` words.
-        """
-        self._set_to_dict(self._month, 4, values)
-
-    def add_may(self, *values: str):
-        """Add words that should be recognized as `May` when parsing.
-        Calling this method will add to the existing `May` words.
-        """
-        self._add_to_dict(self._month, 5, values)
-
-    def set_may(self, *values: str):
-        """Set words that should be recognized as `May` when parsing.
-        Calling this method will clear the existing `May` words.
-        """
-        self._set_to_dict(self._month, 5, values)
-
-    def add_jun(self, *values: str):
-        """Add words that should be recognized as `June` when parsing.
-        Calling this method will add to the existing `June` words.
-        """
-        self._add_to_dict(self._month, 6, values)
-
-    def set_jun(self, *values: str):
-        """Set words that should be recognized as `June` when parsing.
-        Calling this method will clear the existing `June` words.
-        """
-        self._set_to_dict(self._month, 6, values)
-
-    def add_jul(self, *values: str):
-        """Add words that should be recognized as `July` when parsing.
-        Calling this method will add to the existing `July` words.
-        """
-        self._add_to_dict(self._month, 7, values)
-
-    def set_jul(self, *values: str):
-        """Set words that should be recognized as `July` when parsing.
-        Calling this method will clear the existing `July` words.
-        """
-        self._set_to_dict(self._month, 7, values)
-
-    def add_aug(self, *values: str):
-        """Add words that should be recognized as `August` when parsing.
-        Calling this method will add to the existing `August` words.
-        """
-        self._add_to_dict(self._month, 8, values)
-
-    def set_aug(self, *values: str):
-        """Set words that should be recognized as `August` when parsing.
-        Calling this method will clear the existing `August` words.
-        """
-        self._set_to_dict(self._month, 8, values)
-
-    def add_sep(self, *values: str):
-        """Add words that should be recognized as `September` when parsing.
-        Calling this method will add to the existing `September` words.
-        """
-        self._add_to_dict(self._month, 9, values)
-
-    def set_sep(self, *values: str):
-        """Set words that should be recognized as `September` when parsing.
-        Calling this method will clear the existing `September` words.
-        """
-        self._set_to_dict(self._month, 9, values)
-
-    def add_oct(self, *values: str):
-        """Add words that should be recognized as `October` when parsing.
-        Calling this method will add to the existing `October` words.
-        """
-        self._add_to_dict(self._month, 10, values)
-
-    def set_oct(self, *values: str):
-        """Set words that should be recognized as `October` when parsing.
-        Calling this method will clear the existing `October` words.
-        """
-        self._set_to_dict(self._month, 10, values)
-
-    def add_nov(self, *values: str):
-        """Add words that should be recognized as `November` when parsing.
-        Calling this method will add to the existing `November` words.
-        """
-        self._add_to_dict(self._month, 11, values)
-
-    def set_nov(self, *values: str):
-        """Set words that should be recognized as `November` when parsing.
-        Calling this method will clear the existing `November` words.
-        """
-        self._set_to_dict(self._month, 11, values)
-
-    def add_dec(self, *values: str):
-        """Add words that should be recognized as `December` when parsing.
-        Calling this method will add to the existing `December` words.
-        """
-        self._add_to_dict(self._month, 12, values)
-
-    def set_dec(self, *values: str):
-        """Set words that should be recognized as `December` when parsing.
-        Calling this method will clear the existing `December` words.
-        """
-        self._set_to_dict(self._month, 12, values)
-
-    @cython.ccall
-    def month(self, word: str) -> cython.int:
-        """If the given 'word' can be recognized as a month, the month interger
-        will be returned (1 Jan - 12 Dec). Otherwise, -1 will be returned.
-        """
-        return self._month.get(word.lower(), -1)
-
-    @property
-    def month_words(self) -> dict[int, list[str]]:
-        """Get the current month words in a dict, where key is the month interger
-        (1 Jan - 12 Dec), and value is a list of corresponding month words.
-        """
-
-        res: dict[int, list[str]] = {}
-        for k, v in self._month.items():
-            res.setdefault(v, []).append(k)
-        return res
-
-    # HMS -------------------------------------------------------------------------
-    def add_hour(self, *values: str):
-        """Add words that should be recognized as `Hour` when parsing.
-        Calling this method will add to the existing `Hour` words.
-        """
-        self._add_to_dict(self._hms, 0, values)
-
-    def set_hour(self, *values: str):
-        """Set words that should be recognized as `Hour` when parsing.
-        Calling this method will clear the existing `Hour` words.
-        """
-        self._set_to_dict(self._hms, 0, values)
-
-    def add_minute(self, *values: str):
-        """Add words that should be recognized as `Minute` when parsing.
-        Calling this method will add to the existing `Minute` words.
-        """
-        self._add_to_dict(self._hms, 1, values)
-
-    def set_minute(self, *values: str):
-        """Set words that should be recognized as `Minute` when parsing.
-        Calling this method will clear the existing `Minute` words.
-        """
-        self._set_to_dict(self._hms, 1, values)
-
-    def add_second(self, *values: str):
-        """Add words that should be recognized as `Second` when parsing.
-        Calling this method will add to the existing `Second` words.
-        """
-        self._add_to_dict(self._hms, 2, values)
-
-    def set_second(self, *values: str):
-        """Set words that should be recognized as `Second` when parsing.
-        Calling this method will clear the existing `Second` words.
-        """
-        self._set_to_dict(self._hms, 2, values)
-
-    @cython.ccall
-    def hms(self, word: str) -> cython.int:
-        """If the given 'word' can be recognized as a HH/MM/DD, the index interger
-        will be returned (0 Hour - 2 Second). Otherwise, -1 will be returned.
-        """
-        return self._hms.get(word.lower(), -1)
-
-    @property
-    def hms_words(self) -> dict[int, list[str]]:
-        """Get the current HH/MM/SS words in a dict, where key is the index interger
-        (0 Hour - 2 Second), and value is a list of corresponding time words.
-        """
-
-        res: dict[int, list[str]] = {}
-        for k, v in self._hms.items():
-            res.setdefault(v, []).append(k)
-        return res
-
-    # AM/PM -----------------------------------------------------------------------
-    def add_am(self, *values: str):
-        """Add words that should be recognized as `AM` when parsing.
-        Calling this method will add to the existing `AM` words.
-        """
-        self._add_to_dict(self._ampm, 0, values)
-
-    def set_am(self, *values: str):
-        """Set words that should be recognized as `AM` when parsing.
-        Calling this method will clear the existing `AM` words.
-        """
-        self._set_to_dict(self._ampm, 0, values)
-
-    def add_pm(self, *values: str):
-        """Add words that should be recognized as `PM` when parsing.
-        Calling this method will add to the existing `PM` words.
-        """
-        self._add_to_dict(self._ampm, 1, values)
-
-    def set_pm(self, *values: str):
-        """Set words that should be recognized as `PM` when parsing.
-        Calling this method will clear the existing `PM` words.
-        """
-        self._set_to_dict(self._ampm, 1, values)
-
-    @cython.ccall
-    def ampm(self, word: str) -> cython.int:
-        """If the given 'word' can be recognized as a AM/PM, the index interger
-        will be returned (0 AM & 1 AM). Otherwise, -1 will be returned.
-        """
-        return self._ampm.get(word.lower(), -1)
-
-    @property
-    def ampm_words(self) -> dict[int, list[str]]:
-        """Get the current AM/PM words in a dict, where key is the index interger
-        (0 AM & 1 AM), and value is a list of corresponding time words.
-        """
-
-        res: dict[int, list[str]] = {}
-        for k, v in self._ampm.items():
-            res.setdefault(v, []).append(k)
-        return res
-
-    # UTC Timezone ----------------------------------------------------------------
-    def add_utc(self, *values: str):
-        """Add words that should be recognized as `UTC timezone` when parsing.
-        Calling this method will add to the existing `UTC timezone` words.
-        """
-        self._add_to_set(self._utczone, values)
-
-    def set_utc(self, *values: str):
-        """Set words that should be recognized as `UTC timezone` when parsing.
-        Calling this method will clear the existing `UTC timezone` words.
-        """
-        self._utczone = gen_set(self._validate_str(values))
-
-    @cython.ccall
-    def utczone(self, word: str) -> cython.bint:
-        """Determine whether the given 'word' means UTC
-        timezone. return boolean."""
-        return word.lower() in self._utczone
-
-    @property
-    def utczone_words(self) -> list[str]:
-        """Get the current UTC timezone words in a list."""
-
-        return sorted(self._utczone)
-
-    # Timezone offset -------------------------------------------------------------
-    def add_tzoffset(self, tz: str, offset: cython.int):
-        """Add a timezone name and it's corresponding offset in seconds,
-        so the `<Parser>` can handle when encountered.
-
-        :param tz: `<str>` The name of the timezone
-        :param offset: `<int>` The corresponding offset in seconds.
-        """
-
-        tz = tz.lower()
-        if tz not in self._utczone:
-            self._tzoffset[tz] = offset
-
-    @cython.ccall
-    def tzoffset(self, tz: str) -> cython.int:
-        """Check if the giving 'tz' matched with a timezone offset.
-        If matched the corresponding offset in seconds will be returned.
-        Otherwise, -1000000 will be returned (means None).
-        """
-
-        tz = tz.lower()
-        if tz in self._utczone:
-            return 0
-        else:
-            return self._tzoffset.get(tz, -1000000)
-
-    @property
-    def tzoffset_words(self) -> dict[str, int]:
-        """Get the current timezone offset words in a dict, where key is
-        the timezone name and value is the corresponding offset in seconds.
-        """
-
-        return copy_dict(self._tzoffset)
-
-    # Pertain ---------------------------------------------------------------------
-    def add_pertain(self, *values: str):
-        """Add words that should be recognized as `Pertain` when parsing.
-        Calling this method will add to the existing `Pertain` words.
-        """
-        self._add_to_set(self._pertain, values)
-
-    def set_pertain(self, *values: str):
-        """Set words that should be recognized as `Pertain` when parsing.
-        Calling this method will clear the existing `Pertain` words.
-        """
-        self._pertain = gen_set(self._validate_str(values))
-
-    @cython.ccall
-    def pertain(self, word: str) -> cython.bint:
-        """Determine whether the giving `word` should recognized
-        as Pertain when parsing. return boolean."""
-        return word.lower() in self._pertain
-
-    @property
-    def pertain_words(self) -> list[str]:
-        """Get the current Pertain words in a list."""
-        return sorted(self._pertain)
-
-    # Utils -----------------------------------------------------------------------
+class Result:
+    """Represents the parsed result form the Parser."""
+
+    # Y/M/D
+    _ymd: cython.int[3]
+    _ymd_idx: cython.int
+    _ymd_yidx: cython.int
+    _ymd_midx: cython.int
+    _ymd_didx: cython.int
+    # Result
+    year: cython.int
+    month: cython.int
+    day: cython.int
+    weekday: cython.int
+    hour: cython.int
+    minute: cython.int
+    second: cython.int
+    microsecond: cython.int
+    ampm: cython.int
+    tzname: str
+    tzoffset: cython.int
+    _century_specified: cython.bint
+
+    def __init__(self) -> None:
+        """The parsed result form the Parser."""
+        # Y/M/D
+        self._ymd = [-1, -1, -1]
+        self._ymd_idx = -1
+        self._ymd_yidx = -1
+        self._ymd_midx = -1
+        self._ymd_didx = -1
+        # Result
+        self.year = -1
+        self.month = -1
+        self.day = -1
+        self.weekday = -1
+        self.hour = -1
+        self.minute = -1
+        self.second = -1
+        self.microsecond = -1
+        self.ampm = -1
+        self.tzname = None
+        self.tzoffset = -100_000
+        self._century_specified = False
+
+    # Y/M/D -----------------------------------------------------------
     @cython.cfunc
-    def _validate_str(self, values: tuple) -> list[str]:
-        return [str(v).lower() for v in values if isinstance(v, str) and v]
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def append_ymd(self, value: object, label: cython.uint) -> cython.bint:
+        """Append a Y/M/D value. Returns True if append successfully,
+        else False if Y/M/D slots (max 3) are full `<bool>`.
 
-    @cython.cfunc
-    def _add_to_set(self, set_: set, values: tuple):
-        for val in self._validate_str(values):
-            set_add(set_, val)
-
-    @cython.cfunc
-    def _add_to_dict(self, dict_: dict, val: cython.int, keys: tuple):
-        for key in self._validate_str(keys):
-            dict_set(dict_, key, val)
-
-    @cython.cfunc
-    def _set_to_dict(self, dict_: dict, val: cython.int, keys: tuple):
-        for key in [key for key, v in dict_.items() if v == val]:
-            dict_del(dict_, key)
-        self._add_to_dict(dict_, val, keys)
-
-    # Conversion ------------------------------------------------------------------
-    @cython.ccall
-    def from_parserinfo(self, info: parserinfo):
-        """Import settings from a giving `dateutil.parserinfo` instance."""
-
+        :param value `<str/int>`: A Y/M/D value.
+        :param label `<int>`: The label for the value:
+            - label=0: unknown
+            - label=1: year
+            - label=2: month
+            - label=3: day
+        """
+        # Validate the value
+        if self._ymd_idx >= 2:
+            return False  # exit: Y/M/D slots are full
         try:
-            # Jump
-            self.set_jump(*info._jump.keys())
-            # Weekday
-            mon, tue, wed, thu, fri, sat, sun = [], [], [], [], [], [], []
-            for key, val in info._weekdays.items():
-                if val == 0:
-                    mon.append(key)
-                elif val == 1:
-                    tue.append(key)
-                elif val == 2:
-                    wed.append(key)
-                elif val == 3:
-                    thu.append(key)
-                elif val == 4:
-                    fri.append(key)
-                elif val == 5:
-                    sat.append(key)
-                elif val == 6:
-                    sun.append(key)
-            self.set_monday(*mon)
-            self.set_tuesday(*tue)
-            self.set_wednesday(*wed)
-            self.set_thursday(*thu)
-            self.set_friday(*fri)
-            self.set_saturday(*sat)
-            self.set_sunday(*sun)
-            # Month
-            jan, feb, mar, apr, may, jun = [], [], [], [], [], []
-            jul, aug, sep, oct, nov, dec = [], [], [], [], [], []
-            for key, val in info._months.items():
-                if val == 0:
-                    jan.append(key)
-                elif val == 1:
-                    feb.append(key)
-                elif val == 2:
-                    mar.append(key)
-                elif val == 3:
-                    apr.append(key)
-                elif val == 4:
-                    may.append(key)
-                elif val == 5:
-                    jun.append(key)
-                elif val == 6:
-                    jul.append(key)
-                elif val == 7:
-                    aug.append(key)
-                elif val == 8:
-                    sep.append(key)
-                elif val == 9:
-                    oct.append(key)
-                elif val == 10:
-                    nov.append(key)
-                elif val == 11:
-                    dec.append(key)
-            self.set_jan(*jan)
-            self.set_feb(*feb)
-            self.set_mar(*mar)
-            self.set_apr(*apr)
-            self.set_may(*may)
-            self.set_jun(*jun)
-            self.set_jul(*jul)
-            self.set_aug(*aug)
-            self.set_sep(*sep)
-            self.set_oct(*oct)
-            self.set_nov(*nov)
-            self.set_dec(*dec)
-            # HMS
-            hh, mm, ss = [], [], []
-            for key, val in info._hms.items():
-                if val == 0:
-                    hh.append(key)
-                elif val == 1:
-                    mm.append(key)
-                elif val == 2:
-                    ss.append(key)
-            self.set_hour(*hh)
-            self.set_minute(*mm)
-            self.set_second(*ss)
-            # AM/PM
-            am, pm = [], []
-            for key, val in info._ampm.items():
-                if val == 0:
-                    am.append(key)
-                elif val == 1:
-                    pm.append(key)
-            self.set_am(*am)
-            self.set_pm(*pm)
-            # UTC Timezone
-            self.set_utc(*info._utczone.keys())
-            # Timezone offset
-            self._tzoffset.clear()
-            for key, val in info.TZOFFSET.items():
-                self.add_tzoffset(key, val)
-            # Pertain
-            self.set_pertain(*info._pertain.keys())
-            # Day & Year first
-            self._dayfirst = info.dayfirst
-            self._yearfirst = info.yearfirst
-
+            val: cython.int = int(value)
         except Exception as err:
             raise ValueError(
-                "<ParserInfo> Failed to import settings from `dateutil.parserinfo`: %s %s"
-                % (type(info), repr(info))
+                "Invalid Y/M/D value to append to the Result: %s" % repr(value)
             ) from err
 
-    # Validate Result -------------------------------------------------------------
+        # Pre-determine the year label
+        if val >= 100 or (isinstance(value, str) and str_len(value) > 2):
+            self._century_specified = True
+            label = 1  # year label
+
+        # Set & label Y/M/D value
+        self._set_ymd(val)
+        if label == 0:
+            pass
+        elif label == 1 and self._ymd_yidx == -1:
+            self._ymd_yidx = self._ymd_idx
+        elif label == 2 and self._ymd_midx == -1:
+            self._ymd_midx = self._ymd_idx
+        elif label == 3 and self._ymd_didx == -1:
+            self._ymd_didx = self._ymd_idx
+        return True
+
     @cython.cfunc
     @cython.inline(True)
-    @cython.exceptval(check=False)
-    def _convert_year(
-        self,
-        year: cython.int,
-        century_specified: cython.bint,
-    ) -> cython.int:
-        """Converts two-digit year to year within [-50, 49]
-        range of the current local time.
+    @cython.exceptval(-1, check=False)
+    def ymd_values(self) -> cython.uint:
+        """Access the number of Y/M/D values
+        that have been stored in the Result `<int>`."""
+        return self._ymd_idx + 1
 
-        :param year: `<int>` The year of a date in two-digit.
-        :param century_specified: `<bool>` Whether the year is century_specified.
-        :return: `<int>` The year after conversion
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def could_be_day(self, value: cython.int) -> cython.bint:
+        """Determine if a time integer could be the
+        day of the date `<bool>`."""
+        # Day value already set.
+        if self._ymd_didx >= 0:
+            return False
+        # Month value not set & value in range.
+        elif self._ymd_midx == -1:
+            return 1 <= value <= 31
+        # Year value not set & value in range.
+        elif self._ymd_yidx == -1:
+            month = self._ymd[self._ymd_midx]
+            max_days: cython.int = cydt.days_in_month(2000, month)
+            return 1 <= value <= max_days
+        # Both Y&M value are set & value in range.
+        else:
+            year = self._ymd[self._ymd_yidx]
+            month = self._ymd[self._ymd_midx]
+            max_days: cython.int = cydt.days_in_month(year, month)
+            return 1 <= value <= max_days
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _set_ymd(self, value: cython.int) -> cython.bint:
+        """(Internal) Set the Y/M/D value. Returns True
+        if the Y/M/D value has been set, else False
+        if Y/M/D slots (max 3) are full `<bool>`."""
+        if self._ymd_idx < 2:
+            self._ymd_idx += 1
+            self._ymd[self._ymd_idx] = value
+            return True
+        else:
+            return False
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _labeled_ymd(self) -> cython.uint:
+        """(Internal) Get the number of Y/M/D values
+        that have been labeled (solved) `<int>`."""
+        count: cython.int = 0
+        if self._ymd_yidx >= 0:
+            count += 1
+        if self._ymd_midx >= 0:
+            count += 1
+        if self._ymd_didx >= 0:
+            count += 1
+        return count
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _resolve_ymd(self, day1st: cython.bint, year1st: cython.bint) -> cython.bint:
+        """(Internal) Try the best to sort out which Y/M/D member
+        is year, month & day based on the give Y/M/D result `<bool>`."""
+        ymd_values: cython.int = self.ymd_values()
+        ymd_labeled: cython.int = self._labeled_ymd()
+
+        # All Y/M/D member have been solved already.
+        if ymd_values == ymd_labeled > 0:
+            self.year = self._ymd[self._ymd_yidx] if self._ymd_yidx >= 0 else -1
+            self.month = self._ymd[self._ymd_midx] if self._ymd_midx >= 0 else -1
+            self.day = self._ymd[self._ymd_didx] if self._ymd_didx >= 0 else -1
+
+        # Only has one Y/M/D member.
+        elif ymd_values == 1:
+            if self._ymd_midx >= 0:  # labeled as month
+                self.month = self._ymd[0]
+            elif self._ymd[0] > 31:  # out of day range
+                self.year = self._ymd[0]
+            else:
+                self.day = self._ymd[0]
+
+        # Have two Y/M/D members.
+        elif ymd_values == 2:
+            # . with month label
+            if self._ymd_midx >= 0:
+                if self._ymd_midx == 0:
+                    self.month = self._ymd[0]
+                    if self._ymd[1] > 31:
+                        # Jan-99
+                        self.year = self._ymd[1]
+                    else:
+                        # Jan-01
+                        self.day = self._ymd[1]
+                else:
+                    self.month = self._ymd[1]
+                    if self._ymd[0] > 31:
+                        # 99-Jan
+                        self.year = self._ymd[0]
+                    else:
+                        # 01-Jan
+                        self.day = self._ymd[0]
+            # . without month label
+            elif self._ymd[0] > 31:
+                # 99-Jan
+                self.year, self.month = self._ymd[0], self._ymd[1]
+            elif self._ymd[1] > 31:
+                # Jan-99
+                self.month, self.year = self._ymd[0], self._ymd[1]
+            elif day1st and 1 <= self._ymd[1] <= 12:
+                # 01-Jan
+                self.day, self.month = self._ymd[0], self._ymd[1]
+            else:
+                # Jan-01
+                self.month, self.day = self._ymd[0], self._ymd[1]
+
+        # Have all three Y/M/D member
+        elif ymd_values == 3:
+            # . lack of one label
+            if ymd_labeled == 2:
+                if self._ymd_yidx >= 0:  # year is labeled
+                    self.year = self._ymd[self._ymd_yidx]
+                    if self._ymd_midx >= 0:  # month is labeled
+                        self.month = self._ymd[self._ymd_midx]
+                        self.day = self._ymd[3 - self._ymd_yidx - self._ymd_midx]
+                    else:  # day is labeled
+                        self.day = self._ymd[self._ymd_didx]
+                        self.month = self._ymd[3 - self._ymd_yidx - self._ymd_didx]
+                elif self._ymd_midx >= 0:  # month is labeled
+                    self.month = self._ymd[self._ymd_midx]
+                    if self._ymd_yidx >= 0:  # year is labeled
+                        self.year = self._ymd[self._ymd_yidx]
+                        self.day = self._ymd[3 - self._ymd_yidx - self._ymd_midx]
+                    else:  # day is labeled
+                        self.day = self._ymd[self._ymd_didx]
+                        self.year = self._ymd[3 - self._ymd_midx - self._ymd_didx]
+                else:  # day is labeled
+                    self.day = self._ymd[self._ymd_didx]
+                    if self._ymd_yidx >= 0:  # year is labeled
+                        self.year = self._ymd[self._ymd_yidx]
+                        self.month = self._ymd[3 - self._ymd_yidx - self._ymd_didx]
+                    else:  # month is labeled
+                        self.month = self._ymd[self._ymd_midx]
+                        self.year = self._ymd[3 - self._ymd_midx - self._ymd_didx]
+            # . lack more than one labels
+            elif self._ymd_midx == 0:
+                if self._ymd[1] > 31:
+                    # Apr-2003-25
+                    self.month, self.year, self.day = (
+                        self._ymd[0],
+                        self._ymd[1],
+                        self._ymd[2],
+                    )
+                else:
+                    # Apr-25-2003
+                    self.month, self.day, self.year = (
+                        self._ymd[0],
+                        self._ymd[1],
+                        self._ymd[2],
+                    )
+            elif self._ymd_midx == 1:
+                if self._ymd[0] > 31 or (year1st and 0 < self._ymd[2] <= 31):
+                    # 99-Jan-01
+                    self.year, self.month, self.day = (
+                        self._ymd[0],
+                        self._ymd[1],
+                        self._ymd[2],
+                    )
+                else:
+                    # 01-Jan-99
+                    self.day, self.month, self.year = (
+                        self._ymd[0],
+                        self._ymd[1],
+                        self._ymd[2],
+                    )
+            elif self._ymd_midx == 2:
+                if self._ymd[1] > 31:
+                    # 01-99-Jan
+                    self.day, self.year, self.month = (
+                        self._ymd[0],
+                        self._ymd[1],
+                        self._ymd[2],
+                    )
+                else:
+                    # 99-01-Jan
+                    self.year, self.day, self.month = (
+                        self._ymd[0],
+                        self._ymd[1],
+                        self._ymd[2],
+                    )
+            else:
+                if (
+                    self._ymd[0] > 31
+                    or self._ymd_yidx == 0
+                    or (year1st and 0 < self._ymd[1] <= 12 and 0 < self._ymd[2] <= 31)
+                ):
+                    if day1st and 0 < self._ymd[2] <= 12:
+                        # 99-01-Jan
+                        self.year, self.day, self.month = (
+                            self._ymd[0],
+                            self._ymd[1],
+                            self._ymd[2],
+                        )
+                    else:
+                        # 99-Jan-01
+                        self.year, self.month, self.day = (
+                            self._ymd[0],
+                            self._ymd[1],
+                            self._ymd[2],
+                        )
+                elif self._ymd[0] > 12 or (day1st and 0 < self._ymd[1] <= 12):
+                    # 01-Jan-99
+                    self.day, self.month, self.year = (
+                        self._ymd[0],
+                        self._ymd[1],
+                        self._ymd[2],
+                    )
+                else:
+                    # Jan-01-99
+                    self.month, self.day, self.year = (
+                        self._ymd[0],
+                        self._ymd[1],
+                        self._ymd[2],
+                    )
+
+        # Swap month & day (if necessary)
+        if self.month > 12 and 1 <= self.day <= 12:
+            self.month, self.day = self.day, self.month
+
+        # Adjust year to current century (if necessary)
+        if 0 <= self.year < 100 and not self._century_specified:
+            curr_year: cython.int = cytime.localtime().tm_year
+            century: cython.int = curr_year // 100 * 100
+            self.year += century
+            # . too far into the future
+            if self.year >= curr_year + 50:
+                self.year -= 100
+            # . too distance from the past
+            elif self.year < curr_year - 50:
+                self.year += 100
+
+        # Finished
+        return True
+
+    # Result ----------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def prepare(self, day1st: cython.bint, year1st: cython.bint) -> cython.bint:
+        """Prepare the parsed datetime result. Must call this
+        method before accessing the result values `<bool>`.
         """
+        self._resolve_ymd(day1st, year1st)
+        return True
 
-        if 0 <= year < 100 and not century_specified:
-            # Determine current year and century
-            curyear: cython.int = cytime.localtime().tm_year
-            century: cython.int = curyear // 100 * 100
+    # Special methods -------------------------------------------------
+    def __repr__(self) -> str:
+        # Representations
+        reprs: list[str] = []
 
-            # Adjust for current century
-            year += century
-            if year >= curyear + 50:  # if too far in future
-                year -= 100
-            elif year < curyear - 50:  # if too far in past
-                year += 100
+        if self.year != -1:
+            reprs.append("year=%d" % self.year)
+        if self.month != -1:
+            reprs.append("month=%d" % self.month)
+        if self.day != -1:
+            reprs.append("day=%d" % self.day)
+        if self.weekday != -1:
+            reprs.append("weekday=%d" % self.weekday)
+        if self.hour != -1:
+            reprs.append("hour=%d" % self.hour)
+        if self.minute != -1:
+            reprs.append("minute=%d" % self.minute)
+        if self.second != -1:
+            reprs.append("second=%d" % self.second)
+        if self.microsecond != -1:
+            reprs.append("microsecond=%d" % self.microsecond)
+        if self.ampm != -1:
+            reprs.append("ampm=%d" % self.ampm)
+        if self.tzname is not None:
+            reprs.append("tzname='%s'" % self.tzname)
+        if self.tzoffset != -100_000:
+            reprs.append("tzoffset=%d" % self.tzoffset)
 
-        return year
+        # Construct
+        return "<%s (%s)>" % (self.__class__.__name__, ", ".join(reprs))
+
+    def __bool__(self) -> bool:
+        return (
+            self.year != -1
+            or self.month != -1
+            or self.day != -1
+            or self.weekday != -1
+            or self.hour != -1
+            or self.minute != -1
+            or self.second != -1
+            or self.microsecond != -1
+            or self.ampm != -1
+            or self.tzname is not None
+            or self.tzoffset != -100_000
+        )
+
+
+# Config --------------------------------------------------------------------------------------
+@cython.cclass
+class Config:
+    """Represents the configurations of the Parser."""
+
+    # Settings
+    _day1st: cython.bint
+    _year1st: cython.bint
+    _pertain: set[str]
+    _jump: set[str]
+    _utc: set[str]
+    _month: dict[str, int]
+    _weekday: dict[str, int]
+    _hms: dict[str, int]
+    _ampm: dict[str, int]
+    _tzinfo: dict[str, int]
+    # Keywords
+    _keywords: set[str]
+
+    def __init__(self, day1st: bool = False, year1st: bool = False) -> None:
+        """The configurations of the Parser.
+
+        ### Ambiguous Y/M/D
+        :param day1st `<bool>`: Whether to interpret first ambiguous date values as day. Defaults to `False`.
+        :param year1st `<bool>`: Whether to interpret first the ambiguous date value as year. Defaults to `False`.
+
+        Both the 'day1st' & 'year1st' arguments works together to determine how
+        to interpret ambiguous Y/M/D values.
+
+        In the case when all three values are ambiguous (e.g. `01/05/09`):
+        - If 'day1st=True' and 'year1st=True', the date will be interpreted as `'Y/D/M'`.
+        - If 'day1st=False' and 'year1st=True', the date will be interpreted as `'Y/M/D'`.
+        - If 'day1st=True' and 'year1st=False', the date will be interpreted as `'D/M/Y'`.
+        - If 'day1st=False' and 'year1st=False', the date will be interpreted as `'M/D/Y'`.
+
+        In the case when the year value is clear (e.g. `2010/01/05` or `99/01/05`):
+        - If 'day1st=True', the date will be interpreted as `'Y/D/M'`.
+        - If 'day1st=False', the date will be interpreted as `'Y/M/D'`.
+
+        In the case when only one value is ambiguous (e.g. `01/20/2010` or `01/20/99`):
+        - There is no need to set 'day1st' or 'year1st', the date should be interpreted correctly.
+
+        ### Configurations
+        Besides the 'day1st' & 'year1st' arguments, Config also provides 'add_xxx()',
+        'rem_xxx()' and 'reset_xxx()' methods to modify the following settings:
+        - pertain: Words that should be recognized as pertain, e.g: `'of'`.
+        - jump: Words that should be skipped, e.g: `'and'`, `'at'`, `'on'`.
+        - utc: Words that should be recognized as UTC timezone, e.g: `'utc'`, `'gmt'`.
+        - tzinfo: Words that should be recognized as timezone and constrcted
+          with the specified timezone offset in seconds, e.g: `'est'`, `'pst'`.
+        - month: Words that should be recognized as month, e.g: `'january'`, `'february'`.
+        - weekday: Words that should be recognized as weekday, e.g: `'monday'`, `'tuesday'`.
+        - hms: Words that should be recognized as HH/MM/SS, e.g: `'hour'`, `'minute'`.
+        - ampm: Words that should be recognized as AM/PM, e.g: `'am'`, `'pm'`.
+
+        ### Import Settings
+        For user who wants to use an existing '<dateutil.parser.parserinfo>'
+        settings, Config provides the 'import_parserinfo' method to bridge
+        the compatibility with the 'dateutil' libaray.
+
+        >>> from cytimes import Config
+        >>> from dateutil.parser import parserinfo
+        >>> info = parserinfo()
+            cfg = Config()
+            cfg.import_parserinfo(info)
+        """
+        # Settings
+        self._day1st = bool(day1st)
+        self._year1st = bool(year1st)
+        self._pertain = CONFIG_PERTAIN
+        self._jump = CONFIG_JUMP
+        self._utc = CONFIG_UTC
+        self._month = CONFIG_MONTH
+        self._weekday = CONFIG_WEEKDAY
+        self._hms = CONFIG_HMS
+        self._ampm = CONFIG_AMPM
+        self._tzinfo = CONFIG_TZINFO
+        # Keywords
+        self._construct_keywords()
+
+    # Ambiguous -------------------------------------------------------
+    @property
+    def day1st(self) -> bool:
+        """Whether to interpret first ambiguous date values as day `<bool>`."""
+        return self._day1st
+
+    @property
+    def year1st(self) -> bool:
+        """Whether to interpret first ambiguous date values as year `<bool>`."""
+        return self._year1st
+
+    # Pertain ---------------------------------------------------------
+    @property
+    def pertain(self) -> set[str]:
+        """The words that should be recognized as pertain `<set[str]>`.
+
+        ### Example
+        >>> cfg.pertain
+        >>> {"of"}
+        """
+        return self._pertain
+
+    def add_pertain(self, *words: str) -> None:
+        """Add words that should be recognized as pertain.
+
+        ### Example
+        >>> cfg.add_pertain("of", ...)
+        """
+        for word in words:
+            word = self._validate_keyword("pertain", word)
+            set_add(self._pertain, word)
+
+    def rem_pertain(self, *words: str) -> None:
+        """Remove words that should be recognized as pertain.
+
+        ### Example
+        >>> cfg.rem_pertain("of", ...)
+        """
+        for word in words:
+            set_discard(self._pertain, word)
+            set_discard(self._keywords, word)
+
+    def reset_pertain(self, *words: str) -> None:
+        """Reset the words that should be recognized as pertain.
+        If 'words' are not specified, resets to default setting.
+
+        ### Example
+        >>> cfg.reset_pertain("of", ...)
+        """
+        if words:
+            self._pertain = set(words)
+        else:
+            self._pertain = CONFIG_PERTAIN
+        self._construct_keywords()
+
+    # Jump ------------------------------------------------------------
+    @property
+    def jump(self) -> set[str]:
+        """The words that should be skipped `<set[str]>`.
+
+        ### Example
+        >>> cfg.jump
+        >>> {
+                " ", ".", ",", ";", "-", "/", "'",
+                "at", "on", "and", "ad", "t", "st",
+                "nd", "rd", "th"
+            }
+        """
+        return self._jump
+
+    def add_jump(self, *words: str) -> None:
+        """Add words that should be skipped.
+
+        ### Example
+        >>> cfg.add_jump("at", "on", ...)
+        """
+        for word in words:
+            word = self._validate_keyword("jump", word)
+            set_add(self._jump, word)
+
+    def rem_jump(self, *words: str) -> None:
+        """Remove words that should be skipped.
+
+        ### Example
+        >>> cfg.rem_jump("at", "on", ...)
+        """
+        for word in words:
+            set_discard(self._jump, word)
+            set_discard(self._keywords, word)
+
+    def reset_jump(self, *words: str) -> None:
+        """Reset the words that should be skipped.
+        If 'words' are not specified, resets to default setting.
+
+        ### Example
+        >>> cfg.reset_jump("at", "on", ...)
+        """
+        if words:
+            self._jump = set(words)
+        else:
+            self._jump = CONFIG_JUMP
+        self._construct_keywords()
+
+    # UTC -------------------------------------------------------------
+    @property
+    def utc(self) -> set[str]:
+        """The words that should be recognized as UTC timezone `<set[str]>`.
+
+        ### Example
+        >>> cfg.utc
+        >>> {"utc", "gmt", "z"}
+        """
+        return self._utc
+
+    def add_utc(self, *words: str) -> None:
+        """Add words that should be recognized as UTC timezone.
+
+        ### Example
+        >>> cfg.add_utc("utc", "gmt", "z", ...)
+        """
+        for word in words:
+            word = self._validate_keyword("utc", word)
+            set_add(self._utc, word)
+
+    def rem_utc(self, *words: str) -> None:
+        """Remove words that should be recognized as UTC timezone.
+
+        ### Example
+        >>> cfg.rem_utc("utc", "gmt", "z", ...)
+        """
+        for word in words:
+            set_discard(self._utc, word)
+            set_discard(self._keywords, word)
+
+    def reset_utc(self, *words: str) -> None:
+        """Reset the words that should be recognized as UTC timezone.
+        If 'words' are not specified, resets to default setting.
+
+        ### Example
+        >>> cfg.reset_utc("utc", "gmt", "z", ...)
+        """
+        if words:
+            self._utc = set(words)
+        else:
+            self._utc = CONFIG_UTC
+        self._construct_keywords()
+
+    # Month -----------------------------------------------------------
+    @property
+    def month(self) -> dict[str, int]:
+        """The words that should be recognized as month `<dict[str, int]>`.
+
+        ### Example
+        >>> cfg.month
+        >>> {
+                "january": 1,
+                "jan": 1,
+                "february": 2,
+                "feb": 2,
+                ...
+            }
+        """
+        return self._month
+
+    def add_month(self, month: int, *words: str) -> None:
+        """Add words that should be recognized as a specific month.
+
+        ### Example
+        >>> cfg.add_month(1, "january", "jan", ...)
+        """
+        month = self._validate_value("month", month, 1, 12)
+        for word in words:
+            word = self._validate_keyword("month", word)
+            dict_setitem(self._month, word, month)
+
+    def rem_month(self, *words: str) -> None:
+        """Remove words that should be recognized as month.
+
+        ### Example
+        >>> cfg.rem_month("january", "jan", ...)
+        """
+        for word in words:
+            try:
+                dict_delitem(self._month, word)
+            except KeyError:
+                pass
+            set_discard(self._keywords, word)
+
+    def reset_month(self, **word_n_month: int) -> None:
+        """Reset the words that should be recognized as month.
+        If 'word_n_month' are not specified, resets to default
+        setting.
+
+        ### Example
+        >>> cfg.reset_month(
+                january=1, jan=1,
+                february=2, feb=2,
+                ...
+            )
+        """
+        if word_n_month:
+            self._month = word_n_month
+        else:
+            self._month = CONFIG_MONTH
+        self._construct_keywords()
+
+    # Weekday ---------------------------------------------------------
+    @property
+    def weekday(self) -> dict[str, int]:
+        """The words that should be recognized as weekday,
+        where 0=Monday...6=Sunday. `<dict[str, int]>`.
+
+        ### Example
+        >>> cfg.weekday
+        >>> {
+                "monday": 0,
+                "mon": 0,
+                "tuesday": 1,
+                "tue": 1,
+                ...
+            }
+        """
+        return self._weekday
+
+    def add_weekday(self, weekday: int, *words: str) -> None:
+        """Add words that should be recognized as a specific
+        weekday, where 0=Monday...6=Sunday.
+
+        ### Example
+        >>> cfg.add_weekday(0, "monday", "mon", ...)
+        """
+        weekday = self._validate_value("weekday", weekday, 0, 6)
+        for word in words:
+            word = self._validate_keyword("weekday", word)
+            dict_setitem(self._weekday, word, weekday)
+
+    def rem_weekday(self, *words: str) -> None:
+        """Remove words that should be recognized as weekday.
+
+        ### Example
+        >>> cfg.rem_weekday("monday", "mon", ...)
+        """
+        for word in words:
+            try:
+                dict_delitem(self._weekday, word)
+            except KeyError:
+                pass
+            set_discard(self._keywords, word)
+
+    def reset_weekday(self, **word_n_weekday: int) -> None:
+        """Reset the words that should be recognized as weekday,
+        where 0=Monday...6=Sunday. If 'word_n_weekday' are not
+        specified, resets to default setting.
+
+        ### Example
+        >>> cfg.reset_weekday(
+                monday=0, mon=0,
+                tuesday=1, tue=1,
+                ...
+            )
+        """
+        if word_n_weekday:
+            self._weekday = word_n_weekday
+        else:
+            self._weekday = CONFIG_WEEKDAY
+        self._construct_keywords()
+
+    # HMS ------------------------------------------------------------
+    @property
+    def hms(self) -> dict[str, int]:
+        """The words that should be recognized as HH/MM/SS,
+        where 0=hour, 1=minute, 2=second. `<dict[str, int]>`.
+
+        ### Example
+        >>> cfg.hms
+        >>> {
+                "hour": 0,
+                "minute": 1,
+                "second": 2,
+                ...
+            }
+        """
+        return self._hms
+
+    def add_hms(self, hms: int, *words: str) -> None:
+        """Add words that should be recognized as HH/MM/SS,
+        where 0=hour, 1=minute, 2=second.
+
+        ### Example
+        >>> cfg.add_hms(0, "hour", "hours", "h", ...)
+        """
+        hms = self._validate_value("hms", hms, 0, 2)
+        for word in words:
+            word = self._validate_keyword("hms", word)
+            dict_setitem(self._hms, word, hms)
+
+    def rem_hms(self, *words: str) -> None:
+        """Remove words that should be recognized as HH/MM/SS.
+
+        ### Example
+        >>> cfg.rem_hms("hour", "hours", "h", ...)
+        """
+        for word in words:
+            try:
+                dict_delitem(self._hms, word)
+            except KeyError:
+                pass
+            set_discard(self._keywords, word)
+
+    def reset_hms(self, **word_n_hms: int) -> None:
+        """Reset the words that should be recognized as HH/MM/SS,
+        where 0=hour, 1=minute, 2=second. If 'word_n_hms' are not
+        specified, resets to default setting.
+
+        ### Example
+        >>> cfg.reset_hms(
+                hour=0, hours=0, h=0,
+                minute=1, minutes=1, min=1,
+                second=2, seconds=2, sec=2,
+                ...
+            )
+        """
+        if word_n_hms:
+            self._hms = word_n_hms
+        else:
+            self._hms = CONFIG_HMS
+        self._construct_keywords()
+
+    # AM/PM ----------------------------------------------------------
+    @property
+    def ampm(self) -> dict[str, int]:
+        """The words that should be recognized as AM/PM,
+        where 0=AM and 1=PM. `<dict[str, int]>`.
+
+        ### Example
+        >>> cfg.ampm
+        >>> {
+                "am": 0,
+                "pm": 1,
+                ...
+            }
+        """
+        return self._ampm
+
+    def add_ampm(self, ampm: int, *words: str) -> None:
+        """Add words that should be recognized as AM/PM,
+        where 0=AM and 1=PM.
+
+        ### Example
+        >>> cfg.add_ampm(0, "am", "a.m.", ...)
+        """
+        ampm = self._validate_value("ampm", ampm, 0, 1)
+        for word in words:
+            word = self._validate_keyword("ampm", word)
+            dict_setitem(self._ampm, word, ampm)
+
+    def rem_ampm(self, *words: str) -> None:
+        """Remove words that should be recognized as AM/PM.
+
+        ### Example
+        >>> cfg.rem_ampm("am", "a.m.", ...)
+        """
+        for word in words:
+            try:
+                dict_delitem(self._ampm, word)
+            except KeyError:
+                pass
+            set_discard(self._keywords, word)
+
+    def reset_ampm(self, **word_n_ampm: int) -> None:
+        """Reset the words that should be recognized as AM/PM,
+        where 0=AM and 1=PM. If 'word_n_ampm' are not specified,
+        resets to default setting.
+
+        ### Example
+        >>> cfg.reset_ampm(
+                am=0, pm=1,
+                **{"a.m."=0, "p.m."=1}
+                ...
+            )
+        """
+        if word_n_ampm:
+            self._ampm = word_n_ampm
+        else:
+            self._ampm = CONFIG_AMPM
+        self._construct_keywords()
+
+    # Tzinfo ----------------------------------------------------------
+    @property
+    def tzinfo(self) -> dict[str, int]:
+        """The words that should be recognized as a timezone
+        and constrcted with the specified timezone offset
+        in seconds `<dict[str, int]>`.
+
+        ### Example
+        >>> cfg.tzinfo
+        >>> {
+                'est': -18000,
+                'edt': -14400,
+                ...
+            }
+        """
+        return self._tzinfo
+
+    def add_tzinfo(
+        self,
+        word: str,
+        hour: int = 0,
+        minute: int = 0,
+    ) -> None:
+        """Add word that should be recognized as a timezone
+        and the corresponding timezone offset (hours & minutes).
+
+        ### Example
+        >>> cfg.add_tzinfo("est", -5)
+        """
+        # Validate hour & minute
+        if not isinstance(hour, int):
+            raise errors.InvalidConfigValue(
+                "<{}>\nTimezone offset 'hour' must "
+                "be an integer, instead got: {} {}".format(
+                    self.__class__.__name__, type(hour), repr(hour)
+                )
+            )
+        if not isinstance(minute, int):
+            raise errors.InvalidConfigValue(
+                "<{}>\nTimezone offset 'minute' must "
+                "be an integer, instead got: {} {}".format(
+                    self.__class__.__name__, type(minute), repr(minute)
+                )
+            )
+        tzoffset = hour * 3_600 + minute * 60
+        dict_setitem(
+            self._tzinfo,
+            self._validate_keyword("tzinfo", word),
+            self._validate_value("tzinfo", tzoffset, -86_340, 86_340),
+        )
+
+    def rem_tzinfo(self, *words: str) -> None:
+        """Remove words that should be recognized as timezone.
+
+        ### Example
+        >>> cfg.rem_tzinfo("est", "edt", ...
+        """
+        for word in words:
+            try:
+                dict_delitem(self._tzinfo, word)
+            except KeyError:
+                pass
+            set_discard(self._keywords, word)
+
+    def reset_tzinfo(self, **word_n_tzoffset: int) -> None:
+        """Reset the words that should be recognized as
+        timezones and the corresponding timezone offsets
+        in seconds. If 'word_n_tzoffset' are not specified,
+        resets to default setting.
+
+        ### Example
+        >>> cfg.reset_tzinfo(
+                est=-18000,
+                edt=-14400,
+                ...
+            )
+        """
+        if word_n_tzoffset:
+            self._tzinfo = word_n_tzoffset
+        else:
+            self._tzinfo = CONFIG_TZINFO
+        self._construct_keywords()
+
+    # Import ----------------------------------------------------------
+    def import_parserinfo(self, info: parserinfo) -> None:
+        """Import settings from a `<dateutil.parser.parserinfo>` instance.
+
+        This method is designed to bridge the compatibility with
+        `dateutil` libaray. After import, current settings of the
+        Config will be overwirtten by the specified `parserinfo`.
+
+        ### Example
+        >>> from cytimes import Config
+        >>> from dateutil.parser import parserinfo
+        >>> info = parserinfo()
+            cfg = Config()
+            cfg.import_parserinfo(info)
+        """
+        # Validate perserinfo
+        if not isinstance(info, parserinfo):
+            raise errors.InvalidParserInfo(
+                "<{}>\nConfig can only import "
+                "'dateutil.parser.parserinfo', instead got: "
+                "{} {}.".format(self.__class__.__name__, type(info), repr(info))
+            )
+
+        # Import settings
+        self._day1st = info.dayfirst
+        self._year1st = info.yearfirst
+        self._pertain = set(info.PERTAIN)
+        self._jump = set(info.JUMP)
+        self._utc = set(info.UTCZONE)
+        self._month = {w: i + 1 for i, wds in enumerate(info.MONTHS) for w in wds}
+        self._weekday = {w: i for i, wds in enumerate(info.WEEKDAYS) for w in wds}
+        self._hms = {w: i for i, wds in enumerate(info.HMS) for w in wds}
+        self._ampm = {w: i for i, wds in enumerate(info.AMPM) for w in wds}
+        self._tzinfo = info.TZOFFSET
+
+        # Reconstruct keywords
+        self._construct_keywords()
+
+    # Validate --------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _construct_keywords(self) -> cython.bint:
+        """(Internal) Construct the the Config keywords.
+        Called when the Config is initialized or reset."""
+        # Reset the keywords
+        self._keywords = set()
+        # fmt: off
+        # . month
+        self._month = {
+            self._validate_keyword("month", word):
+            self._validate_value("month", value, 1, 12)
+            for word, value in self._month.items()
+        }
+        # . weekday
+        self._weekday = {
+            self._validate_keyword("weekday", word):
+            self._validate_value("weekday", value, 0, 6)
+            for word, value in self._weekday.items()
+        }
+        # . hms
+        self._hms = {
+            self._validate_keyword("hms", word):
+            self._validate_value("hms", value, 0, 2)
+            for word, value in self._hms.items()
+        }
+        # . ampm
+        self._ampm = {
+            self._validate_keyword("ampm", word):
+            self._validate_value("ampm", value, 0, 1)
+            for word, value in self._ampm.items()
+        }
+        # . tzinfo
+        self._tzinfo = {
+            self._validate_keyword("tzinfo", word):
+            self._validate_value("tzinfo", value, -86_340, 86_340)
+            for word, value in self._tzinfo.items()
+        }
+        # . utc
+        self._utc = {
+            self._validate_keyword("utc", word)
+            for word in self._utc }
+        
+        # . pertain
+        self._pertain = {
+            self._validate_keyword("pertain", word)
+            for word in self._pertain }
+        # . jump
+        self._jump = {
+            self._validate_keyword("jump", word)
+            for word in self._jump }
+        # fmt: on
+        # Finished
+        return True
 
     @cython.cfunc
     @cython.inline(True)
-    @cython.exceptval(check=False)
-    def _adjust_result(self, res: Result) -> Result:
-        """Adjust the parse result from `<Parser>`."""
+    def _validate_keyword(self, setting: str, word: object) -> object:
+        """(Internal) Validate if there are conflicting
+        (duplicated) keywords exsit in the settings, which
+        could lead to undesirable parsing result."""
+        # Validate the keyword type
+        if not isinstance(word, str):
+            raise errors.InvalidConfigKeyword(
+                "<{}>\nThe keyword for [{}] must be a string, "
+                "instead got: {} {}".format(
+                    self.__class__.__name__, setting, type(word), repr(word)
+                )
+            )
+        word = word.lower()
 
-        if res._year != -1:
-            res._year = self._convert_year(res._year, res._century_specified)
+        # Validate if the keyword is conflicting with other keywords.
+        # Skip jump keywords, because jump has the freedom to contain
+        # any desired words.
+        if set_contains(self._keywords, word) and not set_contains(self._jump, word):
+            # locate conflicting keywords
+            conflict: str = None
+            # Skip jump conflict keywords, jump has
+            # the freedom to be duplicated with other
+            # settings.
+            if dict_contains(self._month, word):
+                if setting != "month":
+                    conflict = "month"
+            elif dict_contains(self._weekday, word):
+                if setting != "weekday":
+                    conflict = "weekday"
+            elif dict_contains(self._hms, word):
+                if setting != "hms":
+                    conflict = "hms"
+            elif dict_contains(self._ampm, word):
+                if setting != "ampm":
+                    conflict = "ampm"
+            elif dict_contains(self._tzinfo, word):
+                if setting != "tzinfo":
+                    conflict = "tzinfo"
+            elif set_contains(self._utc, word):
+                if setting != "utc":
+                    conflict = "utc"
+            elif set_contains(self._pertain, word):
+                if setting != "pertain":
+                    conflict = "pertain"
+            # raise keyword error
+            if conflict is not None:
+                raise errors.InvalidConfigKeyword(
+                    "<{}>\nThe keyword '{}' for [{}] is conflicting "
+                    "with keywords in [{}] of the Parser Config.".format(
+                        self.__class__.__name__, word, setting, conflict
+                    )
+                )
+        else:
+            set_add(self._keywords, word)
 
-        if res._tzoffset == 0 and not res._tz_name:
-            res._tz_name = "UTC"
-        elif res._tz_name:
-            if res._tz_name == "Z" or res._tz_name == "z":
-                res._tz_name = "UTC"
-                res._tzoffset = 0
-            elif res._tzoffset != 0 and self.utczone(res._tz_name):
-                res._tzoffset = 0
+        # Return the validated keyword
+        return word
 
-        return res
-
-    # Special methods -------------------------------------------------------------
-    def __repr__(self) -> str:
-        return "<cytimes.ParserInfo>"
-
-    def __del__(self):
-        self._jump = None
-        self._weekday = None
-        self._month = None
-        self._hms = None
-        self._ampm = None
-        self._utczone = None
-        self._tzoffset = None
-        self._pertain = None
-
-
-DEFAULT_PARSERINFO: ParserInfo = ParserInfo(False, False)
+    @cython.cfunc
+    @cython.inline(True)
+    def _validate_value(
+        self,
+        setting: str,
+        value: object,
+        min: cython.int,
+        max: cython.int,
+    ) -> object:
+        """(Internal) Validate if the setting keyword has
+        a valid value that is within the required range."""
+        if not isinstance(value, int):
+            raise errors.InvalidConfigValue(
+                "<{}>\nThe value for [{}] must be an "
+                "integer, instead got: {} {}.".format(
+                    self.__class__.__name__, setting, type(value), repr(value)
+                )
+            )
+        val: cython.int = value
+        if not min <= val <= max:
+            raise errors.InvalidConfigValue(
+                "<{}>\nThe value for [{}] must be within "
+                "the range of {}..{}, instead got: {}.".format(
+                    self.__class__.__name__, setting, min, max, value
+                )
+            )
+        return value
 
 
 # Parser --------------------------------------------------------------------------------------
 @cython.cclass
 class Parser:
-    __info: ParserInfo
+    """The datetime Parser."""
 
-    def __init__(self, info: Union[ParserInfo, parserinfo, None] = None) -> None:
-        """The Parser for parsing date/time string.
+    # Config
+    _day1st: cython.bint
+    _year1st: cython.bint
+    _ignoretz: cython.bint
+    _fuzzy: cython.bint
+    _pertain: set[str]
+    _jump: set[str]
+    _utc: set[str]
+    _month: dict[str, int]
+    _weekday: dict[str, int]
+    _hms: dict[str, int]
+    _ampm: dict[str, int]
+    _tzinfo: dict[str, int]
+    # Result
+    _result: Result
+    # Process
+    _tokens: list[str]
+    _tokens_count: cython.int
+    _index: cython.int
+    _token_r1: str
+    _token_r2: str
+    _token_r3: str
+    _token_r4: str
 
-        :param info: `<ParserInfo>` The parserinfo to use, accepts:
-            - `<ParserInfo>`: A ParserInfo instance from `cytimes.ParserInfo`.
-            - `<parserinfo>`: A parserinfo instance from `dateutil.parserinfo`.
-            - `None`: The default ParserInfo will be used.
+    def __init__(self, cfg: Config = None) -> None:
+        """The datetime Parser.
 
-        ### Exmaple (Custom ParserInfo):
-        >>> from cytimes import ParserInfo, Parser
-            # Initiate ParserInfo & set as default behavior
-            info = ParserInfo(dayfirst=True, yearfirst=True)
-            # Add month words that should be recognized as `January`
-            info.add_jan("janvier", "gennaio", "一月")
-            # Initiate Parser with the ParserInfo
-            parser = Parser(info)
-            # Parse date/time string
-            dt = parser.parse("2021-01 janvier 12:00:00")
-            # result: <datetime.datetime> 2021-01-01 12:00:00
-
-        ### Exmaple (dateutil.parserinfo):
-        >>> from dateutil.parser import parserinfo, cytimes import Parser
-            # Create custom dateutil.parserinfo.
-            class MyParserInfo(parserinfo):
-                MONTHS = [
-                    ("Jan", "January", "janvier", "gennaio", "一月"), # Add month words
-                    ...
-                ]
-            # Initiate parserinfo & set as default behavior
-            info = MyParserInfo(dayfirst=True, yearfirst=True)
-            # Initiate Parser with `dateutil.parserinfo`
-            parser = Parser(info)
-            # Parse date/time string
-            dt = parser.parse("2021-01 janvier 12:00:00")
-            # result: <datetime.datetime> 2021-01-01 12:00:00
+        :param cfg `<Config/None>`: The configurations of the Parser. Defaults to `None`.
         """
-
-        if info is None:
-            self.__info = DEFAULT_PARSERINFO
-        elif isinstance(info, ParserInfo):
-            self.__info = info
+        # Load specifed config
+        if cfg is not None:
+            self._day1st = cfg._day1st
+            self._year1st = cfg._year1st
+            self._pertain = cfg._pertain
+            self._jump = cfg._jump
+            self._utc = cfg._utc
+            self._month = cfg._month
+            self._weekday = cfg._weekday
+            self._hms = cfg._hms
+            self._ampm = cfg._ampm
+            self._tzinfo = cfg._tzinfo
+        # Load default config
         else:
-            self.__info = ParserInfo().from_parserinfo(info)
+            self._day1st = False
+            self._year1st = False
+            self._pertain = CONFIG_PERTAIN
+            self._jump = CONFIG_JUMP
+            self._utc = CONFIG_UTC
+            self._month = CONFIG_MONTH
+            self._weekday = CONFIG_WEEKDAY
+            self._hms = CONFIG_HMS
+            self._ampm = CONFIG_AMPM
+            self._tzinfo = CONFIG_TZINFO
 
-    # Parse --------------------------------------------------------------------------------
+    # Parsing ------------------------------------------------------------------------------
     def parse(
         self,
         timestr: str,
-        default: Union[datetime.datetime, datetime.date, None] = None,
-        dayfirst: cython.bint = None,
-        yearfirst: cython.bint = None,
-        ignoretz: cython.bint = False,
-        tzinfos: Union[type[dateutil_tz.tzfile], dict[str, int], None] = None,
-        fuzzy: cython.bint = False,
+        default: datetime.datetime | datetime.date | None = None,
+        day1st: bool | None = None,
+        year1st: bool | None = None,
+        ignoretz: bool = False,
+        fuzzy: bool = False,
     ) -> datetime.datetime:
-        """Parse a string contains date/time stamp into `datetime.datetime`.
+        """Parse a string contains date & time information into `<datetime>`.
 
-        :param timestr: `<str>` A string containing date/time stamp.
-        :param default: `<datetime>` The default object, which will be used as the base to fillin missing time elements from parsed results.
-            If set to `None` (default), the current local year/month/day will be used as the default base.
-        :param dayfirst: `<bool>` Whether to interpret the first value in an ambiguous date (e.g. 01/05/09) as the day (`True`) or month (`False`).
-            When `yearfirst` is `True`, this distinguishes between Y/D/M and Y/M/D. If set to `None`,
-            the `dayfirst` settings in `ParserInfo` will be used (defaults to False).
-        :param yearfirst: `<bool>` Whether to interpret the first value in an ambiguous date (e.g. 01/05/09) as the year.
-            If `True`, the first number is taken as year, otherwise the last number. If set to `None`,
-            the `yearfirst` settings in `ParserInfo` will be used (defaults to False).
-        :param ignoretz: `<bool>` Whether to ignore timezone info and only return naive datetime.
-        :param tzinfos: Additional timezone parsing argument. Applicable when `ignoretz` is False. Accepts:
-            - `<dict[str, int | tzinfo]>`: A dictionary where timezone name as the key and timezone
-              offset in seconds or `tzinfo` object as the value.
-            - `<TzinfoFactory>`: A callable which takes tzname and offset in seconds as arguments and
-              returns a `tzinfo` object.
+        ### Time String & Default
+        :param timestr `<str>`: The string that contains date & time information.
+        :param default `<datetime/date>`: The base to fillin missing datetime elements. Defaults to `None`.
+        - `None`: If parser failed to extract Y/M/D values from the string,
+           the current local date will be used to filling the missing year,
+           month & day values.
+        - `<date>`: If parser failed to extract Y/M/D values from the
+           string, the give `date` will be used to filling the missing
+           year, month & day values.
+        - `<datetime>`: If parser failed to extract any datetime elements
+           from the string, the given `datetime` will be used to filling the
+           missing year, month, day, hour, minute, second and microsecond.
 
-        :param fuzzy: `<bool>` Whether to allow fuzzy parsing.
-            If `True`, string like "Today is January 1, 2047 at 8:21:00AM" can be parsed into `2047-01-01 08:21:00`.
-        :raises `ValueError`: If failed to parse the given `timestr`.
-        :return: `<datetime.datetime>` The parsed datetime object.
+        ### Ambiguous Y/M/D
+        :param day1st `<bool>`: Whether to interpret first ambiguous date values as day. Defaults to `None`.
+        :param year1st `<bool>`: Whether to interpret first the ambiguous date value as year. Defaults to `None`.
+
+        Both the 'day1st' & 'year1st' arguments works together to determine how
+        to interpret ambiguous Y/M/D values. If not provided (set to `None`),
+        defaults to the 'day1st' & 'year1st' settings of the Parser `<Config>`.
+
+        In the case when all three values are ambiguous (e.g. `01/05/09`):
+        - If 'day1st=True' and 'year1st=True', the date will be interpreted as `'Y/D/M'`.
+        - If 'day1st=False' and 'year1st=True', the date will be interpreted as `'Y/M/D'`.
+        - If 'day1st=True' and 'year1st=False', the date will be interpreted as `'D/M/Y'`.
+        - If 'day1st=False' and 'year1st=False', the date will be interpreted as `'M/D/Y'`.
+
+        In the case when the year value is clear (e.g. `2010/01/05` or `99/01/05`):
+        - If 'day1st=True', the date will be interpreted as `'Y/D/M'`.
+        - If 'day1st=False', the date will be interpreted as `'Y/M/D'`.
+
+        In the case when only one value is ambiguous (e.g. `01/20/2010` or `01/20/99`):
+        - There is no need to set 'day1st' or 'year1st', the date should be interpreted correctly.
+
+        ### Timezone
+        :param ignoretz `<bool>`: Whether to ignore timezone information. Defaults to `False`.
+        - `True`: Parser ignores any timezone information and only returns
+           timezone-naive datetime. Setting to `True` can further increase
+           parser performance.
+        - `False`: Parser will try to process the timzone information in
+           the string, and generate a timezone-aware datetime if timezone
+           has been matched by the Parser `<Config>` settings: 'utc' & 'tzinfo'.
+
+        ### Complex Time String
+        :param fuzzy `<bool>`: Whether to allow fuzzy parsing. Defaults to `False`.
+        - `True`: Parser will increase its flexibility on tokens when parsing
+           complex (sentence like) time string, such as:
+           * 'On June 8th, 2020, I am going to be the first man on Mars' => <2020-06-08 00:00:00>
+           * 'Meet me at the AM/PM on Sunset at 3:00 PM on December 3rd, 2003' => <2003-12-03 15:00:00>
+        - `False`: A stricter parsing rule will be applied and complex time
+           string can lead to parser failure. However, this mode should be
+           able to handle most of the time strings.
+
+        ### Exception
+        :raise `cyParserError`: If failed to parse the given `timestr`.
+
+        ### Return
+        :return: `<datetime>` The parsed datetime object.
         """
+        # Settings
+        if day1st is not None:
+            self._day1st = bool(day1st)
+        if year1st is not None:
+            self._year1st = bool(year1st)
+        self._ignoretz = bool(ignoretz)
+        self._fuzzy = bool(fuzzy)
 
+        # Parsing
         try:
-            return self._parse(
-                timestr, default, dayfirst, yearfirst, ignoretz, tzinfos, fuzzy
-            )
+            self._process(timestr)
+            return self._build(default)  # exit: success
+        except errors.cyParserError as err:
+            err.add_note("-> Failed to parse: {}." % repr(timestr))
+            raise err
         except Exception as err:
-            raise ValueError("<Parser> %s" % err) from err
+            if not self._result:
+                raise errors.cyParserFailedError(
+                    "<{}>\nFailed to parse: {}.\nError: "
+                    "{}".format(self.__class__.__name__, repr(timestr), err)
+                ) from err
+            raise errors.cyParserFailedError(
+                "<{}>\nFailed to parse: {}.\nResult: {}\nError: "
+                "{}".format(self.__class__.__name__, repr(timestr), self._result, err)
+            ) from err
 
     @cython.cfunc
     @cython.inline(True)
-    def _parse(
-        self,
-        timestr: str,
-        default: object,
-        dayfirst: cython.bint,
-        yearfirst: cython.bint,
-        ignoretz: cython.bint,
-        tzinfos: object,
-        fuzzy: cython.bint,
-    ) -> datetime.datetime:
-        """(Internal parse method.)
+    @cython.exceptval(-1, check=False)
+    def _process(self, timestr: str) -> cython.bint:
+        """(Internal) The core process to parser the 'timestr' `<bool>`."""
+        # Convert timestr to tokens
+        self._tokens = parse_timelex(timestr, True)
+        self._tokens_count = list_len(self._tokens)
+        self._index = 0
+        self._result = Result()
 
-        :param timestr: `<str>` A string containing date/time stamp.
-        :param default: `<datetime>` The default object, which will be used as the base to fillin missing time elements from parsed results.
-            If set to `None` (default), the current local year/month/day will be used as the default base.
-        :param dayfirst: `<bool>` Whether to interpret the first value in an ambiguous date (e.g. 01/05/09) as the day (`True`) or month (`False`).
-            When `yearfirst` is `True`, this distinguishes between Y/D/M and Y/M/D. If set to `None`,
-            the `dayfirst` settings in `ParserInfo` will be used (defaults to False).
-        :param yearfirst: `<bool>` Whether to interpret the first value in an ambiguous date (e.g. 01/05/09) as the year.
-            If `True`, the first number is taken as year, otherwise the last number. If set to `None`,
-            the `yearfirst` settings in `ParserInfo` will be used (defaults to False).
-        :param ignoretz: `<bool>` Whether to ignore timezone info and only return naive datetime.
-        :param tzinfos: Additional timezone parsing argument. Applicable when `ignoretz` is False. Accepts:
-            - `<dict[str, int | tzinfo]>`: A dictionary where timezone name as the key and timezone
-              offset in seconds or `tzinfo` object as the value.
-            - `<TzinfoFactory>`: A callable which takes tzname and offset in seconds as arguments and
-              returns a `tzinfo` object.
+        # Parse token
+        while self._index < self._tokens_count:
+            # . access token
+            token = self._get_token(self._index)
+            # . reset tokens
+            self._token_r1 = None
+            self._token_r2 = None
+            self._token_r3 = None
+            self._token_r4 = None
 
-        :param fuzzy: `<bool>` Whether to allow fuzzy parsing.
-            If `True`, string like "Today is January 1, 2047 at 8:21:00AM" can be parsed into `2047-01-01 08:21:00`.
-        :raises `ValueError`: If failed to parse the given `timestr`.
-        :return: `<datetime.datetime>` The parsed datetime object.
-        """
-        # Split timestr into tokens
-        tokens: list[str] = TimeLex(timestr).split()  # l
-        token_count: cython.int = list_len(tokens)  # len_l
-        idx: cython.int = 0  # i
-
-        # Initialize YMD & Result
-        ymd, res = YMD(), Result()
-
-        try:
-            while idx < token_count:
-                # Get token
-                token: str = tokens[idx]  # value_repr
-
-                # Check numeric
-                if self._is_numeric_token(token):
-                    idx = self._parse_numeric_token(
-                        idx, token, tokens, token_count, fuzzy, ymd, res
+            # . numeric token
+            if self._parse_numeric_token(token):
+                self._index += 1
+            # . month token
+            elif self._parse_month_token(token):
+                self._index += 1
+            # . weekday token
+            elif self._parse_weekday_token(token):
+                self._index += 1
+            # . am/pm token
+            elif self._parse_ampm_token(token):
+                self._index += 1
+            # . tzname token
+            elif self._parse_tzname_token(token):
+                self._index += 1
+            # . tzoffset token
+            elif self._parse_tzoffset_token(token):
+                self._index += 1
+            # . jump token
+            elif self._is_token_jump(token):
+                self._index += 1
+            # . fuzzy parsing
+            elif self._fuzzy:
+                self._index += 1
+            # . failed to parse
+            else:
+                raise errors.InvalidTokenError(
+                    "<{}>\nFailed to parse: {}.\n"
+                    "If this is a complex (sentence like) time string, "
+                    "try set 'fuzzy=True' to increase parser flexibility.".format(
+                        self.__class__.__name__, repr(timestr)
                     )
-                    idx += 1
-                    continue
+                )
 
-                # Check weekday
-                weekday: cython.int = self.__info.weekday(token)
-                if weekday != -1:
-                    res._weekday = weekday
-                    idx += 1
-                    continue
-
-                # Check month
-                month: cython.int = self.__info.month(token)
-                if month != -1:
-                    idx = self._parse_month_token(idx, tokens, token_count, month, ymd)
-                    idx += 1
-                    continue
-
-                # Check am/pm
-                ampm: cython.int = self.__info.ampm(token)
-                if ampm != -1 and self._valid_ampm_flag(res, fuzzy):
-                    res._hour = self._adjust_ampm(res._hour, ampm)
-                    res._ampm = ampm
-                    idx += 1
-                    continue
-
-                # Check timezone name
-                if self._could_be_tzname(token, True, res):
-                    idx = self._parse_tzname(idx, token, tokens, token_count, res)
-                    idx += 1
-                    continue
-
-                # Check timezone offset
-                if res._hour != -1 and token == "+" or token == "-":
-                    idx = self._prase_tzoffset(idx, token, tokens, token_count, res)
-                    idx += 1
-                    continue
-
-                # Failed to handle token
-                if not self.__info.jump(token) and not fuzzy:
-                    raise ValueError("Failed to handle token: %s" % repr(token))
-
-                # Next token
-                idx += 1
-
-            # End of loop & process year/month/day
-            ymd.resolve(
-                self.__info._dayfirst if dayfirst is None else dayfirst,
-                self.__info._yearfirst if yearfirst is None else yearfirst,
+        # Prepare result
+        self._result.prepare(self._day1st, self._year1st)
+        if not self._result:
+            raise errors.cyParserFailedError(
+                "<{}>\nFailed to parse the datetime string: "
+                "{}.".format(self.__class__.__name__, repr(timestr))
             )
-            res._century_specified = ymd._century_specified
-            res._year = ymd._year
-            res._month = ymd._month
-            res._day = ymd._day
-
-        except Exception as err:
-            raise ValueError(
-                "Unknown string format %s. Error: %s" % (repr(timestr), err)
-            ) from err
-
-        # Validate & Adjust
-        if not res:
-            raise ValueError("String does not contain any date: %s" % (repr(timestr)))
-        res = self.__info._adjust_result(res)
-
-        # Build
-        try:
-            return self._build(res, default, tzinfos, ignoretz)
-        except Exception as err:
-            raise ValueError(
-                "Failed to build time from: %s. Error: %s" % (repr(timestr), err)
-            ) from err
-
-    # Numeric token ------------------------------------------------------------------------
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.boundscheck(True)
-    @cython.exceptval(-1, check=False)
-    def _parse_numeric_token(
-        self,
-        idx: cython.int,
-        token: str,
-        tokens: list,
-        token_count: cython.int,
-        fuzzy: cython.bint,
-        ymd: YMD,
-        res: Result,
-    ) -> cython.int:
-        # Preload token value
-        value: cython.double = self._convert_numeric_token(token)
-        temp_value: cython.int
-
-        # Preload token info
-        token_len: cython.int = str_len(token)  # len_li
-        next_token: str = tokens[idx + 1] if idx + 1 < token_count else None
-
-        # 19990101T23[59]
-        if (
-            ymd._length() == 3
-            and res._hour == -1
-            and (token_len == 2 or token_len == 4)
-            and (
-                idx + 1 >= token_count
-                or (next_token != ":" and self.__info.hms(next_token) == -1)
-            )
-        ):
-            res._hour = int(token[0:2])
-            if token_len == 4:
-                res._minute = int(token[2:4])
-            return idx  # exit
-
-        # YYMMDD or HHMMSS[.ss]
-        if token_len == 6 or (token_len > 6 and token.find(".") == 6):
-            if not ymd and not str_contains(token, "."):
-                ymd.append(token[0:2])
-                ymd.append(token[2:4])
-                ymd.append(token[4:])
-            else:
-                # 19990101T235959[.59]
-                res._hour = int(token[0:2])
-                res._minute = int(token[2:4])
-                self._set_sec_us(token[4:], res)
-            return idx  # exit
-
-        # YYYYMMDD
-        if token_len == 8 or token_len == 12 or token_len == 14:
-            ymd.append(token[0:4], 1)
-            ymd.append(token[4:6])
-            ymd.append(token[6:8])
-            if token_len > 8:
-                res._hour = int(token[8:10])
-                res._minute = int(token[10:12])
-                if token_len > 12:
-                    res._second = int(token[12:14])
-            return idx  # exit
-
-        # HH[ ]h or MM[ ]m or SS[.ss][ ]s
-        hms_idx = self._find_hms_idx(idx, next_token, tokens, token_count, True)
-        if hms_idx != -1:
-            hms: cython.int = self.__info.hms(tokens[hms_idx])
-            if hms_idx > idx:
-                idx = hms_idx
-            else:
-                hms += 1
-            # Assign value
-            if hms == 0:
-                self._set_hour_min(value, res)
-            elif hms == 1:
-                self._set_min_sec(value, res)
-            elif hms == 2:
-                self._set_sec_us(token, res)
-            return idx  # exit
-
-        # HH:MM[:SS[.ss]]
-        if idx + 2 < token_count and next_token == ":":
-            res._hour = int(value)
-            mins = self._convert_numeric_token(tokens[idx + 2])
-            self._set_min_sec(mins, res)
-            if idx + 4 < token_count and tokens[idx + 3] == ":":
-                self._set_sec_us(tokens[idx + 4], res)
-                idx += 2
-            return idx + 2  # exit
-
-        # YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD
-        if idx + 1 < token_count and (
-            next_token == "-" or next_token == "/" or next_token == "."
-        ):
-            ymd.append(token)
-            nxt2_token: str = tokens[idx + 2] if idx + 2 < token_count else None
-            if nxt2_token is not None and not self.__info.jump(nxt2_token):
-                # 01-01[-01]
-                try:
-                    temp_value = int(nxt2_token)
-                    ymd.append(temp_value)
-                # 01-Jan[-01]
-                except Exception:
-                    temp_value = self.__info.month(nxt2_token)
-                    if temp_value != -1:
-                        ymd.append(temp_value, 2)
-                    else:
-                        raise ValueError(
-                            "Cannot parse month from %s." % repr(nxt2_token)
-                        )
-
-                # We have all three members
-                if idx + 3 < token_count and tokens[idx + 3] == next_token:  # as sep
-                    nxt4_token: str = tokens[idx + 4]
-                    temp_value = self.__info.month(nxt4_token)
-                    if temp_value != -1:
-                        ymd.append(temp_value, 2)
-                    else:
-                        ymd.append(nxt4_token)
-                    idx += 2
-                idx += 1
-            return idx + 1  # exit
-
-        # "hour AM" or year|month|day
-        if idx + 1 >= token_count or self.__info.jump(next_token):
-            if idx + 2 < token_count:
-                ampm: cython.int = self.__info.ampm(tokens[idx + 2])
-                # 12 AM
-                if ampm != -1:
-                    res._hour = self._adjust_ampm(int(value), ampm)
-                    idx += 1
-                # Year, month or day
-                else:
-                    ymd.append(token)
-            # Year, month or day
-            else:
-                ymd.append(token)
-            return idx + 1  # exit
-
-        # "hourAM"
-        if 0 <= value < 24:
-            ampm: cython.int = self.__info.ampm(next_token)
-            # 12am
-            if ampm != -1:
-                res._hour = self._adjust_ampm(int(value), ampm)
-                return idx + 1  # exit
-
-        # Possible a day
-        if ymd.could_be_day(int(value)):
-            ymd.append(token)
-            return idx
-
-        # Invalid
-        if not fuzzy:
-            raise ValueError("Failed to handle token: %s" % repr(token))
-
-        return idx
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _is_numeric_token(self, token: str) -> cython.bint:
-        try:
-            float(token)
-            return True
-        except Exception:
-            return False
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _convert_numeric_token(self, token: str) -> cython.double:
-        try:
-            value = float(token)
-            if not cymath.is_finite(value):
-                raise ValueError("Token is infinite or NaN.")
-            else:
-                return value
-        except Exception as err:
-            raise ValueError(
-                "Could not convert token %s to float - %s" % (repr(token), err)
-            ) from err
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(check=False)
-    def _set_hour_min(self, value: cython.double, res: Result):
-        res._hour = int(value)
-        remainder: cython.double = value % 1
-        if remainder:
-            res._minute = int(remainder * 60)
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(check=False)
-    def _set_min_sec(self, value: cython.double, res: Result):
-        res._minute = int(value)
-        remainder: cython.double = value % 1
-        if remainder:
-            res._second = int(remainder * 60)
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(check=False)
-    def _set_sec_us(self, token: str, res: Result):
-        if str_contains(token, "."):
-            sec, us = token.split(".")
-            res._second = int(sec)
-            res._microsecond = int(us.ljust(6, "0")[:6])
-        else:
-            res._second = int(token)
-            res._microsecond = 0
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _find_hms_idx(
-        self,
-        idx: cython.int,
-        next_token: str,
-        tokens: list,
-        token_count: cython.int,
-        allow_jump: cython.bint,
-    ) -> cython.int:
-        # There is an "h", "m", or "s" label following this token.
-        # We take assign the upcoming label to the current token.
-        # e.g. the "12" in 12h"
-        if idx + 1 < token_count and self.__info.hms(next_token) != -1:
-            return idx + 1
-
-        # There is a space and then an "h", "m", or "s" label.
-        # e.g. the "12" in "12 h"
-        if (
-            allow_jump
-            and idx + 2 < token_count
-            and next_token == " "
-            and self.__info.hms(tokens[idx + 2]) != -1
-        ):
-            return idx + 2
-
-        # There is a "h", "m", or "s" preceding this token. Since neither
-        # of the previous cases was hit, there is no label following this
-        # token, so we use the previous label.
-        # e.g. the "04" in "12h04"
-        if idx > 0 and self.__info.hms(tokens[idx - 1]) != -1:
-            return idx - 1
-
-        # If we are looking at the final token, we allow for a
-        # backward-looking check to skip over a space.
-        # TODO: Are we sure this is the right condition here?
-        if (
-            1 < idx == token_count - 1
-            and tokens[idx - 1] == " "
-            and self.__info.hms(tokens[idx - 2]) != -1
-        ):
-            return idx - 2
-
-        # No hms found
-        return -1
-
-    # Month token --------------------------------------------------------------------------
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _parse_month_token(
-        self,
-        idx: cython.int,
-        tokens: list,
-        token_count: cython.int,
-        month: cython.int,
-        ymd: YMD,
-    ) -> cython.int:
-        # Append month
-        ymd.append(month, 2)
-
-        # Try to get year & day
-        if idx + 1 < token_count:
-            next_token: str = tokens[idx + 1]
-
-            # Jan-01[-99?] uncertain
-            if next_token == "-" or next_token == "/":
-                ymd.append(tokens[idx + 2])
-                if idx + 3 < token_count and tokens[idx + 3] == next_token:
-                    # Jan-01-99 confirmed
-                    ymd.append(tokens[idx + 4])
-                    idx += 2
-                idx += 2
-
-            # Jan of 01. In this case, 01 is clearly year
-            elif (
-                idx + 4 < token_count
-                and tokens[idx + 3] == next_token == " "
-                and self.__info.pertain(tokens[idx + 2])
-            ):
-                try:
-                    temp_value = int(tokens[idx + 4])
-                    ymd.append(self.__info._convert_year(temp_value, False), 1)
-                except Exception:
-                    # Wrong guess
-                    pass
-                idx += 4
-
-        return idx  # exit
-
-    # AM/PM token --------------------------------------------------------------------------
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _valid_ampm_flag(self, res: Result, fuzzy: cython.bint) -> cython.bint:
-        # If there's already an AM/PM flag, this one isn't one.
-        if fuzzy and res._ampm != -1:
-            return False
-
-        # If AM/PM is found and hour is not, raise a ValueError
-        if res._hour == -1:
-            if fuzzy:
-                return False
-            else:
-                raise ValueError("Missing hour for AM/PM flag.")
-
-        # If AM/PM is found, it's a 12 hour clock, so raise
-        # an error for invalid range
-        if not 0 <= res._hour <= 12:
-            if fuzzy:
-                return False
-            else:
-                raise ValueError("Invalid hour (%d) for AM/PM flag." % res._hour)
-
-        # Valid AM/PM flag
+        # Success
         return True
 
     @cython.cfunc
     @cython.inline(True)
-    def _adjust_ampm(self, hour: cython.int, ampm: cython.int) -> cython.int:
-        if hour < 12 and ampm == 1:
-            hour += 12
-        elif hour == 12 and ampm == 0:
-            hour = 0
-        return hour
+    def _build(self, default: object) -> datetime.datetime:
+        """(Internal) Build the `datetime` based on the
+        parsed result `<datetime>`."""
+        # Timeonze-naive
+        if self._ignoretz:
+            return self._build_datetime(default, None)
 
-    # Timezone token -----------------------------------------------------------------------
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _could_be_tzname(
-        self,
-        token: str,
-        chech_tzoffset: cython.bint,
-        res: Result,
-    ) -> cython.bint:
-        if (
-            res._hour != -1
-            and (res._tzoffset == -1000000 if chech_tzoffset else True)
-            and not res._tz_name
-            and str_len(token) <= 5
-        ):
-            # Could be a UTC timezone
-            if self.__info.utczone(token):
-                return True
-
-            # Literal could be a timezone
-            ASCII_UPPER: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-            for i in token:
-                if not str_contains(ASCII_UPPER, i):
-                    return False
-            return True
-        else:
-            return False
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _parse_tzname(
-        self,
-        idx: cython.int,
-        token: str,
-        tokens: list,
-        token_count: cython.int,
-        res: Result,
-    ) -> cython.int:
-        # Set timezone name & offset
-        res._tz_name = token
-        res._tzoffset = self.__info.tzoffset(token)
-
-        # Check for something like GMT+3, or BRST+3. Notice
-        # that it doesn't mean "I am 3 hours after GMT", but
-        # "my time +3 is GMT". If found, we reverse the
-        # logic so that timezone parsing code will get it
-        # right.
-        if idx + 1 < token_count:
-            next_token: str = tokens[idx + 1]
-            if next_token == "+":
-                tokens[idx + 1] = "-"
-            elif next_token == "-":
-                tokens[idx + 1] = "+"
-            else:
-                return idx  # exit
-            res._tzoffset = -1000000  # set to `None`
-
-            # With something like GMT+3, the timezone is *not* GMT.
-            if self.__info.utczone(res._tz_name):
-                res._tz_name = None  # set to `None`
-
-        return idx  # exit
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _prase_tzoffset(
-        self,
-        idx: cython.int,
-        token: str,
-        tokens: list,
-        token_count: cython.int,
-        res: Result,
-    ) -> cython.int:
-        # The next token could be a timezone offset
-        next_token: str = tokens[idx + 1]
-        next_value: cython.int
-        try:
-            next_value = int(next_token)
-        except Exception:
-            return idx  # wrong guess & exit
-
-        # Pre binding
-        token_len: cython.int = str_len(next_token)
-        hour_offset: cython.int
-        min_offset: cython.int
-
-        try:
-            # -0300
-            if token_len == 4:
-                hour_offset = int(next_token[0:2])
-                min_offset = int(next_token[2:4])
-            # -03:00
-            elif idx + 2 < token_count and tokens[idx + 2] == ":":
-                hour_offset = next_value
-                min_offset = int(tokens[idx + 3])
-                idx += 2
-            # -[0]3
-            elif token_len <= 2:
-                hour_offset = next_value
-                min_offset = 0
-            # Invalid
-            else:
-                raise ValueError("Invalid token")
-        except Exception as err:
-            raise ValueError("Can't parse tzoffset from %s" % repr(next_token)) from err
-
-        # Set timezone offset
-        sign: cython.int = 1 if token == "+" else -1
-        res._tzoffset = sign * (hour_offset * 3600 + min_offset * 60)
-
-        # -0300(BRST) # with space
-        nxt4_token: str = tokens[idx + 4] if idx + 4 < token_count else None
-        if nxt4_token is not None and nxt4_token == ")":
-            n3rd_token: str = tokens[idx + 3]
-            if self._could_be_tzname(n3rd_token, False, res) and tokens[idx + 2] == "(":
-                res._tz_name = n3rd_token
-                return idx + 4  # exit
-
-        # -0300 (BRST) # w/o space
-        nxt5_token: str = tokens[idx + 5] if idx + 5 < token_count else None
-        if nxt5_token is not None and nxt5_token == ")":
-            if (
-                self._could_be_tzname(nxt4_token, False, res)
-                and tokens[idx + 3] == "("
-                and self.__info.jump(tokens[idx + 2])
-            ):
-                res._tz_name = nxt4_token
-                return idx + 5  # exit
-
-        return idx + 1  # exit
-
-    # Build --------------------------------------------------------------------------------
-    @cython.cfunc
-    @cython.inline(True)
-    def _build(
-        self,
-        res: Result,
-        default: object,
-        tzinfos: object,
-        ignoretz: cython.bint,
-    ) -> datetime.datetime:
-        # Ignore tzinfo (Build naive)
-        if ignoretz:
-            return self._build_datetime(res, default, None)
-
-        tzinfo: object
-        tzdata: object
-        dt: datetime.datetime
-        # No extra tzinfos provided (default).
-        if tzinfos is None:
-            # Local timezone (Special case)
-            if res._tz_name and res._tz_name in time.tzname:
-                # Build with local tzinfo
-                dt = self._build_datetime(res, default, None)
-                dt = cydt.dt_replace_tzinfo(dt, cydt.gen_timezone_local(dt))
-                # Handle ambiguous local datetime
-                dt = self._handle_anbiguous_time(dt, res._tz_name)
-                # Adjust for winter GMT zones parsed in the UK
-                if dt.tzname() != res._tz_name and self.__info.utczone(res._tz_name):
-                    dt = cydt.dt_replace_tzinfo(dt, cydt.UTC)
-                return dt  # Exit
-
-            # Parsed tzoffset is 0 (UTC)
-            if res._tzoffset == 0:
-                tzinfo = cydt.UTC
-            # Parsed tzname & tzoffset (Custom tzinfo)
-            elif res._tzoffset != -1000000:
-                tzinfo = cydt.gen_timezone(res._tzoffset, res._tz_name)
-            # No tzinfo
-            else:
-                tzinfo = None
-            # Build datetime
-            dt = self._build_datetime(res, default, tzinfo)
-
-        # Extra tzinfos provided
-        else:
-            # Extra tzinfos (dict[str, int | tzinfo])
-            if isinstance(tzinfos, dict):
-                tzdata = tzinfos.get(res._tz_name)
-            # Extra tzinfos (TzinfoFactory)
-            elif callable(tzinfos) and res._tzoffset != -1000000:
-                try:
-                    tzdata = tzinfos(res._tz_name or None, res._tzoffset)
-                except Exception:
-                    tzdata = tzinfos(res._tzoffset, res._tz_name or None)
-            # Invalid tzinfos
-            else:
-                raise ValueError(
-                    "<Parser> Only accepts `dict[str, int | tzinfo]` or `TzinfoFactory` as tzinfos, instead got: %s %s"
-                    % (repr(tzinfos), tzinfos)
-                )
-            # Convert tzdata to tzinfo
-            if tzdata is None or cydt.is_tzinfo(tzdata):
-                tzinfo = tzdata
-            elif isinstance(tzdata, int):
-                tzinfo = cydt.gen_timezone(tzdata, res._tz_name)
-            elif isinstance(tzdata, str):
-                tzinfo = dateutil_tz.tzstr(tzdata)
-            else:
-                tzinfo = None
-            # Build datetime
-            dt = self._build_datetime(res, default, tzinfo)
+        # Timezone-aware
+        tzname: str = self._result.tzname
+        offset: cython.int = self._result.tzoffset
+        # . local timezone (handle ambiguous time)
+        if tzname is not None and set_contains(LOCAL_TZNAMES, tzname):
+            # Build with local tzinfo
+            dt = self._build_datetime(default, None)
+            dt = cydt.dt_replace_tzinfo(dt, cydt.gen_tzinfo_local(dt))
             # Handle ambiguous local datetime
-            dt = self._handle_anbiguous_time(dt, res._tz_name)
-
-        # Return datetime
-        return dt  # Exit
+            dt = self._handle_ambiguous_time(dt, tzname)
+            # Adjust for winter GMT zones parsed in the UK
+            if dt.tzname() != tzname and tzname == "UTC":
+                dt = cydt.dt_replace_tzinfo(dt, cydt.UTC)
+            return dt  # exit: finished
+        # . utc (tzoffset == 0)
+        elif offset == 0:
+            tzinfo = cydt.UTC
+        # . other timezone
+        elif offset != -100_000:
+            if tzname == "UTC":  # utc
+                tzinfo = cydt.gen_tzinfo(offset)
+            else:  # Custom timezone name
+                tzinfo = cydt.gen_tzinfo(offset, tzname)
+        # . timezone-naive
+        else:
+            tzinfo = None
+        # Build with tzinfo
+        return self._build_datetime(default, tzinfo)
 
     @cython.cfunc
     @cython.inline(True)
-    def _build_datetime(
-        self,
-        res: Result,
-        default: object,
-        tzinfo: object,
-    ) -> datetime.datetime:
-        # Determine Whether provided valid default
-        dflt_is_date: cython.bint = cydt.is_date(default)
-        dflt_is_dt: cython.bint = cydt.is_dt(default)
-        tm = cytime.localtime()
+    def _build_datetime(self, default: object, tzinfo: object) -> datetime.datetime:
+        """(Internal) Build the `<datetime>`."""
+        # Check if valid default is given
+        if cydt.is_date(default):
+            if cydt.is_dt(default):
+                default_mode: cython.uint = 2  # default is datetime
+            else:
+                default_mode: cython.uint = 1  # default is date
+        else:
+            default_mode: cython.uint = 0  # default is local time
+            tm = cytime.localtime()
 
-        # Build datetime year
-        year: cython.int
-        if res._year > 0:  # satisfied
-            year = res._year
-        elif dflt_is_date:  # from default
-            year = cydt.get_year(default)
-        else:  # from localtime
-            year = tm.tm_year
+        # . year
+        if self._result.year > 0:
+            year: cython.uint = self._result.year
+        elif default_mode > 0:
+            year: cython.uint = datetime.PyDateTime_GET_YEAR(default)
+        else:
+            year: cython.uint = tm.tm_year
 
-        # Build datetime month
-        month: cython.int
-        if res._month > 0:  # satisfied
-            month = res._month
-        elif dflt_is_date:  # from default
-            month = cydt.get_month(default)
-        else:  # from localtime
-            month = tm.tm_mon
+        # . month
+        if self._result.month > 0:
+            month: cython.uint = self._result.month
+        elif default_mode > 0:
+            month: cython.uint = datetime.PyDateTime_GET_MONTH(default)
+        else:
+            month: cython.uint = tm.tm_mon
 
-        # Build datetime day
-        day: cython.int
-        if res._day > 0:  # satisfied
-            day = res._day
-        elif dflt_is_dt:  # from default
-            day = cydt.get_day(default)
-        else:  # from localtime
-            day = tm.tm_mday
-        if day > 28:  # adjust days in month
+        # . day
+        if self._result.day > 0:
+            day: cython.uint = self._result.day
+        elif default_mode > 0:
+            day: cython.uint = datetime.PyDateTime_GET_DAY(default)
+        else:
+            day: cython.uint = tm.tm_mday
+        if day > 28:
             day = min(day, cydt.days_in_month(year, month))
 
-        # Build datetime hour
-        hour: cython.int
-        if res._hour >= 0:  # satisfied
-            hour = res._hour
-        elif dflt_is_dt:  # from default
-            hour = cydt.get_dt_hour(default)
+        # . hour
+        if self._result.hour >= 0:
+            hour: cython.uint = self._result.hour
+        elif default_mode == 2:
+            hour: cython.uint = datetime.PyDateTime_DATE_GET_HOUR(default)
         else:
-            hour = 0
+            hour: cython.uint = 0
 
-        # Build datetime minute
-        minute: cython.int
-        if res._minute >= 0:  # satisfied
-            minute = res._minute
-        elif dflt_is_dt:  # from default
-            minute = cydt.get_dt_minute(default)
+        # . minute
+        if self._result.minute >= 0:
+            minute: cython.uint = self._result.minute
+        elif default_mode == 2:
+            minute: cython.uint = datetime.PyDateTime_DATE_GET_MINUTE(default)
         else:
-            minute = 0
+            minute: cython.uint = 0
 
-        # Build datetime second
-        second: cython.int
-        if res._second >= 0:  # satisfied
-            second = res._second
-        elif dflt_is_dt:  # from default
-            second = cydt.get_dt_second(default)
+        # . second
+        if self._result.second >= 0:
+            second: cython.uint = self._result.second
+        elif default_mode == 2:
+            second: cython.uint = datetime.PyDateTime_DATE_GET_SECOND(default)
         else:
-            second = 0
+            second: cython.uint = 0
 
-        # Build datetime microsecond
-        microsecond: cython.int
-        if res._microsecond >= 0:  # satisfied
-            microsecond = res._microsecond
-        elif dflt_is_dt:  # from default
-            microsecond = cydt.get_dt_microsecond(default)
+        # . microsecond
+        if self._result.microsecond >= 0:
+            microsecond: cython.uint = self._result.microsecond
+        elif default_mode == 2:
+            microsecond: cython.uint = datetime.PyDateTime_DATE_GET_MICROSECOND(default)
         else:
-            microsecond = 0
+            microsecond: cython.uint = 0
 
         # Generate datetime
         dt: datetime.datetime = cydt.gen_dt(
@@ -2352,77 +1742,748 @@ class Parser:
         )
 
         # Adjust weekday
-        if 0 <= res._weekday <= 6:
-            dt = cytimedelta(
-                days=res._weekday - cydt.get_weekday(dt),
-            )._add_date_time(dt)
+        if 0 <= self._result.weekday <= 6:
+            dt = cydt.dt_adj_weekday(dt, self._result.weekday)
 
         # Return datetime
         return dt
 
     @cython.cfunc
     @cython.inline(True)
-    @cython.exceptval(check=False)
-    def _handle_anbiguous_time(
+    def _handle_ambiguous_time(
         self,
         dt: datetime.datetime,
         tzname: str,
     ) -> datetime.datetime:
+        """(Internal) Handle ambiguous time `<datetime>`."""
         if dt.tzname() != tzname:
             new_dt: datetime.datetime = cydt.dt_replace_fold(dt, 1)
             if new_dt.tzname() == tzname:
                 return new_dt
         return dt
 
-    # Special methods -----------------------------------------------------------------------
-    def __del__(self):
-        self.__info = None
+    # Numeric token ------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _parse_numeric_token(self, token: str) -> cython.bint:
+        """(Internal) Parse the 'numeric' token. Returns
+        True if the token represents numeric value and
+        processed successfully, else False `<bool>`."""
+        # Convert token to numeric value
+        try:
+            tok_val: cython.double = float(token)
+        except ValueError:
+            return False  # exit: not a numeric token
+        if not math.isfinite(tok_val):
+            return False  # exit: invalid infinite value ('inf')
 
+        # Token info
+        tok_len: cython.int = str_len(token)
+        token_r1: str = self._get_token_r1()
 
-# Parse ---------------------------------------------------------------------------------------
-@cython.ccall
-def parse(
-    timestr: str,
-    default: Union[datetime.datetime, datetime.date, None] = None,
-    dayfirst: cython.bint = False,
-    yearfirst: cython.bint = False,
-    ignoretz: cython.bint = False,
-    tzinfos: Union[type[dateutil_tz.tzfile], dict[str, int], None] = None,
-    fuzzy: cython.bint = False,
-    parserinfo: Union[ParserInfo, parserinfo, None] = None,
-) -> datetime.datetime:
-    """Parse a string contains date/time stamp into `datetime.datetime`.
+        # (19990101T)23[59]
+        if (
+            self._result.ymd_values() == 3
+            and self._result.hour == -1
+            and (tok_len == 2 or tok_len == 4)
+            and (
+                self._index + 1 >= self._tokens_count
+                or (
+                    token_r1 is not None
+                    and token_r1 != ":"
+                    and self._token_to_hms(token_r1) == -1
+                )
+            )
+        ):
+            self._result.hour = int(token[0:2])
+            if tok_len == 4:
+                self._result.minute = int(token[2:4])
+            return True  # exit
 
-    :param timestr: `<str>` A string containing date/time stamp.
-    :param default: `<datetime>` The default object, which will be used as the base to fillin missing time elements from parsed results.
-        If set to `None` (default), the current local year/month/day will be used as the default base.
-    :param dayfirst: `<bool>` Whether to interpret the first value in an ambiguous date (e.g. 01/05/09) as the day (`True`) or month (`False`).
-        When `yearfirst` is `True`, this distinguishes between Y/D/M and Y/M/D. If set to `None`,
-        the `dayfirst` settings in `ParserInfo` will be used (defaults to False).
-    :param yearfirst: `<bool>` Whether to interpret the first value in an ambiguous date (e.g. 01/05/09) as the year.
-        If `True`, the first number is taken as year, otherwise the last number. If set to `None`,
-        the `yearfirst` settings in `ParserInfo` will be used (defaults to False).
-    :param ignoretz: `<bool>` Whether to ignore timezone info and only return naive datetime.
-    :param tzinfos: Additional timezone parsing argument. Applicable when `ignoretz` is False. Accepts:
-        - `<dict[str, int | tzinfo]>`: A dictionary where timezone name as the key and timezone
-            offset in seconds or `tzinfo` object as the value.
-        - `<TzinfoFactory>`: A callable which takes tzname and offset in seconds as arguments and
-            returns a `tzinfo` object.
+        # YYMMDD or HHMMSS[.ss]
+        if tok_len == 6 or (tok_len > 6 and str_loc(token, 6) == CHAR_PERIOD):
+            if self._result.ymd_values() == 0 and not "." in token:
+                self._result.append_ymd(token[0:2], 0)
+                self._result.append_ymd(token[2:4], 0)
+                self._result.append_ymd(token[4:tok_len], 0)
+            else:
+                # 19990101T235959[.59]
+                self._result.hour = int(token[0:2])
+                self._result.minute = int(token[2:4])
+                self._set_second_and_us(token[4:tok_len])
+            return True  # exit
 
-    :param fuzzy: `<bool>` Whether to allow fuzzy parsing.
-        If `True`, string like "Today is January 1, 2047 at 8:21:00AM" can be parsed into `2047-01-01 08:21:00`.
+        # YYYYMMDD
+        if tok_len == 8 or tok_len == 12 or tok_len == 14:
+            self._result.append_ymd(token[0:4], 1)
+            self._result.append_ymd(token[4:6], 0)
+            self._result.append_ymd(token[6:8], 0)
+            if tok_len > 8:
+                self._result.hour = int(token[8:10])
+                self._result.minute = int(token[10:12])
+                if tok_len > 12:
+                    self._result.second = int(token[12:14])
+            return True  # exit
 
-    :param info: `<ParserInfo>` The parserinfo to use, accepts:
-        - `<ParserInfo>`: A ParserInfo instance from `cytimes.ParserInfo`.
-        - `<parserinfo>`: A parserinfo instance from `dateutil.parserinfo`.
-        - `None`: The default ParserInfo will be used.
+        # HH[ ]h or MM[ ]m or SS[.ss][ ]s
+        if self._parse_hms_token(token, tok_val):
+            return True  # exit
 
-    :raises `ValueError`: If failed to parse the given `timestr`.
-    :return: `<datetime.datetime>` The parsed datetime object.
-    """
-    try:
-        return Parser(parserinfo)._parse(
-            timestr, default, dayfirst, yearfirst, ignoretz, tzinfos, fuzzy
-        )
-    except Exception as err:
-        raise ValueError("<Parser> %s" % err) from err
+        # HH:MM[:SS[.ss]]
+        token_r2: str = self._get_token_r2()
+        if token_r2 is not None and token_r1 == ":":
+            # . HH:MM
+            self._result.hour = int(tok_val)
+            minute = self._covnert_numeric_token(token_r2)
+            self._set_minite_and_second(minute)
+            # . SS:[.ss]
+            token_r4: str = self._get_token_r4()
+            if token_r4 is not None and self._get_token_r3() == ":":
+                self._set_second_and_us(token_r4)
+                self._index += 2  # skip SS.ss
+            self._index += 2  # skip HH:MM
+            return True  # exit
+
+        # YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD
+        if token_r1 is not None and (
+            token_r1 == "-" or token_r1 == "/" or token_r1 == "."
+        ):
+            # 1st Y/M/D value
+            self._result.append_ymd(token, 0)
+
+            # 2nd Y/M/D value
+            if token_r2 is not None and not self._is_token_jump(token_r2):
+                try:
+                    # 01-01[-01]
+                    month = int(token_r2)
+                    self._result.append_ymd(month, 0)
+                except ValueError:
+                    # 01-Jan[-01]
+                    month = self._token_to_month(token_r2)
+                    if month != -1:
+                        self._result.append_ymd(month, 2)
+                    else:
+                        self._result.append_ymd(token_r2, 0)
+
+                # 3rd Y/M/D value
+                token_r4: str = self._get_token_r4()
+                if token_r4 is not None and self._get_token_r3() == token_r1:  # sep
+                    month = self._token_to_month(token_r4)
+                    if month != -1:
+                        self._result.append_ymd(month, 2)
+                    else:
+                        self._result.append_ymd(token_r4, 0)
+                    self._index += 2  # skip 3rd Y/M/D
+                self._index += 1  # skip 2nd Y/M/D
+            self._index += 1  # skip 1st Y/M/D
+            return True  # exit
+
+        # "hour AM" or year|month|day
+        if self._index + 1 >= self._tokens_count or self._is_token_jump(token_r1):
+            if token_r2 is not None and (ampm := self._token_to_ampm(token_r2)) != -1:
+                # 12 AM
+                self._result.hour = self._adjust_ampm_hour(int(tok_val), ampm)
+                self._index += 1  # skip AMPM
+            else:
+                # Year, month or day
+                self._result.append_ymd(token, 0)
+            self._index += 1  # skip token r1
+            return True  # exit
+
+        # "hourAM"
+        if 0 <= tok_val < 24 and (ampm := self._token_to_ampm(token_r1)) != -1:
+            self._result.hour = self._adjust_ampm_hour(int(tok_val), ampm)
+            self._index += 1  # skip token r1
+            return True  # exit
+
+        # Possible is day
+        if self._result.could_be_day(int(tok_val)):
+            self._result.append_ymd(token, 0)
+            return True  # exit
+
+        # Invalid
+        if not self._fuzzy:
+            raise errors.InvalidTokenError(
+                "<{}>\nFailed to handle the numeric token: "
+                "{}".format(self.__class__.__name__, repr(token))
+            )
+
+        return True
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _covnert_numeric_token(self, token: str) -> cython.double:
+        """(Internal) Try to convert numeric token to `<float>`."""
+        try:
+            tok_val: cython.double = float(token)
+            if not math.isfinite(tok_val):
+                raise ValueError("Token does not represent a finite value.")
+        except ValueError as err:
+            raise errors.InvalidNumericToken(
+                "<{}>\nFailed to convert numeric token {} to float: "
+                "{}".format(self.__class__.__name__, repr(token), err)
+            ) from err
+        return tok_val
+
+    # Month token --------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _parse_month_token(self, token: str) -> cython.bint:
+        """(Internal) Parse the 'month' token. Returns
+        True if the token represents month value and
+        processed successfully, else False `<bool>`."""
+        # Validate if is month token
+        month = self._token_to_month(token)
+        if month == -1:
+            return False  # exit: not a month token
+        # Append month
+        self._result.append_ymd(month, 2)
+
+        # Try to get year & day
+        token_r2: str = self._get_token_r2()
+        if token_r2 is not None:
+            token_r1: str = self._get_token_r1()
+            if token_r1 == "-" or token_r1 == "/":
+                # Jan-01[-99?] uncertain
+                self._result.append_ymd(token_r2, 0)
+                token_r4: str = self._get_token_r4()
+                if token_r4 is not None and self._get_token_r3() == token_r1:  # sep
+                    # Jan-01-99 confirmed
+                    self._result.append_ymd(token_r4, 0)
+                    self._index += 2  # skip token r3 & r4
+                self._index += 2  # skip token r1 & r2
+                return True  # exit
+
+            # Jan of 01. In this case, 01 is clearly year
+            token_r4: str = self._get_token_r4()
+            if (
+                token_r4 is not None
+                and self._is_token_pertain(token_r2)
+                and self._get_token_r3() == " "
+            ):
+                try:
+                    year = int(token_r4)
+                    self._result.append_ymd(year, 1)
+                except ValueError:
+                    pass  # wrong guess
+                self._index += 4  # skip token r1 - r4
+                return True  # exit
+
+        # Finished
+        return True  # exit
+
+    # Weekday token ------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _parse_weekday_token(self, token: str) -> cython.bint:
+        """(Internal) Parse the 'weekday' token. Returns
+        True if the token represents weekday value and
+        processed successfully, else False `<bool>`."""
+        # Validate if is weekday token
+        weekday = self._token_to_weekday(token)
+        if weekday == -1:
+            return False  # exit: not a weekday token
+
+        # Set parse result
+        self._result.weekday = weekday
+        return True  # exit
+
+    # HMS token ----------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _parse_hms_token(self, token: str, value: cython.double) -> cython.bint:
+        """(Internal) Parse the 'hms' token. Returns
+        True if the token represents hms value and
+        processed successfully, else False `<bool>`."""
+        # Pre-binding
+        hms: cython.int
+
+        # Looking forwards
+        token_r1 = self._get_token_r1()
+        if token_r1 is not None:
+            # There is an "h", "m", or "s" label following this token.
+            # We take assign the upcoming label to the current token.
+            # e.g. the "12" in 12h"
+            if (hms := self._token_to_hms(token_r1)) != -1:
+                self._set_hms_result(token, value, hms)
+                self._index += 1  # skip token r1
+                return True
+
+            # There is a space and then an "h", "m", or "s" label.
+            # e.g. the "12" in "12 h"
+            token_r2 = self._get_token_r2()
+            if (
+                token_r2 is not None
+                and token_r1 == " "
+                and (hms := self._token_to_hms(token_r2)) != -1
+            ):
+                self._set_hms_result(token, value, hms)
+                self._index += 2  # skip token r1 & r2
+                return True
+
+        # Looking backwords
+        if self._index > 0:
+            token_l1: str = self._get_token(self._index - 1)
+            # There is a "h", "m", or "s" preceding this token. Since neither
+            # of the previous cases was hit, there is no label following this
+            # token, so we use the previous label.
+            # e.g. the "04" in "12h04"
+            if (hms := self._token_to_hms(token_l1)) != -1:
+                # looking backwards, hms increment one.
+                self._set_hms_result(token, value, hms + 1)
+                return True
+
+            # If we are looking at the final token, we allow for a
+            # backward-looking check to skip over a space.
+            # TODO: Are we sure this is the right condition here?
+            token_l2 = self._get_token(self._index - 2)
+            if (
+                token_l2 is not None
+                and token_l1 == " "
+                and (hms := self._token_to_hms(token_l2)) != -1
+            ):
+                # looking backwards, hms increment one.
+                self._set_hms_result(token, value, hms + 1)
+                return True
+
+        # Not HMS token
+        return False
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _set_hms_result(
+        self,
+        token: str,
+        value: cython.double,
+        hms: cython.int,
+    ) -> cython.bint:
+        """(Internal) Set the HH:MM:SS result."""
+        if hms == 0:
+            self._set_hour_and_minite(value)
+        elif hms == 1:
+            self._set_minite_and_second(value)
+        elif hms == 2:
+            self._set_second_and_us(token)
+        return True
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _set_hour_and_minite(self, value: cython.double) -> cython.bint:
+        """(Internal) Set the hour & minite result."""
+        self._result.hour = int(value)
+        if rem := value % 1:
+            self._result.minute = int(rem * 60)
+        return True
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _set_minite_and_second(self, value: cython.double) -> cython.bint:
+        """(Internal) Set the minite & second result."""
+        self._result.minute = int(value)
+        if rem := value % 1:
+            self._result.second = int(rem * 60)
+        return True
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _set_second_and_us(self, token: str) -> cython.bint:
+        """(Internal) Set the second & microsecond result."""
+        if "." in token:
+            toks: list = token.split(".")
+            sec = cython.cast(str, list_getitem(toks, 0))
+            self._result.second = int(sec)
+            us = cython.cast(str, list_getitem(toks, 1))
+            self._result.microsecond = int(us.ljust(6, "0")[0:6])
+        else:
+            self._result.second = int(token)
+        return True
+
+    # AM/PM token --------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _parse_ampm_token(self, token: str) -> cython.bint:
+        """(Internal) Parse the 'am/pm' token. Returns
+        True if the token represents am/pm value and
+        processed successfully, else False `<bool>`."""
+        # Validate if is am/pm token
+        if self._result.ampm != -1:
+            return False  # exit: AM/PM flag already set
+        ampm = self._token_to_ampm(token)
+        if ampm == -1:
+            return False  # exit: not an ampm token
+
+        # If AM/PM is found, but hour is not.
+        hour: cython.int = self._result.hour
+        if hour == -1:
+            if self._fuzzy:
+                return False  # exit
+            raise errors.InvalidTokenError(
+                "<{}>\nMissing hour value for the am/pm token: "
+                "{}.".format(self.__class__.__name__, repr(token))
+            )
+
+        # If AM/PM is found, but hour is not a 12 hour clock
+        if not 0 <= hour <= 12:
+            if self._fuzzy:
+                return False  # exit
+            raise errors.InvalidTokenError(
+                "<{}>\nInvalid hour value [{}] for the am/pm token: "
+                "{}.".format(self.__class__.__name__, hour, repr(token))
+            )
+
+        # Adjust & set ampm
+        self._result.hour = self._adjust_ampm_hour(hour, ampm)
+        self._result.ampm = ampm
+        return True
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _adjust_ampm_hour(self, hour: cython.int, ampm: cython.int) -> cython.uint:
+        """(Internal) Adjust the hour according to the AM/PM flag."""
+        if hour < 12:
+            if ampm == 1:
+                hour += 12
+            return max(0, hour)
+        elif hour == 12 and ampm == 0:
+            return 0
+        else:
+            return hour
+
+    # Tzname token -------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _parse_tzname_token(self, token: str) -> cython.bint:
+        """(Internal) Parse the 'tzname' token. Returns
+        True if the token represents timezone name and
+        processed successfully, else False `<bool>`."""
+        # Validate if is timezome name
+        if (
+            self._ignoretz  # ignore timezone
+            or self._result.hour == -1  # hour not set yet
+            or self._result.tzname is not None  # tzname already set
+            or self._result.tzoffset != -100_000  # tzoffset already set
+            or (is_tz := self._could_be_tzname(token)) == 0  # not tzname
+        ):
+            return False  # exit: not tzname
+
+        # Set tzname & tzoffset
+        if is_tz == 1:
+            # UTC timezone
+            self._result.tzname = "UTC"
+            self._result.tzoffset = 0
+        else:
+            # Token as timezone name
+            self._result.tzname = token.upper()
+            self._result.tzoffset = self._token_to_tzoffset(token)
+
+        # Check for something like GMT+3, or BRST+3. Notice
+        # that it doesn't mean "I am 3 hours after GMT", but
+        # "my time +3 is GMT". If found, we reverse the
+        # logic so that tzoffset parsing code will get it
+        # right.
+        token_r1: str = self._get_token_r1()
+        if token_r1 is not None:
+            if token_r1 == "+":
+                list_setitem(self._tokens, self._index + 1, "-")
+            elif token_r1 == "-":
+                list_setitem(self._tokens, self._index + 1, "+")
+            else:
+                return True  # exit
+            # Reset tzoffset
+            self._result.tzoffset = -100_000
+        return True  # exit
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _could_be_tzname(self, token: str) -> cython.uint:
+        """(Internal) Check if a token could be a timezone
+        name `<int>`. Returns 0 if not tzname, 1 if is UTC
+        and 2 if the token is the timezone name itself.
+        """
+        # Invalid token
+        if token is None:
+            return 0  # exit: not tzname
+
+        # Could be an UTC timezone
+        if self._is_token_utc(token):
+            return 1  # exit: token is UTC
+
+        # Timezone name must be ASCII [a-z] & 3-5 length
+        if not 3 <= str_len(token) <= 5:
+            return 0  # exit: not tzname
+        char: cython.Py_UCS4
+        for char in token:
+            if not 97 <= char <= 122:  # lowercase a-z
+                return 0  # exit: not tzname
+        return 2  # exit: could be tzname
+
+    # Tzoffset token -----------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _parse_tzoffset_token(self, token: str) -> cython.bint:
+        """(Internal) Parse the 'tzoffset' token. Returns
+        True if the token represents timezone offset and
+        processed successfully, else False `<bool>`."""
+        # Validate if is timezome tzoffset
+        if (
+            self._ignoretz  # ignore timezone
+            or self._result.hour == -1  # hour not set yet
+            or self._result.tzoffset != -100_000  # tzoffset already set
+        ):
+            return False
+
+        # Validate current token
+        if token == "+":
+            sign: cython.int = 1
+        elif token == "-":
+            sign: cython.int = -1
+        else:
+            return False  # exit: not tzoffset
+
+        # Validate next token
+        token_r1 = self._get_token_r1()
+        if token_r1 is None:
+            return False  # exit: not tzoffset
+        try:
+            offset: cython.int = int(token_r1)
+        except ValueError:
+            return False  # exit: not tzoffset
+
+        # Calculate & set tzoffset
+        offset = self._calculate_tzoffset(token_r1, sign, offset)
+        if not -86_340 <= offset <= 86_340:
+            raise errors.InvalidTokenError(
+                "<{}>\nFailed to parse timezone offset from tokens: "
+                "{}".format(self.__class__.__name__, [repr(token), repr(token_r1)])
+            )
+        self._result.tzoffset = offset
+
+        # Look for a timezone name between parenthesis
+        if self._result.tzname is None:
+            # No more tokens
+            token_r2 = self._get_token_r2()
+            if token_r2 is None:
+                pass
+
+            # -0300(BRST) # w/o space
+            elif token_r2 == "(":
+                token_r3 = self._get_token_r3()  # BRST
+                # fmt: off
+                if (
+                    (is_tz := self._could_be_tzname(token_r3)) > 0 
+                    and self._get_token_r4() == ")"
+                ):
+                # fmt: on
+                    self._result.tzname = "UTC" if is_tz == 1 else token_r3.upper()
+                    self._index += 3  # skip token r2 - r4
+
+            # -0300 (BRST) # with space
+            elif self._is_token_jump(token_r2) and self._get_token_r3() == "(":
+                token_r4 = self._get_token_r4()
+                # fmt: off
+                if (
+                    (is_tz := self._could_be_tzname(token_r4)) > 0 
+                    and self._get_token(self._index + 5) == ")"
+                ):
+                # fmt: on
+                    self._result.tzname = "UTC" if is_tz == 1 else token_r4.upper()
+                    self._index += 4  # skip token r2 - r5
+
+        # Finished
+        self._index += 1  # skip token r1
+        return True  # exit
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _calculate_tzoffset(
+        self,
+        token_r1: str,
+        sign: cython.int,
+        offset: cython.int,
+    ) -> cython.int:
+        """(Internal) Calculate the timezone offset
+        in seconds `<int>`."""
+        # Prase tzoffset
+        tok_len: cython.int = str_len(token_r1)
+        # -0300
+        if tok_len == 4:
+            h_offset: cython.int = int(token_r1[0:2])
+            m_offset: cython.int = int(token_r1[2:4])
+            return sign * (h_offset * 3_600 + m_offset * 60)
+
+        # -03:00
+        token_r3: str = self._get_token_r3()
+        if token_r3 is not None and self._get_token_r2() == ":":
+            try:
+                m_offset: cython.int = int(token_r3)
+                self._index += 2  # skip token r2 & r3
+                return sign * (offset * 3_600 + m_offset * 60)
+            except ValueError:
+                pass  # wrong guess
+
+        # -[0]3
+        if tok_len <= 2:
+            return sign * (offset * 3_600)
+
+        # Invalid
+        return -100_000
+
+    # Get token ----------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _get_token(self, index: cython.int) -> str:
+        """(Internal) Get the token by index `<str>`."""
+        if 0 <= index < self._tokens_count:
+            return cython.cast(str, list_getitem(self._tokens, index))
+        else:
+            return None
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _get_token_r1(self) -> str:
+        """(Internal) Get the next (+1) token `<str>`."""
+        if self._token_r1 is None:
+            return self._get_token(self._index + 1)
+        else:
+            return self._token_r1
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _get_token_r2(self) -> str:
+        """(Internal) Get the next (+2) token `<str>`."""
+        if self._token_r2 is None:
+            return self._get_token(self._index + 2)
+        else:
+            return self._token_r2
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _get_token_r3(self) -> str:
+        """(Internal) Get the next (+3) token `<str>`."""
+        if self._token_r3 is None:
+            return self._get_token(self._index + 3)
+        else:
+            return self._token_r3
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _get_token_r4(self) -> str:
+        """(Internal) Get the next (+4) token `<str>`."""
+        if self._token_r4 is None:
+            return self._get_token(self._index + 4)
+        else:
+            return self._token_r4
+
+    # Config -------------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _is_token_pertain(self, token: object) -> cython.bint:
+        """(Internal) Check if the given token should be
+        recognized as a pertain `<bool>`."""
+        return set_contains(self._pertain, token)
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _is_token_jump(self, token: object) -> cython.bint:
+        """(Internal) Check if the given token should be
+        recognized as a jump word `<bool>`."""
+        return set_contains(self._jump, token)
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _is_token_utc(self, token: object) -> cython.bint:
+        """(Internal) Check if the given token should be
+        recognized as an UTC timezone `<bool>`."""
+        return set_contains(self._utc, token)
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _token_to_month(self, token: object) -> cython.int:
+        """(Internal) Try to convert token to month `<int>`.
+        Returns the month value (1-12) if token matched
+        with 'month' settings in Configs, else -1.
+        """
+        val = dict_getitem(self._month, token)
+        if val == cython.NULL:
+            return -1
+        else:
+            return cython.cast(object, val)
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _token_to_weekday(self, token: object) -> cython.int:
+        """(Internal) Try to convert token to weekday `<int>`.
+        Returns the weekday value (0-6) if token matched
+        with 'weekday' settings in Configs, else -1.
+        """
+        val = dict_getitem(self._weekday, token)
+        if val == cython.NULL:
+            return -1
+        else:
+            return cython.cast(object, val)
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _token_to_hms(self, token: object) -> cython.int:
+        """(Internal) Try to convert token to hms `<int>`.
+        Returns the hms value (0=hour, 1=minute, 2=second) if
+        token matched with 'hms' settings in Configs, else -1.
+        """
+        val = dict_getitem(self._hms, token)
+        if val == cython.NULL:
+            return -1
+        else:
+            return cython.cast(object, val)
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _token_to_ampm(self, token: object) -> cython.int:
+        """(Internal) Try to convert token to ampm `<int>`.
+        Returns the ampm value (0=am, 1=pm) if token
+        matched with 'ampm' settings in Configs, else -1.
+        """
+        val = dict_getitem(self._ampm, token)
+        if val == cython.NULL:
+            return -1
+        else:
+            return cython.cast(object, val)
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _token_to_tzoffset(self, token: object) -> cython.int:
+        """(Internal) Try to convert token to tzoffset `<int>`.
+        Returns the tzoffset in seconds if token matched
+        with the 'tzinfo' settings in Configs, else -100_000.
+        """
+        val = dict_getitem(self._tzinfo, token)
+        if val == cython.NULL:
+            return -100_000
+        else:
+            return cython.cast(object, val)
