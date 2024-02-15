@@ -26,7 +26,7 @@ np.import_array()
 datetime.import_datetime()
 
 # Python imports
-import datetime, numpy as np
+import datetime
 from dateutil.relativedelta import relativedelta
 from cytimes import cydatetime as cydt
 
@@ -1077,7 +1077,7 @@ class cytimedelta:
 
     # Special methods: representation ----------------------------------------
     def __repr__(self) -> str:
-        # Reprs
+        # Representations
         reprs: list = []
 
         # Relative delta
