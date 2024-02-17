@@ -624,6 +624,25 @@ class Result:
         self._resolve_ymd(day1st, year1st)
         return True
 
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def is_valid(self) -> cython.bint:
+        """Check if the result is valid (contains any parsed values) `<bool>`."""
+        return (
+            self.year != -1
+            or self.month != -1
+            or self.day != -1
+            or self.hour != -1
+            or self.minute != -1
+            or self.second != -1
+            or self.microsecond != -1
+            or self.weekday != -1
+            or self.ampm != -1
+            or self.tzname is not None
+            or self.tzoffset != -100_000
+        )
+
     # Special methods -------------------------------------------------
     def __repr__(self) -> str:
         # Representations
@@ -656,19 +675,7 @@ class Result:
         return "<%s (%s)>" % (self.__class__.__name__, ", ".join(reprs))
 
     def __bool__(self) -> bool:
-        return (
-            self.year != -1
-            or self.month != -1
-            or self.day != -1
-            or self.weekday != -1
-            or self.hour != -1
-            or self.minute != -1
-            or self.second != -1
-            or self.microsecond != -1
-            or self.ampm != -1
-            or self.tzname is not None
-            or self.tzoffset != -100_000
-        )
+        return self.is_valid()
 
 
 # Config --------------------------------------------------------------------------------------
@@ -1404,11 +1411,29 @@ class Config:
             )
         return value
 
+    # Special methods -------------------------------------------------
+    def __repr__(self) -> str:
+        # Representations
+        reprs: list = [
+            "day1st=%s" % self._day1st,
+            "year1st=%s" % self._year1st,
+            "pertain=%s" % sorted(self._pertain),
+            "jump=%s" % sorted(self._jump),
+            "utc=%s" % sorted(self._utc),
+            "month=%s" % self._month,
+            "weekday=%s" % self._weekday,
+            "hms=%s" % self._hms,
+            "ampm=%s" % self._ampm,
+            "tzinfo=%s" % self._tzinfo,
+        ]
+        # Construct
+        return "<%s (\n  %s\n)>" % (self.__class__.__name__, ",\n  ".join(reprs))
+
 
 # Parser --------------------------------------------------------------------------------------
 @cython.cclass
 class Parser:
-    """The datetime Parser."""
+    """Represents the datetime Parser."""
 
     # Config
     _day1st: cython.bint
@@ -1551,7 +1576,7 @@ class Parser:
             err.add_note("-> Failed to parse: {}." % repr(timestr))
             raise err
         except Exception as err:
-            if not self._result:
+            if not self._result.is_valid():
                 raise errors.cyParserFailedError(
                     "<{}>\nFailed to parse: {}.\nError: "
                     "{}".format(self.__class__.__name__, repr(timestr), err)
@@ -1618,7 +1643,7 @@ class Parser:
 
         # Prepare result
         self._result.prepare(self._day1st, self._year1st)
-        if not self._result:
+        if not self._result.is_valid():
             raise errors.cyParserFailedError(
                 "<{}>\nFailed to parse the datetime string: "
                 "{}.".format(self.__class__.__name__, repr(timestr))

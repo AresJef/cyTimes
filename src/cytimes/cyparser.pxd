@@ -38,6 +38,7 @@ cdef class Result:
     cdef bint _resolve_ymd(Result self, bint day1st, bint year1st) except -1
     # Result
     cdef bint prepare(Result self, bint day1st, bint year1st) except -1
+    cdef bint is_valid(Result self) except -1
 
 # Config
 cdef class Config:
