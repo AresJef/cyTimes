@@ -924,7 +924,7 @@ class Config:
         """
         return self._month
 
-    def add_month(self, month: cython.int, *words: str) -> None:
+    def add_month(self, month: int, *words: str) -> None:
         """Add words that should be recognized as a specific month.
 
         ### Example
@@ -984,7 +984,7 @@ class Config:
         """
         return self._weekday
 
-    def add_weekday(self, weekday: cython.int, *words: str) -> None:
+    def add_weekday(self, weekday: int, *words: str) -> None:
         """Add words that should be recognized as a specific
         weekday, where 0=Monday...6=Sunday.
 
@@ -1044,7 +1044,7 @@ class Config:
         """
         return self._hms
 
-    def add_hms(self, hms: cython.int, *words: str) -> None:
+    def add_hms(self, hms: int, *words: str) -> None:
         """Add words that should be recognized as HH/MM/SS,
         where 0=hour, 1=minute, 2=second.
 
@@ -1104,7 +1104,7 @@ class Config:
         """
         return self._ampm
 
-    def add_ampm(self, ampm: cython.int, *words: str) -> None:
+    def add_ampm(self, ampm: int, *words: str) -> None:
         """Add words that should be recognized as AM/PM,
         where 0=AM and 1=PM.
 
@@ -1164,12 +1164,7 @@ class Config:
         """
         return self._tzinfo
 
-    def add_tzinfo(
-        self,
-        word: str,
-        hour: cython.int = 0,
-        minute: cython.int = 0,
-    ) -> None:
+    def add_tzinfo(self, word: str, hour: int = 0, minute: int = 0) -> None:
         """Add word that should be recognized as a timezone
         and the corresponding timezone offset (hours & minutes).
 
