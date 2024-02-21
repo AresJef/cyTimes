@@ -1573,7 +1573,7 @@ class Parser:
             self._process(timestr)
             return self._build(default)  # exit: success
         except errors.cyParserError as err:
-            err.add_note("-> Failed to parse: {}." % repr(timestr))
+            err.add_note("-> Failed to parse: {}.".format(repr(timestr)))
             raise err
         except Exception as err:
             if not self._result.is_valid():
