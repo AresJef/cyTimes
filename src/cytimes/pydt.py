@@ -29,9 +29,9 @@ from cytimes.cytimedelta import cytimedelta
 from cytimes.cyparser import Config, Parser
 
 # Constants -----------------------------------------------------------------------------------
-TIMEZONES_AVAILABLE: set[str] = available_timezones()
 RLDELTA_DTYPE: object = relativedelta
 ZONEINFO_DTYPE: object = ZoneInfo
+TIMEZONES_AVAILABLE: set[str] = available_timezones()
 
 
 # pydt (Python Datetime) ----------------------------------------------------------------------

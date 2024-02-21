@@ -4,6 +4,8 @@ from cpython cimport datetime
 
 # Constants
 cdef:
+    # . data type
+    object PARSERINFO_DTYPE
     # . charactors
     Py_UCS4 CHAR_NULL, CHAR_PERIOD, CHAR_COMMA
     # . timezone

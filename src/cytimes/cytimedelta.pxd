@@ -4,8 +4,8 @@ from cpython cimport datetime
 
 # Constants
 cdef:
-    tuple WEEKDAY_REPRS
     object RLDELTA_DTYPE
+    tuple WEEKDAY_REPRS
 
 # cytimedelta
 cdef class cytimedelta:

@@ -37,6 +37,8 @@ from cytimes import errors, cydatetime as cydt
 __all__ = ["Config", "Parser"]
 
 # Constants -----------------------------------------------------------------------------------
+# . data type
+PARSERINFO_DTYPE: object = parserinfo
 # . charactors
 CHAR_NULL: cython.Py_UCS4 = 0  # '' null
 CHAR_COMMA: cython.Py_UCS4 = 44  # ","
@@ -1241,7 +1243,7 @@ class Config:
             cfg.import_parserinfo(info)
         """
         # Validate perserinfo
-        if not isinstance(info, parserinfo):
+        if not isinstance(info, PARSERINFO_DTYPE):
             raise errors.InvalidParserInfo(
                 "<{}>\nConfig can only import "
                 "'dateutil.parser.parserinfo', instead got: "

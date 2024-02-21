@@ -33,8 +33,8 @@ from cytimes import cydatetime as cydt
 __all__ = ["cytimedelta"]
 
 # Contants ------------------------------------------------------------------------------------
-WEEKDAY_REPRS: tuple[str, ...] = ("MO", "TU", "WE", "TH", "FR", "SA", "SU")
 RLDELTA_DTYPE: object = relativedelta
+WEEKDAY_REPRS: tuple[str, ...] = ("MO", "TU", "WE", "TH", "FR", "SA", "SU")
 
 
 # cytimedelta ---------------------------------------------------------------------------------

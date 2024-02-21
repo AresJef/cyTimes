@@ -8,8 +8,8 @@ from cytimes.cytimedelta cimport cytimedelta
 # Constants
 # . timezone
 cdef:
-    set TIMEZONES_AVAILABLE
     object RLDELTA_DTYPE, ZONEINFO_DTYPE
+    set TIMEZONES_AVAILABLE
 
 # pydt (Python Datetime)
 cdef datetime.datetime access_pydt_datetime(pydt pt) noexcept
