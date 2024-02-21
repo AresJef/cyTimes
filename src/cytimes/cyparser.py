@@ -1503,15 +1503,15 @@ class Parser:
 
         ### Time String & Default
         :param timestr `<str>`: The string that contains date & time information.
-        :param default `<datetime/date>`: The base to fillin missing datetime elements. Defaults to `None`.
+        :param default `<datetime/date>`: The base to fill-in missing datetime elements. Defaults to `None`.
         - `None`: If parser failed to extract Y/M/D values from the string,
-           the current local date will be used to filling the missing year,
+           the date of '1970-01-01' will be used to fill-in the missing year,
            month & day values.
         - `<date>`: If parser failed to extract Y/M/D values from the
-           string, the give `date` will be used to filling the missing
+           string, the give `date` will be used to fill-in the missing
            year, month & day values.
         - `<datetime>`: If parser failed to extract any datetime elements
-           from the string, the given `datetime` will be used to filling the
+           from the string, the given `datetime` will be used to fill-in the
            missing year, month, day, hour, minute, second and microsecond.
 
         ### Ambiguous Y/M/D
@@ -1701,7 +1701,6 @@ class Parser:
                 default_mode: cython.uint = 1  # default is date
         else:
             default_mode: cython.uint = 0  # default is local time
-            tm = cytime.localtime()
 
         # . year
         if self._result.year > 0:
@@ -1709,7 +1708,7 @@ class Parser:
         elif default_mode > 0:
             year: cython.uint = datetime.PyDateTime_GET_YEAR(default)
         else:
-            year: cython.uint = tm.tm_year
+            year: cython.uint = 1970
 
         # . month
         if self._result.month > 0:
@@ -1717,7 +1716,7 @@ class Parser:
         elif default_mode > 0:
             month: cython.uint = datetime.PyDateTime_GET_MONTH(default)
         else:
-            month: cython.uint = tm.tm_mon
+            month: cython.uint = 1
 
         # . day
         if self._result.day > 0:
@@ -1725,7 +1724,7 @@ class Parser:
         elif default_mode > 0:
             day: cython.uint = datetime.PyDateTime_GET_DAY(default)
         else:
-            day: cython.uint = tm.tm_mday
+            day: cython.uint = 1
         if day > 28:
             day = min(day, cydt.days_in_month(year, month))
 
