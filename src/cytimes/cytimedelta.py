@@ -64,15 +64,15 @@ class cytimedelta:
 
     def __init__(
         self,
-        years: cython.longlong = 0,
-        months: cython.longlong = 0,
-        days: cython.longlong = 0,
-        weeks: cython.longlong = 0,
-        hours: cython.longlong = 0,
-        minutes: cython.longlong = 0,
-        seconds: cython.longlong = 0,
-        miliseconds: cython.longlong = 0,
-        microseconds: cython.longlong = 0,
+        years: cython.int = 0,
+        months: cython.int = 0,
+        days: cython.int = 0,
+        weeks: cython.int = 0,
+        hours: cython.int = 0,
+        minutes: cython.int = 0,
+        seconds: cython.int = 0,
+        miliseconds: cython.int = 0,
+        microseconds: cython.int = 0,
         year: cython.int = -1,
         month: cython.int = -1,
         day: cython.int = -1,
@@ -89,15 +89,15 @@ class cytimedelta:
         delta between two date & time objects.
 
         ### Absolute Delta
-        :param year `<int>`: The absolute year value. Defaults to `-1 (None)`.
-        :param month `<int>`: The absolute month value. Defaults to `-1 (None)`.
-        :param day `<int>`: The absolute day value. Defaults to `-1 (None)`.
-        :param weekday `<int>`: The absolute weekday value, where Monday is 0 ... Sunday is 6. Defaults to `-1 (None)`.
-        :param hour `<int>`: The absolute hour value. Defaults to `-1 (None)`.
-        :param minute `<int>`: The absolute minute value. Defaults to `-1 (None)`.
-        :param second `<int>`: The absolute second value. Defaults to `-1 (None)`.
-        :param milisecond `<int>`: The absolute milisecond value. Defaults to `-1 (None)`.
-        :param microsecond `<int>`: The absolute microsecond value. Defaults to `-1 (None)`.
+        :param year `<int>`: The absolute year value. Defaults to `-1 (no change)`.
+        :param month `<int>`: The absolute month value. Defaults to `-1 (no change)`.
+        :param day `<int>`: The absolute day value. Defaults to `-1 (no change)`.
+        :param weekday `<int>`: The absolute weekday value, where Monday is 0 ... Sunday is 6. Defaults to `-1 (no change)`.
+        :param hour `<int>`: The absolute hour value. Defaults to `-1 (no change)`.
+        :param minute `<int>`: The absolute minute value. Defaults to `-1 (no change)`.
+        :param second `<int>`: The absolute second value. Defaults to `-1 (no change)`.
+        :param milisecond `<int>`: The absolute milisecond value. Defaults to `-1 (no change)`.
+        :param microsecond `<int>`: The absolute microsecond value. Defaults to `-1 (no change)`.
 
         ### Relative delta
         :param years `<int>`: The relative delta of years. Defaults to `0`.
@@ -159,16 +159,17 @@ class cytimedelta:
         """
         # Relative delta
         # . microseconds
-        microseconds += miliseconds * 1_000
-        if microseconds > 999_999:
-            seconds += microseconds // 1_000_000
-            self._microseconds = microseconds % 1_000_000
-        elif microseconds < -999_999:
-            microseconds = -microseconds
-            seconds -= microseconds // 1_000_000
-            self._microseconds = -(microseconds % 1_000_000)
+        us: cython.longlong = microseconds
+        us += miliseconds * 1_000
+        if us > 999_999:
+            seconds += us // 1_000_000
+            self._microseconds = us % 1_000_000
+        elif us < -999_999:
+            us = -us
+            seconds -= us // 1_000_000
+            self._microseconds = -(us % 1_000_000)
         else:
-            self._microseconds = microseconds
+            self._microseconds = us
         # . seconds
         if seconds > 59:
             minutes += seconds // 60
@@ -340,6 +341,7 @@ class cytimedelta:
 
     # Special methods: addition ----------------------------------------------
     def __add__(self, o: object) -> cytimedelta | datetime.datetime:
+        # . common
         if cydt.is_dt(o):
             return self._add_datetime(o)
         if cydt.is_date(o):
@@ -350,13 +352,16 @@ class cytimedelta:
             return self._add_timedelta(o)
         if isinstance(o, RLDELTA_DTYPE):
             return self._add_relativedelta(o)
+        # . unlikely numpy object
         if cydt.is_dt64(o):
             return self._add_datetime(cydt.dt64_to_dt(o))
         if cydt.is_delta64(o):
             return self._add_timedelta(cydt.delta64_to_delta(o))
+        # . unsupported
         return NotImplemented
 
     def __radd__(self, o: object) -> cytimedelta | datetime.datetime:
+        # . common
         if cydt.is_dt(o):
             return self._add_datetime(o)
         if cydt.is_date(o):
@@ -365,11 +370,13 @@ class cytimedelta:
             return self._add_timedelta(o)
         if isinstance(o, RLDELTA_DTYPE):
             return self._radd_relativedelta(o)
+        # . unlikely numpy object
         # TODO: Below does nothing since numpy does not return NotImplemented
         if cydt.is_dt64(o):
             return self._add_datetime(cydt.dt64_to_dt(o))
         if cydt.is_delta64(o):
             return self._add_timedelta(cydt.delta64_to_delta(o))
+        # . unsupported
         return NotImplemented
 
     @cython.cfunc
@@ -586,17 +593,21 @@ class cytimedelta:
 
     # Special methods: substraction ------------------------------------------
     def __sub__(self, o: object) -> cytimedelta:
+        # . common
         if isinstance(o, cytimedelta):
             return self._sub_cytimedelta(o)
         if cydt.is_delta(o):
             return self._sub_timedelta(o)
         if isinstance(o, RLDELTA_DTYPE):
             return self._sub_relativedelta(o)
+        # . unlikely numpy object
         if cydt.is_delta64(o):
             return self._sub_timedelta(cydt.delta64_to_delta(o))
+        # . unsupported
         return NotImplemented
 
     def __rsub__(self, o: object) -> cytimedelta | datetime.datetime:
+        # . common
         if cydt.is_dt(o):
             return self._rsub_datetime(o)
         if cydt.is_date(o):
@@ -605,11 +616,13 @@ class cytimedelta:
             return self._rsub_timedelta(o)
         if isinstance(o, RLDELTA_DTYPE):
             return self._rsub_relativedelta(o)
+        # . unlikely numpy object
         # TODO: Below does nothing since numpy does not return NotImplemented
         if cydt.is_dt64(o):
             return self._rsub_datetime(cydt.dt64_to_dt(o))
         if cydt.is_delta64(o):
             return self._rsub_timedelta(cydt.delta64_to_delta(o))
+        # . unsupported
         return NotImplemented
 
     @cython.cfunc
@@ -1075,7 +1088,7 @@ class cytimedelta:
             or self._microsecond >= 0
         )
 
-    # Special methods: representation ----------------------------------------
+    # Special methods: represent ---------------------------------------------
     def __repr__(self) -> str:
         # Representations
         reprs: list = []
