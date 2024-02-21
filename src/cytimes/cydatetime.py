@@ -262,7 +262,8 @@ def ymd_isoweek(year: cython.uint, month: cython.uint, day: cython.uint) -> cyth
     """Get the ISO calendar week number `<int>`."""
     ordinal: cython.uint = ymd_to_ordinal(year, month, day)
     iso1st_ord: cython.uint = iso1st_ordinal(year)
-    isoweek: cython.int = (ordinal - iso1st_ord) // 7
+    delta: cython.int = ordinal - iso1st_ord
+    isoweek: cython.int = delta // 7
     if isoweek < 0:
         iso1st_ord = iso1st_ordinal(year - 1)
         return (ordinal - iso1st_ord) // 7 + 1
@@ -279,7 +280,8 @@ def ymd_isoyear(year: cython.uint, month: cython.uint, day: cython.uint) -> cyth
     """Get the ISO calendar year `<int>`."""
     ordinal: cython.uint = ymd_to_ordinal(year, month, day)
     iso1st_ord: cython.uint = iso1st_ordinal(year)
-    isoweek: cython.int = (ordinal - iso1st_ord) // 7
+    delta: cython.int = ordinal - iso1st_ord
+    isoweek: cython.int = delta // 7
     if isoweek < 0:
         return year - 1
     elif isoweek >= 52 and ordinal >= iso1st_ordinal(year + 1):
@@ -299,17 +301,17 @@ def ymd_isocalendar(
     """Get the ISO calendar of the YMD `<struct:iso>`."""
     ordinal: cython.uint = ymd_to_ordinal(year, month, day)
     iso1st_ord: cython.uint = iso1st_ordinal(year)
-    ord_diff: cython.int = ordinal - iso1st_ord
-    isoweek: cython.int = ord_diff // 7
+    delta: cython.int = ordinal - iso1st_ord
+    isoweek: cython.int = delta // 7
     if isoweek < 0:
         year -= 1
         iso1st_ord = iso1st_ordinal(year)
-        ord_diff = ordinal - iso1st_ord
-        isoweek = ord_diff // 7
+        delta = ordinal - iso1st_ord
+        isoweek = delta // 7
     elif isoweek >= 52 and ordinal >= iso1st_ordinal(year + 1):
         year += 1
         isoweek = 0
-    return iso(year, isoweek + 1, ord_diff % 7 + 1)
+    return iso(year, isoweek + 1, delta % 7 + 1)
 
 
 @cython.cfunc
@@ -838,10 +840,21 @@ def date_add(
 @cython.inline(True)
 @cython.exceptval(check=False)
 def date_add_delta(date: datetime.date, delta: datetime.timedelta) -> datetime.date:
-    """Add `datetime.timedelta` to `<datetime.date>`.
+    """Add datetime.timedelta to `<datetime.date>`.
     Equivalent to `date + timedelta(instance)`."""
     return date_fr_microseconds(
         date_to_microseconds(date) + delta_to_microseconds(delta)
+    )
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(check=False)
+def date_sub_delta(date: datetime.date, delta: datetime.timedelta) -> datetime.date:
+    """Substract datetime.timedelta from `<datetime.date>`.
+    Equivalent to `date - timedelta(instance)`."""
+    return date_fr_microseconds(
+        date_to_microseconds(date) - delta_to_microseconds(delta)
     )
 
 
@@ -945,10 +958,19 @@ def gen_dt_now() -> datetime.datetime:
 @cython.cfunc
 @cython.inline(True)
 @cython.exceptval(check=False)
-def gen_dt_utcnow() -> datetime.datetime:
-    """Generate current UTC `<datetime.datetime>`.
+def gen_dt_now_utc() -> datetime.datetime:
+    """Generate current `<datetime.datetime>` under UTC.
     Equivalent to `datetime.datetime.now(UTC)`."""
     return dt_fr_timestamp(time(), UTC)
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(check=False)
+def gen_dt_now_tz(tzinfo: datetime.tzinfo) -> datetime.datetime:
+    """Generate current `<datetime.datetime>` under specific timezone.
+    Equivalent to `datetime.datetime.now(tzinfo)`."""
+    return dt_fr_timestamp(time(), tzinfo)
 
 
 # Datetime.datetime: check types -----------------------------------------------------------------------
@@ -1274,10 +1296,13 @@ def dt_fr_dt(dt: datetime.datetime) -> datetime.datetime:
 @cython.cfunc
 @cython.inline(True)
 @cython.exceptval(check=False)
-def dt_fr_date(date: datetime.date) -> datetime.datetime:
+def dt_fr_date(
+    date: datetime.date,
+    tzinfo: datetime.tzinfo = None,
+) -> datetime.datetime:
     """Convert datetime.date to `<datetime.datetime>`."""
     return datetime.datetime_new(
-        access_year(date), access_month(date), access_day(date), 0, 0, 0, 0, None, 0
+        access_year(date), access_month(date), access_day(date), 0, 0, 0, 0, tzinfo, 0
     )
 
 
@@ -1324,10 +1349,13 @@ def dt_fr_date_n_time(date: datetime.date, time: datetime.time) -> datetime.date
 @cython.cfunc
 @cython.inline(True)
 @cython.exceptval(check=False)
-def dt_fr_ordinal(ordinal: cython.int) -> datetime.datetime:
+def dt_fr_ordinal(
+    ordinal: cython.int,
+    tzinfo: datetime.tzinfo = None,
+) -> datetime.datetime:
     """Convert ordinal to `<datetime.datetime>`."""
     ymd = ordinal_to_ymd(ordinal)
-    return datetime.datetime_new(ymd.year, ymd.month, ymd.day, 0, 0, 0, 0, None, 0)
+    return datetime.datetime_new(ymd.year, ymd.month, ymd.day, 0, 0, 0, 0, tzinfo, 0)
 
 
 @cython.cfunc
@@ -1336,11 +1364,10 @@ def dt_fr_ordinal(ordinal: cython.int) -> datetime.datetime:
 def dt_fr_seconds(
     seconds: cython.double,
     tzinfo: datetime.tzinfo = None,
-    fold: cython.uint = 0,
 ) -> datetime.datetime:
     """Convert total seconds after POSIX epoch to `<datetime.datetime>`."""
     microseconds: cython.longlong = int(seconds * 1_000_000)
-    return dt_fr_microseconds(microseconds, tzinfo, fold)
+    return dt_fr_microseconds(microseconds, tzinfo)
 
 
 @cython.cfunc
@@ -1350,7 +1377,6 @@ def dt_fr_seconds(
 def dt_fr_microseconds(
     microseconds: cython.longlong,
     tzinfo: datetime.tzinfo = None,
-    fold: cython.uint = 0,
 ) -> datetime.datetime:
     """Convert total microseconds after POSIX epoch to `<datetime.datetime>`."""
     # Add back epoch microseconds
@@ -1370,7 +1396,7 @@ def dt_fr_microseconds(
         hms.second,
         hms.microsecond,
         tzinfo,
-        1 if fold > 0 else 0,
+        0,
     )
 
 
@@ -1399,7 +1425,6 @@ def dt_add(
     return dt_fr_microseconds(
         dt_to_microseconds(dt) + days * US_DAY + seconds * 1_000_000 + microseconds,
         access_dt_tzinfo(dt),
-        access_dt_fold(dt),
     )
 
 
@@ -1412,7 +1437,18 @@ def dt_add_delta(dt: datetime.datetime, delta: datetime.timedelta) -> datetime.d
     return dt_fr_microseconds(
         dt_to_microseconds(dt) + delta_to_microseconds(delta),
         access_dt_tzinfo(dt),
-        access_dt_fold(dt),
+    )
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(check=False)
+def dt_sub_delta(dt: datetime.datetime, delta: datetime.timedelta) -> datetime.datetime:
+    """Substract datetime.timedelta from `<datetime.datetime>`.
+    Equivalent to `datetime - timedelta(instance)`)."""
+    return dt_fr_microseconds(
+        dt_to_microseconds(dt) - delta_to_microseconds(delta),
+        access_dt_tzinfo(dt),
     )
 
 
@@ -1547,6 +1583,48 @@ def dt_adj_weekday(dt: datetime.datetime, weekday: cython.uint) -> datetime.date
     return dt_add(dt, days=weekday - dt_wday)
 
 
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(check=False)
+def dt_astimezone(
+    dt: datetime.datetime,
+    tzinfo: datetime.tzinfo = None,
+) -> datetime.datetime:
+    """Convert `<datetime.datetime>` to the new timezone.
+    Equivalent to `datetime.astimezone(tzinfo)`.
+    """
+    t_tz: datetime.tzinfo
+    b_tz: datetime.tzinfo
+    if tzinfo is None:
+        t_tz = gen_tzinfo_local(None)
+        b_tz = access_dt_tzinfo(dt)
+        if b_tz is None:
+            return dt_replace_tzinfo(dt, t_tz)  # exit: replace tzinfo
+    else:
+        t_tz = tzinfo
+        b_tz = access_dt_tzinfo(dt)
+
+    if b_tz is None:
+        b_tz = gen_tzinfo_local(dt)
+        b_offset: datetime.timedelta = b_tz.utcoffset(dt)
+    else:
+        b_offset: datetime.timedelta = b_tz.utcoffset(dt)
+        if b_offset is None:
+            b_tz = gen_tzinfo_local(dt_replace_tzinfo(dt, None))
+            b_offset = b_tz.utcoffset(dt)
+
+    if t_tz is b_tz:
+        return dt
+
+    # Calculate delta in microseconds
+    t_delta: cython.longlong = delta_to_microseconds(t_tz.utcoffset(dt))
+    b_delta: cython.longlong = delta_to_microseconds(b_offset)
+
+    # Generate new datetime
+    us: cython.longlong = dt_to_microseconds(dt)
+    return dt_fr_microseconds(us + t_delta - b_delta, t_tz)
+
+
 # Datetime.time ========================================================================================
 # Datetime.time: generate ------------------------------------------------------------------------------
 @cython.cfunc
@@ -1577,10 +1655,19 @@ def gen_time_now() -> datetime.time:
 @cython.cfunc
 @cython.inline(True)
 @cython.exceptval(check=False)
-def gen_time_utcnow() -> datetime.time:
-    """Generate current UTC `<datetime.time>`.
+def gen_time_now_utc() -> datetime.time:
+    """Generate current `<datetime.time>` under UTC.
     Equivalent to `datetime.datetime.now(UTC).time()`."""
-    return time_fr_dt(gen_dt_utcnow())
+    return time_fr_dt(gen_dt_now_utc())
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(check=False)
+def gen_time_now_tz(tzinfo: datetime.tzinfo) -> datetime.time:
+    """Generate current `<datetime.time>` under specific timezone.
+    Equivalent to `datetime.datetime.now(tzinfo).time()`."""
+    return time_fr_dt(gen_dt_now_tz(tzinfo))
 
 
 # Datetime.time: check types ---------------------------------------------------------------------------
@@ -1715,11 +1802,10 @@ def time_fr_dt(dt: datetime.datetime) -> datetime.time:
 def time_fr_seconds(
     seconds: cython.double,
     tzinfo: datetime.tzinfo = None,
-    fold: cython.uint = 0,
 ) -> datetime.time:
     """Convert total seconds to `<datetime.time>`."""
     mciroseconds: cython.longlong = int(seconds * 1_000_000)
-    return time_fr_microseconds(mciroseconds, tzinfo, fold)
+    return time_fr_microseconds(mciroseconds, tzinfo)
 
 
 @cython.cfunc
@@ -1728,7 +1814,6 @@ def time_fr_seconds(
 def time_fr_microseconds(
     microseconds: cython.longlong,
     tzinfo: datetime.tzinfo = None,
-    fold: cython.uint = 0,
 ) -> datetime.time:
     """Convert total microseconds to `<datetime.time>`."""
     # Add back epoch microseconds
@@ -1744,7 +1829,7 @@ def time_fr_microseconds(
         hms.second,
         hms.microsecond,
         tzinfo,
-        1 if fold > 0 else 0,
+        0,
     )
 
 
@@ -2412,14 +2497,14 @@ def dt64_to_dt(dt64: object) -> datetime.datetime:
     - Upper limit: `<9999-12-31 23:59:59.999999>`.
     - Lower limit: `<0001-01-01 00:00:00.000000>`.
     """
-    return dt_fr_microseconds(dt64_to_microseconds(dt64), None, 0)
+    return dt_fr_microseconds(dt64_to_microseconds(dt64), None)
 
 
 @cython.cfunc
 @cython.inline(True)
 def dt64_to_time(dt64: object) -> datetime.time:
     """Convert `numpy.datetime64` to `<datetime.time>`."""
-    return time_fr_microseconds(dt64_to_microseconds(dt64), None, 0)
+    return time_fr_microseconds(dt64_to_microseconds(dt64), None)
 
 
 # numpy.timedelta64 ====================================================================================

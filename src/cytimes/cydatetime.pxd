@@ -123,6 +123,7 @@ cdef datetime.date date_fr_timestamp(double timestamp) except *
 # Datetime.date: arithmetic
 cdef datetime.date date_add(datetime.date date, int days=?, long long seconds=?, long long microseconds=?) noexcept
 cdef datetime.date date_add_delta(datetime.date date, datetime.timedelta delta) noexcept
+cdef datetime.date date_sub_delta(datetime.date date, datetime.timedelta delta) noexcept
 cdef datetime.timedelta date_sub_date(datetime.date date_l, datetime.date date_r) noexcept
 cdef int date_sub_date_days(datetime.date date_l, datetime.date date_r) noexcept
 # Datetime.date: manipulation
@@ -135,7 +136,8 @@ cdef datetime.datetime gen_dt(
     unsigned int hour=?, unsigned int minute=?, unsigned int second=?, 
     unsigned int microsecond=?, datetime.tzinfo tzinfo=?, unsigned int fold=?) except *
 cdef datetime.datetime gen_dt_now() noexcept
-cdef datetime.datetime gen_dt_utcnow() noexcept
+cdef datetime.datetime gen_dt_now_utc() noexcept
+cdef datetime.datetime gen_dt_now_tz(datetime.tzinfo tzinfo) noexcept
 # Datetime.datetime: check types
 cdef bint is_dt(object obj) except -1
 cdef bint is_dt_exact(object obj) except -1
@@ -159,16 +161,17 @@ cdef long long dt_to_microseconds_utc(datetime.datetime dt) noexcept
 cdef long long dt_to_posixts(datetime.datetime dt) except *
 cdef double dt_to_timestamp(datetime.datetime dt) except *
 cdef datetime.datetime dt_fr_dt(datetime.datetime dt) noexcept
-cdef datetime.datetime dt_fr_date(datetime.date date) noexcept
+cdef datetime.datetime dt_fr_date(datetime.date date, datetime.tzinfo tzinfo=?) noexcept
 cdef datetime.datetime dt_fr_time(datetime.time time) noexcept
 cdef datetime.datetime dt_fr_date_n_time(datetime.date date, datetime.time time) noexcept
-cdef datetime.datetime dt_fr_ordinal(int ordinal) noexcept
-cdef datetime.datetime dt_fr_seconds(double seconds, datetime.tzinfo tzinfo=?, unsigned int fold=?) noexcept
-cdef datetime.datetime dt_fr_microseconds(long long microseconds, datetime.tzinfo tzinfo=?, unsigned int fold=?) noexcept
+cdef datetime.datetime dt_fr_ordinal(int ordinal, datetime.tzinfo tzinfo=?) noexcept
+cdef datetime.datetime dt_fr_seconds(double seconds, datetime.tzinfo tzinfo=?) noexcept
+cdef datetime.datetime dt_fr_microseconds(long long microseconds, datetime.tzinfo tzinfo=?) noexcept
 cdef datetime.datetime dt_fr_timestamp(double timestamp, datetime.tzinfo tzinfo=?) except *
 # Datetime.datetime: arithmetic
 cdef datetime.datetime dt_add(datetime.datetime dt, int days=?, long long seconds=?, long long microseconds=?) noexcept
 cdef datetime.datetime dt_add_delta(datetime.datetime dt, datetime.timedelta delta) noexcept
+cdef datetime.datetime dt_sub_delta(datetime.datetime dt, datetime.timedelta delta) noexcept
 cdef datetime.timedelta dt_sub_dt(datetime.datetime dt_l, datetime.datetime dt_r) noexcept
 cdef long long dt_sub_dt_us(datetime.datetime dt_l, datetime.datetime dt_r) noexcept
 # Datetime.datetime: manipulation 
@@ -178,13 +181,15 @@ cdef datetime.datetime dt_replace(
 cdef datetime.datetime dt_replace_tzinfo(datetime.datetime dt, datetime.tzinfo tzinfo) noexcept
 cdef datetime.datetime dt_replace_fold(datetime.datetime dt, unsigned int fold) noexcept
 cdef datetime.datetime dt_adj_weekday(datetime.datetime dt, unsigned int weekday) noexcept
+cdef datetime.datetime dt_astimezone(datetime.datetime dt, datetime.tzinfo tzinfo=?) noexcept
 
 # Datetime.time: generate
 cdef datetime.time gen_time(
     unsigned int hour=?, unsigned int minute=?, unsigned int second=?, 
     unsigned int microsecond=?, datetime.tzinfo tzinfo=?, unsigned int fold=?) except *
 cdef datetime.time gen_time_now() noexcept
-cdef datetime.time gen_time_utcnow() noexcept
+cdef datetime.time gen_time_now_utc() noexcept
+cdef datetime.time gen_time_now_tz(datetime.tzinfo tzinfo) noexcept
 # Datetime.time: check types
 cdef bint is_time(object obj) except -1
 cdef bint is_time_exact(object obj) except -1
@@ -200,8 +205,8 @@ cdef str time_to_isoformat(datetime.time time) noexcept
 cdef double time_to_seconds(datetime.time time) noexcept
 cdef long long time_to_microseconds(datetime.time time) noexcept
 cdef datetime.time time_fr_dt(datetime.datetime dt) noexcept
-cdef datetime.time time_fr_seconds(double seconds, datetime.tzinfo tzinfo=?, unsigned int fold=?) noexcept
-cdef datetime.time time_fr_microseconds(long long microseconds, datetime.tzinfo tzinfo=?, unsigned int fold=?) noexcept
+cdef datetime.time time_fr_seconds(double seconds, datetime.tzinfo tzinfo=?) noexcept
+cdef datetime.time time_fr_microseconds(long long microseconds, datetime.tzinfo tzinfo=?) noexcept
 # Datetime.time: manipulation
 cdef datetime.time time_replace(
     datetime.time time, int hour=?, int minute=?, int second=?, 
