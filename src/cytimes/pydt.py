@@ -28,6 +28,8 @@ from cytimes import cydatetime as cydt
 from cytimes.cytimedelta import cytimedelta
 from cytimes.cyparser import Config, Parser
 
+__all__ = ["pydt"]
+
 # Constants -----------------------------------------------------------------------------------
 RLDELTA_DTYPE: object = relativedelta
 ZONEINFO_DTYPE: object = ZoneInfo
