@@ -69,6 +69,9 @@ cdef class Parser:
         int _tokens_count, _index
         str _token_r1, _token_r2, _token_r3, _token_r4
     # Parsing
+    cpdef datetime.datetime parse(
+        Parser self, str timestr, object default=?, object day1st=?, 
+        object year1st=?, object ignoretz=?, object fuzzy=?) except *
     cdef bint _process(Parser self, str timestr) except -1
     cdef datetime.datetime _build(Parser self, object default) except *
     cdef datetime.datetime _build_datetime(Parser self, object default, object tzinfo) except *

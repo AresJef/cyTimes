@@ -7,6 +7,7 @@ from __future__ import annotations
 # Cython imports
 import cython
 from cython.cimports.libc import math  # type: ignore
+from cython.cimports import numpy as np  # type: ignore
 from cython.cimports.cpython import datetime  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_READ_CHAR as str_loc  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_GET_LENGTH as str_len  # type: ignore
@@ -25,6 +26,7 @@ from cython.cimports.cpython.list import PyList_GET_ITEM as list_getitem  # type
 from cython.cimports.cpython.list import PyList_SET_ITEM as list_setitem  # type: ignore
 from cython.cimports.cytimes import cytime, cydatetime as cydt  # type: ignore
 
+np.import_array()
 datetime.import_datetime()
 
 # Python imports
@@ -922,7 +924,7 @@ class Config:
         """
         return self._month
 
-    def add_month(self, month: int, *words: str) -> None:
+    def add_month(self, month: cython.int, *words: str) -> None:
         """Add words that should be recognized as a specific month.
 
         ### Example
@@ -982,7 +984,7 @@ class Config:
         """
         return self._weekday
 
-    def add_weekday(self, weekday: int, *words: str) -> None:
+    def add_weekday(self, weekday: cython.int, *words: str) -> None:
         """Add words that should be recognized as a specific
         weekday, where 0=Monday...6=Sunday.
 
@@ -1042,7 +1044,7 @@ class Config:
         """
         return self._hms
 
-    def add_hms(self, hms: int, *words: str) -> None:
+    def add_hms(self, hms: cython.int, *words: str) -> None:
         """Add words that should be recognized as HH/MM/SS,
         where 0=hour, 1=minute, 2=second.
 
@@ -1102,7 +1104,7 @@ class Config:
         """
         return self._ampm
 
-    def add_ampm(self, ampm: int, *words: str) -> None:
+    def add_ampm(self, ampm: cython.int, *words: str) -> None:
         """Add words that should be recognized as AM/PM,
         where 0=AM and 1=PM.
 
@@ -1165,8 +1167,8 @@ class Config:
     def add_tzinfo(
         self,
         word: str,
-        hour: int = 0,
-        minute: int = 0,
+        hour: cython.int = 0,
+        minute: cython.int = 0,
     ) -> None:
         """Add word that should be recognized as a timezone
         and the corresponding timezone offset (hours & minutes).
@@ -1490,6 +1492,7 @@ class Parser:
             self._tzinfo = CONFIG_TZINFO
 
     # Parsing ------------------------------------------------------------------------------
+    @cython.ccall
     def parse(
         self,
         timestr: str,
