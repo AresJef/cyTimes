@@ -41,8 +41,18 @@ __all__ = ["Config", "Parser"]
 PARSERINFO_DTYPE: object = parserinfo
 # . charactors
 CHAR_NULL: cython.Py_UCS4 = 0  # '' null
+CHAR_SPACE: cython.Py_UCS4 = 32  # " "
+CHAR_PLUS: cython.Py_UCS4 = 43  # "+"
 CHAR_COMMA: cython.Py_UCS4 = 44  # ","
+CHAR_DASH: cython.Py_UCS4 = 45  # "-"
 CHAR_PERIOD: cython.Py_UCS4 = 46  # "."
+CHAR_SLASH: cython.Py_UCS4 = 47  # "/"
+CHAR_COLON: cython.Py_UCS4 = 58  # ":"
+CHAR_UPPER_T: cython.Py_UCS4 = 84  # "T"
+CHAR_UPPER_W: cython.Py_UCS4 = 87  # "W"
+CHAR_UPPER_Z: cython.Py_UCS4 = 90  # "Z"
+# . datetime
+US_FRACTION_CORRECTION: cython.uint[5] = [100000, 10000, 1000, 100, 10]
 # . timezone
 LOCAL_TZNAMES: set[str] = set(time.tzname)
 # . default config
@@ -93,25 +103,83 @@ CONFIG_AMPM: dict[str, int] = {
     "a": 0,  "am": 0, "morning": 0,   "morgen": 0,     "mattina": 0,    "mañana": 0, "manhã": 0, "ochtend": 0, "morgon": 0,      "rano": 0,       "sabah": 0,   "上午": 0,
     "p": 1,  "pm": 1, "afternoon": 1, "nachmittag": 1, "pomeriggio": 1, "tarde": 1,  "tarde": 1, "middag": 1,  "eftermiddag": 1, "popołudnie": 1, "öğleden": 1, "下午": 1 }
 CONFIG_TZINFO: dict[str, int] = {
-    "ast": -4 * 3_600, # Atlantic Standard Time
-    "adt": -3 * 3_600, # Atlantic Daylight Time
-    "est": -5 * 3_600, # Eastern Standard Time
-    "edt": -4 * 3_600, # Eastern Daylight Time
-    "cst": -6 * 3_600, # Central Standard Time
-    "cdt": -5 * 3_600, # Central Daylight Time
-    "mst": -7 * 3_600, # Mountain Standard Time
-    "mdt": -6 * 3_600, # Mountain Daylight Time
     "pst": -8 * 3_600, # Pacific Standard Time
-    "pdt": -7 * 3_600, # Pacific Daylight Time
-    "bst":  1 * 3_600, # British Summer Time
-    "wet":  0 * 3_600, # Western European Time
-    "west": 1 * 3_600, # Western European Summer Time
     "cet":  1 * 3_600, # Central European Time
-    "cest": 2 * 3_600, # Central European Summer Time
-    "eet":  2 * 3_600, # Eastern European Time
-    "eest": 3 * 3_600, # Eastern European Summer Time
 }
 # fmt: on
+
+
+# ISO Format ----------------------------------------------------------------------------------
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(-1, check=False)
+def is_ascii_digit(char: cython.Py_UCS4) -> cython.bint:
+    """Check if the charactor is an ASCII digit number `<bool>`"""
+    return 48 <= char <= 57
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(-1, check=False)
+def is_iso_sep(char: cython.Py_UCS4) -> cython.bint:
+    """Check if the charactor is the separator for ISO format
+    between date & time ("T" or " ") `<bool>`"""
+    return char == CHAR_SPACE or char == CHAR_UPPER_T
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(-1, check=False)
+def is_isodate_sep(char: cython.Py_UCS4) -> cython.bint:
+    """Check if a charactor is the separator for ISO format
+    date part ("-") `<bool>`"""
+    return char == CHAR_DASH or char == CHAR_SLASH
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(-1, check=False)
+def is_isoweek_sep(char: cython.Py_UCS4) -> cython.bint:
+    """Check if a charactor is the separator for ISO format
+    week ("W") identifier `<bool>`"""
+    return char == CHAR_UPPER_W
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(-1, check=False)
+def is_isotime_sep(char: cython.Py_UCS4) -> cython.bint:
+    """Check if a charactor is the separator for ISO format
+    time part (":") `<bool>`"""
+    return char == CHAR_COLON
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(-1, check=False)
+def parse_us_fraction(us_frac_str: str, us_frac_len: cython.uint = 0) -> cython.uint:
+    """Parse the microsecond fraction string ('0001' or '000001'),
+    and automatically adjust the microsecond value based on the
+    fraction length `<int>`."""
+    # Validate 'us_str'
+    if us_frac_len == 0:
+        us_frac_len = str_len(us_frac_str)
+    if us_frac_len < 1:
+        raise ValueError("microsecond fraction is empty: %s." % repr(us_frac_str))
+    if us_frac_len > 6:
+        us_frac_len = 6
+        us_frac_str = us_frac_str[0:6]
+    # Parse microsecond
+    try:
+        val: cython.uint = int(us_frac_str)
+    except Exception as err:
+        raise ValueError(
+            "Invalid microsecond fraction: %s." % repr(us_frac_str)
+        ) from err
+    # Adjust fraction
+    if us_frac_len < 6:
+        val *= US_FRACTION_CORRECTION[us_frac_len - 1]
+    return val
 
 
 # Timelex -------------------------------------------------------------------------------------
@@ -127,22 +195,28 @@ def str_count(s: str, char: str) -> cython.uint:
 @cython.cfunc
 @cython.inline(True)
 @cython.wraparound(True)
-def parse_timelex(timestr: str, lowercase: cython.bint) -> list[str]:
+def parse_timelex(
+    dtstr: str,
+    length: cython.uint = 0,
+    lowercase: cython.bint = False,
+) -> list[str]:
     """This function breaks the time string into lexical units (tokens),
     which can be parsed by the Parser. Lexical units are demarcated by
     changes in the character set, so any continuous string of letters or
-    number is considered one unit."""
-    # Validate timestr
-    if timestr is None:
-        raise errors.InvalidTimestrError(
-            "Only support 'timestr' as a string, instead got: "
-            "{} {}.".format(type(timestr), timestr)
+    number is considered one unit `list[str]>`."""
+    # Validate dtstr
+    if dtstr is None:
+        raise errors.InvalidDatetimeStrError(
+            "Only support 'dtstr' as a string, instead "
+            "got: {} {}.".format(type(dtstr), dtstr)
         )
+    if length == 0:
+        length = str_len(dtstr)
     if lowercase:
-        timestr = timestr.lower()
+        dtstr = dtstr.lower()
     tokens: list[str] = []
     index: cython.int = -1
-    max_index: cython.int = str_len(timestr) - 1
+    max_index: cython.int = length - 1
     temp_char: cython.Py_UCS4 = CHAR_NULL  # '' null
 
     # Main string loop
@@ -162,7 +236,7 @@ def parse_timelex(timestr: str, lowercase: cython.bint) -> list[str]:
                     # 1. exit the nested token loop.
                     # 2. main loop will also be stopped.
                     break
-                while (curr_char := str_loc(timestr, index)) == CHAR_NULL:
+                while (curr_char := str_loc(dtstr, index)) == CHAR_NULL:
                     index += 1
                     if index > max_index:
                         break
@@ -1450,6 +1524,9 @@ class Parser:
     # Result
     _result: Result
     # Process
+    _dtstr: str
+    _dtstr_len: cython.uint
+    _isodate_type: cython.uint
     _tokens: list[str]
     _tokens_count: cython.int
     _index: cython.int
@@ -1492,7 +1569,7 @@ class Parser:
     @cython.ccall
     def parse(
         self,
-        timestr: str,
+        dtstr: str,
         default: datetime.datetime | datetime.date | None = None,
         day1st: bool | None = None,
         year1st: bool | None = None,
@@ -1502,7 +1579,7 @@ class Parser:
         """Parse a string contains date & time information into `<datetime>`.
 
         ### Time String & Default
-        :param timestr `<str>`: The string that contains date & time information.
+        :param dtstr `<str>`: The string that contains date & time information.
         :param default `<datetime/date>`: The base to fill-in missing datetime elements. Defaults to `None`.
         - `None`: If parser failed to extract Y/M/D values from the string,
            the date of '1970-01-01' will be used to fill-in the missing year,
@@ -1555,7 +1632,7 @@ class Parser:
            able to handle most of the time strings.
 
         ### Exception
-        :raise `cyParserError`: If failed to parse the given `timestr`.
+        :raise `cyParserError`: If failed to parse the given `dtstr`.
 
         ### Return
         :return: `<datetime>` The parsed datetime object.
@@ -1568,31 +1645,80 @@ class Parser:
         self._ignoretz = bool(ignoretz)
         self._fuzzy = bool(fuzzy)
 
+        # Validate 'dtstr'
+        if dtstr is None:
+            raise errors.InvalidDatetimeStrError(
+                "Only support 'dtstr' as a string, instead "
+                "got: {} {}.".format(type(dtstr), dtstr)
+            )
+        self._dtstr = dtstr
+        self._dtstr_len = str_len(dtstr)
+
         # Parsing
         try:
-            self._process(timestr)
-            return self._build(default)  # exit: success
+            # ISO format
+            if self._process_iso():
+                return self._build(default)  # exit: success
+
+            # Core process
+            if self._process_core():
+                return self._build(default)  # exit: success
+
         except errors.cyParserError as err:
-            err.add_note("-> Failed to parse: {}.".format(repr(timestr)))
+            err.add_note("-> Unable to parse: %s." % repr(self._dtstr))
             raise err
         except Exception as err:
-            if not self._result.is_valid():
-                raise errors.cyParserFailedError(
-                    "<{}>\nFailed to parse: {}.\nError: "
-                    "{}".format(self.__class__.__name__, repr(timestr), err)
-                ) from err
             raise errors.cyParserFailedError(
-                "<{}>\nFailed to parse: {}.\nResult: {}\nError: "
-                "{}".format(self.__class__.__name__, repr(timestr), self._result, err)
+                "<{}>\nUnable to parse the datetime string: {}.\n"
+                "Error: {}".format(self.__class__.__name__, repr(self._dtstr), err)
             ) from err
+        raise errors.cyParserFailedError(
+            "<{}>\nUnable to parse the datetime string: "
+            "{}.".format(self.__class__.__name__, repr(self._dtstr))
+        )
 
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
-    def _process(self, timestr: str) -> cython.bint:
-        """(Internal) The core process to parser the 'timestr' `<bool>`."""
-        # Convert timestr to tokens
-        self._tokens = parse_timelex(timestr, True)
+    def _process_iso(self) -> cython.bint:
+        """(Internal) The iso format process to parse the 'dtstr' `<bool>`."""
+        # Find isoformat datetime separator
+        self._isodate_type = 0
+        sep_loc: cython.uint = self._find_isoformat_sep()
+        if sep_loc == 0:
+            return False  # exit: not isoformat
+
+        # Parse iso format
+        if sep_loc == self._dtstr_len:
+            # . parse date component
+            self._result = Result()
+            if not self._parse_isoformat_date(self._dtstr, sep_loc):
+                return False  # exit: not isoformat
+        else:
+            # . verify datetime seperator (' ' or 'T')
+            if not is_iso_sep(self._get_char(sep_loc)):
+                return False  # exit: not isoformat
+            # . parse date component
+            self._result = Result()
+            if not self._parse_isoformat_date(self._dtstr[0:sep_loc], sep_loc):
+                return False  # exit: not isoformat
+            # . parse time component
+            tstr: str = self._dtstr[sep_loc + 1 : self._dtstr_len]
+            tstr_len: cython.uint = self._dtstr_len - sep_loc - 1
+            if not self._parse_isoformat_time(tstr, tstr_len):
+                return False  # exit: not isoformat
+
+        # Prepare result
+        self._result.prepare(self._day1st, self._year1st)
+        return self._result.is_valid()  # exit: success/fail
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _process_core(self) -> cython.bint:
+        """(Internal) The core process to parse the 'dtstr' `<bool>`."""
+        # Convert dtstr to tokens
+        self._tokens = parse_timelex(self._dtstr, self._dtstr_len, True)
         self._tokens_count = list_len(self._tokens)
         self._index = 0
         self._result = Result()
@@ -1637,19 +1763,13 @@ class Parser:
                     "<{}>\nFailed to parse: {}.\n"
                     "If this is a complex (sentence like) time string, "
                     "try set 'fuzzy=True' to increase parser flexibility.".format(
-                        self.__class__.__name__, repr(timestr)
+                        self.__class__.__name__, repr(self._dtstr)
                     )
                 )
 
         # Prepare result
         self._result.prepare(self._day1st, self._year1st)
-        if not self._result.is_valid():
-            raise errors.cyParserFailedError(
-                "<{}>\nFailed to parse the datetime string: "
-                "{}.".format(self.__class__.__name__, repr(timestr))
-            )
-        # Success
-        return True
+        return self._result.is_valid()  # exit: success/fail
 
     @cython.cfunc
     @cython.inline(True)
@@ -1785,6 +1905,362 @@ class Parser:
             if new_dt.tzname() == tzname:
                 return new_dt
         return dt
+
+    # ISO format ---------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _find_isoformat_sep(self) -> cython.uint:
+        """(Internal) This function tries to find the date & time separator
+        (" " or "T") location for an ISO format datetime string. Returns 0 if
+        the string is certainly not under isoformat, else the possible separator
+        location of the string `<int>`.
+
+        Also it sets the 'iso_datetype' to enable iso date parser to perform
+        quick value parsing.
+
+        iso_datetype:
+        - 0: Not isoformat
+        - 1: YYYY-MM-DD
+        - 2: YYYYMMDD
+        - 3: YYYY-Www-D
+        - 4: YYYYWwwD
+        - 5: YYYY-Www
+        - 6: YYYYWww
+        - 7: YYYY-DDD
+        - 8: YYYYDDD
+        """
+        # ISO format string length must be >= 7.
+        if self._dtstr_len < 7:
+            return 0  # exit: not isoformat
+
+        # Find datetime separator
+        char4: cython.Py_UCS4 = self._get_char(4)
+        # YYYY[-]
+        if is_isodate_sep(char4):
+            if self._dtstr_len < 8:
+                return 0  # exit: not isoformat
+            # YYYY-[W]
+            char5: cython.Py_UCS4 = self._get_char(5)
+            if is_isoweek_sep(char5):
+                # YYYY-Www[-]
+                if self._dtstr_len > 8 and is_isodate_sep(self._get_char(8)):
+                    if self._dtstr_len == 9:  # [YYYY-Www-]
+                        return 0  # exit: not isoformat
+                    elif is_ascii_digit(self._get_char(10)):
+                        self._isodate_type = 5
+                        return 8  # exit: [YYYY-Www]
+                    else:
+                        self._isodate_type = 3
+                        return 10  # exit: [YYYY-Www-D]
+                else:
+                    self._isodate_type = 5
+                    return 8  # exit: [YYYY-Www]
+            # YYYY-[M]
+            elif is_ascii_digit(char5):
+                char7: cython.Py_UCS4 = self._get_char(7)
+                if self._dtstr_len >= 10 and is_isodate_sep(char7):
+                    self._isodate_type = 1
+                    return 10  # exit: [YYYY-MM-DD]
+                elif is_ascii_digit(char7):
+                    self._isodate_type = 7
+                    return 8  # exit: [YYYY-DDD]
+
+        # YYYY[W]
+        elif is_isoweek_sep(char4):
+            # YYYYWw[w]
+            if is_ascii_digit(self._get_char(6)):
+                if is_ascii_digit(self._get_char(7)):
+                    self._isodate_type = 4
+                    return 8  # exit: [YYYYWwwD]
+                else:
+                    self._isodate_type = 6
+                    return 7  # exit: [YYYYWww]
+
+        # YYYY[D]
+        elif is_ascii_digit(char4):
+            # YYYYDD[D] / YYYYMM[D]
+            if is_ascii_digit(self._get_char(6)):
+                if is_ascii_digit(self._get_char(7)):
+                    self._isodate_type = 2
+                    return 8  # exit: [YYYYMMDD]
+                else:
+                    self._isodate_type = 8
+                    return 7  # exit: [YYYYDDD]
+
+        # Invalid Isoformat
+        return 0  # exit: not isoformat
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _parse_isoformat_date(self, dstr: str, length: cython.uint) -> cython.bint:
+        """
+        iso_datetype:
+        - 0: Not isoformat
+        - 1: YYYY-MM-DD
+        - 2: YYYYMMDD
+        - 3: YYYY-Www-D
+        - 4: YYYYWwwD
+        - 5: YYYY-Www
+        - 6: YYYYWww
+        - 7: YYYY-DDD
+        - 8: YYYYDDD
+        """
+        # Validate year
+        try:
+            year: cython.uint = int(dstr[0:4])
+        except Exception:
+            return False  # exit: invalid year
+        if not 1 <= year <= 9_999:
+            return False  # exit: invalid year
+        self._result.append_ymd(year, 1)
+
+        # Parse month & day
+        if self._isodate_type <= 2:
+            mth_str: str
+            day_str: str
+            # . YYYY-MM-DD
+            if self._isodate_type == 1 and length == 10:
+                mth_str = dstr[5:7]
+                day_str = dstr[8:10]
+            # . YYYYMMDD
+            elif self._isodate_type == 2 and length == 8:
+                mth_str = dstr[4:6]
+                day_str = dstr[6:8]
+            # . Invalid
+            else:
+                return False  # exit: not isoformat
+            # . Validate month
+            try:
+                month: cython.uint = int(mth_str)
+            except Exception:
+                return False  # exit: invalid month
+            if not 1 <= month <= 12:
+                return False  # exit: invalid month
+            # . Validate day
+            try:
+                day: cython.uint = int(day_str)
+            except Exception:
+                return False  # exit: invalid day
+            if not 1 <= day <= cydt.days_in_month(year, month):
+                return False
+            # Append 'month' & 'day'
+            self._result.append_ymd(month, 2)
+            self._result.append_ymd(day, 3)
+            return True  # exit: success
+
+        # Parse week & [weekday]
+        if self._isodate_type <= 6:
+            week_str: str
+            wkdy_str: str
+            # . YYYY-Www-D
+            if self._isodate_type == 3 and length == 10:
+                week_str = dstr[6:8]
+                wkdy_str = dstr[9:10]
+            # . YYYYWwwD
+            elif self._isodate_type == 4 and length == 8:
+                week_str = dstr[5:7]
+                wkdy_str = dstr[7:8]
+            # . YYYY-Www
+            elif self._isodate_type == 5 and length == 8:
+                week_str = dstr[6:8]
+                wkdy_str = None
+            # . YYYYWww
+            elif self._isodate_type == 6 and length == 7:
+                week_str = dstr[5:7]
+                wkdy_str = None
+            # . Invalid
+            else:
+                return False  # exit: not isoformat
+            # . Validate week
+            try:
+                week: cython.uint = int(week_str)
+            except Exception:
+                return False  # exit: invalid week
+            if not 1 <= week <= 53:
+                return False  # exit: invalid week
+            # . Validate weekday
+            if wkdy_str is not None:
+                try:
+                    weekday: cython.uint = int(wkdy_str)
+                except Exception:
+                    return False  # exit: invalid weekday
+                if not 1 <= weekday <= 7:
+                    return False  # exit: invalid weekday
+            else:
+                weekday: cython.uint = 1
+            # . Convert to Y/M/D
+            ymd = cydt.isocalendar_to_ymd(year, week, weekday)
+            self._result.append_ymd(ymd.month, 2)
+            self._result.append_ymd(ymd.day, 3)
+            return True  # exit: success
+
+        # Parse days of year
+        if self._isodate_type <= 8:
+            days_str: str
+            # . YYYY-DDD
+            if self._isodate_type == 7 and length == 8:
+                days_str = dstr[5:8]
+            # . YYYYDDD
+            elif self._isodate_type == 8 and length == 7:
+                days_str = dstr[4:7]
+            # . Invalid
+            else:
+                return False  # exit: not isoformat
+            # . Validate days
+            try:
+                days: cython.uint = int(days_str)
+            except Exception:
+                return False  # exit: invalid days
+            if not 1 <= days <= 366:
+                return False  # exit: invalid days
+            # . Convert to Y/M/D
+            ymd = cydt.days_of_year_to_ymd(year, days)
+            self._result.append_ymd(ymd.month, 2)
+            self._result.append_ymd(ymd.day, 3)
+            return True
+
+        # . Invalid isoformat
+        return False
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _parse_isoformat_time(self, tstr: str, length: cython.uint) -> cython.bint:
+        # Validate 'tstr'
+        if length < 2:
+            return False  # exit: isoformat time to short [HH].
+
+        # Search for isoformat timezone
+        tz_pos: cython.uint = self._find_isoformat_tz(tstr, length)
+
+        # Parse HMS.f (without timezone)
+        if tz_pos == 0:
+            return self._parse_isoformat_hms(tstr, length)  # exit: success/fail
+
+        # Parse HMS.f (with timezone)
+        hms_len: cython.uint = tz_pos - 1
+        if not self._parse_isoformat_hms(tstr[0:hms_len], hms_len):
+            return False  # exit: invalid time component
+
+        # UTC timzeone
+        tz_sep: cython.Py_UCS4 = str_loc(tstr, tz_pos - 1)
+        if tz_pos == length and tz_sep == CHAR_UPPER_Z:
+            self._result.tzoffset = 0
+            return True  # exit: success
+
+        # Parse timezone
+        pos_ed: cython.uint = tz_pos + 2
+        # . parse tz hour
+        if pos_ed > length:
+            return False  # exit: incomplete tzoffset
+        try:
+            hour: cython.int = int(tstr[tz_pos:pos_ed])
+        except Exception:
+            return False  # exit: invalid tzoffset
+        # . parse tz minute
+        if pos_ed < length:
+            nchar: cython.Py_UCS4 = str_loc(tstr, pos_ed)
+            if is_isotime_sep(nchar):
+                tz_pos += 3
+                pos_ed += 3
+            else:
+                tz_pos += 2
+                pos_ed += 2
+            if pos_ed > length:
+                return False  # exit: incomplete tzoffset
+            try:
+                minute: cython.int = int(tstr[tz_pos:pos_ed])
+            except Exception:
+                return False  # exit: invalid tzoffset
+        else:
+            minute: cython.int = 0
+        # . parse tz sign
+        tzsign: cython.int = 1 if tz_sep == CHAR_PLUS else -1
+        # . calculate tzoffset
+        self._result.tzoffset = tzsign * (hour * 3_600 + minute * 60)
+        return True  # exit: success
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _parse_isoformat_hms(self, tstr: str, length: cython.uint) -> cython.bint:
+        """(Internal) Parses HH[:?MM[:?SS[{.,}fff[fff]]]]"""
+        # Parse HMS
+        comps: cython.int[4] = [0, 0, 0, 0]
+        pos: cython.uint = 0
+        idx: cython.uint
+        nchar: cython.Py_UCS4
+        has_sep: cython.bint
+        for idx in range(0, 3):
+            # . validate component
+            if (length - pos) < 2:
+                return False  # exit: incomplete HMS
+            # . parse component
+            try:
+                val: cython.int = int(tstr[pos : pos + 2])
+            except Exception:
+                return False  # exit: invalid HMS
+            comps[idx] = val
+            # . validate time seperator
+            pos += 2
+            nchar = str_loc(tstr, pos) if pos < length else 0
+            if nchar == 0 or idx >= 2:
+                break
+            if idx == 0:
+                has_sep = is_isotime_sep(nchar)
+            if has_sep and not is_isotime_sep(nchar):
+                return False  # exit: invalid HMS seperator
+            pos += has_sep
+
+        # Parse microsecond
+        if pos < length:
+            # . validate component
+            nchar = str_loc(tstr, pos)
+            if nchar != CHAR_PERIOD and nchar != CHAR_COMMA:
+                return False  # exit: invalid microsecond seperator
+            # . parse component
+            pos += 1
+            try:
+                val = parse_us_fraction(tstr[pos:length], length - pos)
+            except Exception:
+                return False  # exit: invalid microsecond
+            comps[3] = val
+
+        # Append HMS
+        self._result.hour = comps[0]
+        self._result.minute = comps[1]
+        self._result.second = comps[2]
+        self._result.microsecond = comps[3]
+        return True  # exit: success
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _find_isoformat_tz(self, tstr: str, length: cython.uint) -> cython.uint:
+        """(Internal) Find the location of possible isoformat timezone
+        in 'tstr'. Equivalent to re.search('[+-Z]', tstr). Returns 0 if
+        not found `<int>`."""
+        index: cython.uint = 0
+        for _ in range(length):
+            char: cython.Py_UCS4 = str_loc(tstr, index)
+            if char == CHAR_PLUS or char == CHAR_DASH or char == CHAR_UPPER_Z:
+                return index + 1
+            else:
+                index += 1
+        return 0
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _get_char(self, index: cython.uint) -> cython.Py_UCS4:
+        """(Internal) Get character of the 'dtstr' by index `<Py_UCS4>`.
+        Returns 0 if the index is out of range."""
+        if index < self._dtstr_len:
+            return str_loc(self._dtstr, index)
+        else:
+            return 0
 
     # Numeric token ------------------------------------------------------------------------
     @cython.cfunc
@@ -2125,7 +2601,7 @@ class Parser:
             sec = cython.cast(str, list_getitem(toks, 0))
             self._result.second = int(sec)
             us = cython.cast(str, list_getitem(toks, 1))
-            self._result.microsecond = int(us.ljust(6, "0")[0:6])
+            self._result.microsecond = parse_us_fraction(us, 0)
         else:
             self._result.second = int(token)
         return True

@@ -7,7 +7,10 @@ cdef:
     # . data type
     object PARSERINFO_DTYPE
     # . charactors
-    Py_UCS4 CHAR_NULL, CHAR_PERIOD, CHAR_COMMA
+    Py_UCS4 CHAR_NULL, CHAR_SPACE, CHAR_PLUS, CHAR_COMMA, CHAR_DASH, CHAR_PERIOD
+    Py_UCS4 CHAR_SLASH, CHAR_COLON, CHAR_UPPER_T, CHAR_UPPER_W, CHAR_UPPER_Z
+    # . datetime
+    int[5] US_FRACTION_CORRECTION
     # . timezone
     set LOCAL_TZNAMES
     # . default config
@@ -15,9 +18,17 @@ cdef:
     dict CONFIG_MONTH, CONFIG_WEEKDAY, CONFIG_HMS
     dict CONFIG_AMPM, CONFIG_TZINFO
 
+# ISO Format
+cdef bint is_ascii_digit(Py_UCS4 char) except -1
+cdef bint is_iso_sep(Py_UCS4 char) except -1
+cdef bint is_isodate_sep(Py_UCS4 char) except -1
+cdef bint is_isoweek_sep(Py_UCS4 char) except -1
+cdef bint is_isotime_sep(Py_UCS4 char) except -1
+cdef unsigned int parse_us_fraction(str us_frac_str, unsigned int us_frac_len=?) except -1
+
 # Timelex
 cdef unsigned int str_count(str s, str char) except -1
-cdef list parse_timelex(str timestr, bint lowercase) except *
+cdef list parse_timelex(str dtstr, unsigned int length=?, bint lowercase=?) except *
 
 # Result
 cdef class Result:
@@ -67,17 +78,27 @@ cdef class Parser:
         # Result
         Result _result
         # Process
+        str _dtstr
+        unsigned int _dtstr_len, _isodate_type
         list _tokens
         int _tokens_count, _index
         str _token_r1, _token_r2, _token_r3, _token_r4
     # Parsing
     cpdef datetime.datetime parse(
-        Parser self, str timestr, object default=?, object day1st=?, 
+        Parser self, str dtstr, object default=?, object day1st=?, 
         object year1st=?, object ignoretz=?, object fuzzy=?) except *
-    cdef bint _process(Parser self, str timestr) except -1
+    cdef bint _process_iso(Parser self) except -1
+    cdef bint _process_core(Parser self) except -1
     cdef datetime.datetime _build(Parser self, object default) except *
     cdef datetime.datetime _build_datetime(Parser self, object default, object tzinfo) except *
     cdef datetime.datetime _handle_ambiguous_time(Parser self, datetime.datetime dt, str tzname) except *
+    # ISO format
+    cdef unsigned int _find_isoformat_sep(Parser self) except -1
+    cdef bint _parse_isoformat_date(Parser self, str dstr, unsigned int length) except -1
+    cdef bint _parse_isoformat_time(Parser self, str tstr, unsigned int length) except -1
+    cdef bint _parse_isoformat_hms(Parser self, str tstr, unsigned int length) except -1
+    cdef unsigned int _find_isoformat_tz(Parser self, str tstr, unsigned int length) except -1
+    cdef Py_UCS4 _get_char(Parser self, unsigned int index) noexcept
     # Numeric token
     cdef bint _parse_numeric_token(Parser self, str token) except -1
     cdef double _covnert_numeric_token(Parser self, str token) except *
