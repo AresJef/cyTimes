@@ -48,9 +48,9 @@ CHAR_DASH: cython.Py_UCS4 = 45  # "-"
 CHAR_PERIOD: cython.Py_UCS4 = 46  # "."
 CHAR_SLASH: cython.Py_UCS4 = 47  # "/"
 CHAR_COLON: cython.Py_UCS4 = 58  # ":"
-CHAR_UPPER_T: cython.Py_UCS4 = 84  # "T"
-CHAR_UPPER_W: cython.Py_UCS4 = 87  # "W"
-CHAR_UPPER_Z: cython.Py_UCS4 = 90  # "Z"
+CHAR_LOWER_T: cython.Py_UCS4 = 116  # "t"
+CHAR_LOWER_W: cython.Py_UCS4 = 119  # "w"
+CHAR_LOWER_Z: cython.Py_UCS4 = 122  # "z"
 # . datetime
 US_FRACTION_CORRECTION: cython.uint[5] = [100000, 10000, 1000, 100, 10]
 # . timezone
@@ -103,6 +103,7 @@ CONFIG_AMPM: dict[str, int] = {
     "a": 0,  "am": 0, "morning": 0,   "morgen": 0,     "mattina": 0,    "mañana": 0, "manhã": 0, "ochtend": 0, "morgon": 0,      "rano": 0,       "sabah": 0,   "上午": 0,
     "p": 1,  "pm": 1, "afternoon": 1, "nachmittag": 1, "pomeriggio": 1, "tarde": 1,  "tarde": 1, "middag": 1,  "eftermiddag": 1, "popołudnie": 1, "öğleden": 1, "下午": 1 }
 CONFIG_TZINFO: dict[str, int] = {
+    "utc": 0, # Universal Time Coordinate
     "pst": -8 * 3_600, # Pacific Standard Time
     "cet":  1 * 3_600, # Central European Time
 }
@@ -113,9 +114,10 @@ CONFIG_TZINFO: dict[str, int] = {
 @cython.cfunc
 @cython.inline(True)
 @cython.exceptval(-1, check=False)
-def is_ascii_digit(char: cython.Py_UCS4) -> cython.bint:
-    """Check if the charactor is an ASCII digit number `<bool>`"""
-    return 48 <= char <= 57
+def is_iso_utc(char: cython.Py_UCS4) -> cython.bint:
+    """Check if the charactor could represent the UTC offset
+    for ISO format `<bool>`"""
+    return char == CHAR_PLUS or char == CHAR_DASH or char == CHAR_LOWER_Z
 
 
 @cython.cfunc
@@ -124,7 +126,7 @@ def is_ascii_digit(char: cython.Py_UCS4) -> cython.bint:
 def is_iso_sep(char: cython.Py_UCS4) -> cython.bint:
     """Check if the charactor is the separator for ISO format
     between date & time ("T" or " ") `<bool>`"""
-    return char == CHAR_SPACE or char == CHAR_UPPER_T
+    return char == CHAR_SPACE or char == CHAR_LOWER_T
 
 
 @cython.cfunc
@@ -142,7 +144,7 @@ def is_isodate_sep(char: cython.Py_UCS4) -> cython.bint:
 def is_isoweek_sep(char: cython.Py_UCS4) -> cython.bint:
     """Check if a charactor is the separator for ISO format
     week ("W") identifier `<bool>`"""
-    return char == CHAR_UPPER_W
+    return char == CHAR_LOWER_W
 
 
 @cython.cfunc
@@ -186,6 +188,37 @@ def parse_us_fraction(us_frac_str: str, us_frac_len: cython.uint = 0) -> cython.
 @cython.cfunc
 @cython.inline(True)
 @cython.exceptval(-1, check=False)
+def is_ascii_digit(char: cython.Py_UCS4) -> cython.bint:
+    """Check if the charactor is an ASCII digit number `<bool>`"""
+    return 48 <= char <= 57
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(-1, check=False)
+def is_ascii_alpha(char: cython.Py_UCS4) -> cython.bint:
+    return is_ascii_alpha_upper(char) or is_ascii_alpha_lower(char)
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(-1, check=False)
+def is_ascii_alpha_upper(char: cython.Py_UCS4) -> cython.bint:
+    """Check if the charactor is an ASCII [A-Z] in uppercase `<bool>`."""
+    return 65 <= char <= 90
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(-1, check=False)
+def is_ascii_alpha_lower(char: cython.Py_UCS4) -> cython.bint:
+    """Check if the charactor is an ASCII [a-z] in lowercase `<bool>`."""
+    return 97 <= char <= 122
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(-1, check=False)
 def str_count(s: str, char: str) -> cython.uint:
     """Count the number of occurrences of a character in a string `<int>`.
     Equivalent to `s.count(char)`."""
@@ -195,11 +228,7 @@ def str_count(s: str, char: str) -> cython.uint:
 @cython.cfunc
 @cython.inline(True)
 @cython.wraparound(True)
-def parse_timelex(
-    dtstr: str,
-    length: cython.uint = 0,
-    lowercase: cython.bint = False,
-) -> list[str]:
+def parse_timelex(dtstr: str, length: cython.uint = 0) -> list[str]:
     """This function breaks the time string into lexical units (tokens),
     which can be parsed by the Parser. Lexical units are demarcated by
     changes in the character set, so any continuous string of letters or
@@ -212,8 +241,6 @@ def parse_timelex(
         )
     if length == 0:
         length = str_len(dtstr)
-    if lowercase:
-        dtstr = dtstr.lower()
     tokens: list[str] = []
     index: cython.int = -1
     max_index: cython.int = length - 1
@@ -1651,7 +1678,7 @@ class Parser:
                 "Only support 'dtstr' as a string, instead "
                 "got: {} {}.".format(type(dtstr), dtstr)
             )
-        self._dtstr = dtstr
+        self._dtstr = dtstr.lower()
         self._dtstr_len = str_len(dtstr)
 
         # Parsing
@@ -1718,7 +1745,7 @@ class Parser:
     def _process_core(self) -> cython.bint:
         """(Internal) The core process to parse the 'dtstr' `<bool>`."""
         # Convert dtstr to tokens
-        self._tokens = parse_timelex(self._dtstr, self._dtstr_len, True)
+        self._tokens = parse_timelex(self._dtstr, self._dtstr_len)
         self._tokens_count = list_len(self._tokens)
         self._index = 0
         self._result = Result()
@@ -2135,18 +2162,18 @@ class Parser:
         # Search for isoformat timezone
         tz_pos: cython.uint = self._find_isoformat_tz(tstr, length)
 
-        # Parse HMS.f (without timezone)
+        # Parse HMS.f (without iso timezone)
         if tz_pos == 0:
             return self._parse_isoformat_hms(tstr, length)  # exit: success/fail
 
-        # Parse HMS.f (with timezone)
+        # Parse HMS.f (with iso timezone)
         hms_len: cython.uint = tz_pos - 1
         if not self._parse_isoformat_hms(tstr[0:hms_len], hms_len):
             return False  # exit: invalid time component
 
         # UTC timzeone
         tz_sep: cython.Py_UCS4 = str_loc(tstr, tz_pos - 1)
-        if tz_pos == length and tz_sep == CHAR_UPPER_Z:
+        if tz_pos == length and tz_sep == CHAR_LOWER_Z:
             self._result.tzoffset = 0
             return True  # exit: success
 
@@ -2214,19 +2241,37 @@ class Parser:
                 return False  # exit: invalid HMS seperator
             pos += has_sep
 
-        # Parse microsecond
-        if pos < length:
-            # . validate component
+        # Parse microsecond / [possible] timezone name
+        if pos + 1 < length:
+            # Validate microsecond component
             nchar = str_loc(tstr, pos)
-            if nchar != CHAR_PERIOD and nchar != CHAR_COMMA:
-                return False  # exit: invalid microsecond seperator
-            # . parse component
-            pos += 1
-            try:
-                val = parse_us_fraction(tstr[pos:length], length - pos)
-            except Exception:
-                return False  # exit: invalid microsecond
-            comps[3] = val
+            if nchar == CHAR_PERIOD or nchar == CHAR_COMMA:  # us separator [.,]
+                pos += 1
+                # . search for microsecond digits
+                pos_ed: cython.uint = pos
+                while pos_ed < length:
+                    if not is_ascii_digit(str_loc(tstr, pos_ed)):
+                        break
+                    pos_ed += 1
+                if pos == pos_ed:
+                    return False  # exit: imcomplete microsecond
+                # . parse microsecond component
+                try:
+                    val = parse_us_fraction(tstr[pos:pos_ed], pos_ed - pos)
+                except Exception:
+                    return False  # exit: invalid microsecond
+                comps[3] = val
+                pos = pos_ed
+
+            # Parse [possible] timezone name
+            while pos < length:
+                if is_ascii_alpha_lower(str_loc(tstr, pos)):
+                    break
+                pos += 1
+            if 3 <= length - pos <= 5:
+                offset = self._token_to_tzoffset(tstr[pos:length])
+                if offset != -100_000:
+                    self._result.tzoffset = offset
 
         # Append HMS
         self._result.hour = comps[0]
@@ -2244,11 +2289,9 @@ class Parser:
         not found `<int>`."""
         index: cython.uint = 0
         for _ in range(length):
-            char: cython.Py_UCS4 = str_loc(tstr, index)
-            if char == CHAR_PLUS or char == CHAR_DASH or char == CHAR_UPPER_Z:
+            if is_iso_utc(str_loc(tstr, index)):
                 return index + 1
-            else:
-                index += 1
+            index += 1
         return 0
 
     @cython.cfunc
@@ -2725,7 +2768,7 @@ class Parser:
             return 0  # exit: not tzname
         char: cython.Py_UCS4
         for char in token:
-            if not 97 <= char <= 122:  # lowercase a-z
+            if not is_ascii_alpha_lower(char):
                 return 0  # exit: not tzname
         return 2  # exit: could be tzname
 

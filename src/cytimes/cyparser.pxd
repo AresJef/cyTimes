@@ -8,7 +8,7 @@ cdef:
     object PARSERINFO_DTYPE
     # . charactors
     Py_UCS4 CHAR_NULL, CHAR_SPACE, CHAR_PLUS, CHAR_COMMA, CHAR_DASH, CHAR_PERIOD
-    Py_UCS4 CHAR_SLASH, CHAR_COLON, CHAR_UPPER_T, CHAR_UPPER_W, CHAR_UPPER_Z
+    Py_UCS4 CHAR_SLASH, CHAR_COLON, CHAR_LOWER_T, CHAR_LOWER_W, CHAR_LOWER_Z
     # . datetime
     int[5] US_FRACTION_CORRECTION
     # . timezone
@@ -19,7 +19,7 @@ cdef:
     dict CONFIG_AMPM, CONFIG_TZINFO
 
 # ISO Format
-cdef bint is_ascii_digit(Py_UCS4 char) except -1
+cdef bint is_iso_utc(Py_UCS4 char) except -1
 cdef bint is_iso_sep(Py_UCS4 char) except -1
 cdef bint is_isodate_sep(Py_UCS4 char) except -1
 cdef bint is_isoweek_sep(Py_UCS4 char) except -1
@@ -27,8 +27,13 @@ cdef bint is_isotime_sep(Py_UCS4 char) except -1
 cdef unsigned int parse_us_fraction(str us_frac_str, unsigned int us_frac_len=?) except -1
 
 # Timelex
+cdef bint is_ascii_digit(Py_UCS4 char) except -1
+cdef bint is_ascii_alpha(Py_UCS4 char) except -1
+cdef bint is_ascii_alpha_lower(Py_UCS4 char) except -1
+cdef bint is_ascii_alpha_upper(Py_UCS4 char) except -1
+
 cdef unsigned int str_count(str s, str char) except -1
-cdef list parse_timelex(str dtstr, unsigned int length=?, bint lowercase=?) except *
+cdef list parse_timelex(str dtstr, unsigned int length=?) except *
 
 # Result
 cdef class Result:
