@@ -2160,7 +2160,10 @@ class Parser:
             return False  # exit: isoformat time to short [HH].
 
         # Search for isoformat timezone
-        tz_pos: cython.uint = self._find_isoformat_tz(tstr, length)
+        if self._ignoretz:
+            tz_pos: cython.uint = 0
+        else:
+            tz_pos: cython.uint = self._find_isoformat_tz(tstr, length)
 
         # Parse HMS.f (without iso timezone)
         if tz_pos == 0:
@@ -2206,7 +2209,11 @@ class Parser:
         # . parse tz sign
         tzsign: cython.int = 1 if tz_sep == CHAR_PLUS else -1
         # . calculate tzoffset
-        self._result.tzoffset = tzsign * (hour * 3_600 + minute * 60)
+        offset: cython.int = tzsign * (hour * 3_600 + minute * 60)
+        if self._result.tzoffset != -100_000:
+            self._result.tzoffset = self._result.tzoffset - offset
+        else:
+            self._result.tzoffset = offset
         return True  # exit: success
 
     @cython.cfunc
@@ -2242,10 +2249,10 @@ class Parser:
             pos += has_sep
 
         # Parse microsecond / [possible] timezone name
-        if pos + 1 < length:
+        if pos < length:
             # Validate microsecond component
             nchar = str_loc(tstr, pos)
-            if nchar == CHAR_PERIOD or nchar == CHAR_COMMA:  # us separator [.,]
+            if nchar == CHAR_PERIOD or nchar == CHAR_COMMA:  # separator [.,]
                 pos += 1
                 # . search for microsecond digits
                 pos_ed: cython.uint = pos
@@ -2264,13 +2271,17 @@ class Parser:
                 pos = pos_ed
 
             # Parse [possible] timezone name
-            while pos < length:
-                if is_ascii_alpha_lower(str_loc(tstr, pos)):
-                    break
-                pos += 1
-            if 3 <= length - pos <= 5:
-                offset = self._token_to_tzoffset(tstr[pos:length])
-                if offset != -100_000:
+            if not self._ignoretz and pos < length:
+                # . search for first alpha
+                while pos < length:
+                    if is_ascii_alpha_lower(str_loc(tstr, pos)):
+                        break
+                    pos += 1
+                # . parse timezone name
+                if length - pos >= 3:
+                    offset = self._token_to_tzoffset(tstr[pos:length])
+                    if offset == -100_000:
+                        return False  # exit: invalid timezone name
                     self._result.tzoffset = offset
 
         # Append HMS
