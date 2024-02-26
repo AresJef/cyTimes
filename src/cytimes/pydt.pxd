@@ -37,13 +37,14 @@ cdef class pydt:
     cdef datetime.tzinfo _capi_tzinfo(pydt self) noexcept
     cdef unsigned int _capi_fold(pydt self) except -1
     cdef datetime.datetime _capi_dt(pydt self) noexcept
-    cdef str _capi_dtiso(pydt self) noexcept
-    cdef str _capi_dtisotz(pydt self) noexcept
+    cdef str _capi_dt_str(pydt self) noexcept
+    cdef str _capi_dt_iso(pydt self) noexcept
+    cdef str _capi_dt_isotz(pydt self) noexcept
     cdef datetime.date _capi_date(pydt self) noexcept
-    cdef str _capi_dateiso(pydt self) noexcept
+    cdef str _capi_date_iso(pydt self) noexcept
     cdef datetime.time _capi_time(pydt self) noexcept
     cdef datetime.time _capi_timetz(pydt self) noexcept
-    cdef str _capi_timeiso(pydt self) noexcept
+    cdef str _capi_time_iso(pydt self) noexcept
     cdef unsigned int _capi_ordinal(pydt self) except -1
     cdef double _capi_seconds(pydt self) noexcept
     cdef double _capi_seconds_utc(pydt self) noexcept
@@ -126,8 +127,8 @@ cdef class pydt:
         int second=?, int microsecond=?, object tzinfo=?, int fold=?) except *
     # Core methods
     cdef pydt _new(pydt self, datetime.datetime dt) noexcept
-    cdef datetime.datetime _parse_timeobj(pydt self, object timeobj) except *
-    cdef datetime.datetime _parse_timestr(pydt self, object timestr) except *
+    cdef datetime.datetime _parse_dtobj(pydt self, object dtobj) except *
+    cdef datetime.datetime _parse_dtstr(pydt self, object dtstr) except *
     cdef unsigned int _parse_month(pydt self, object month) except -1
     cdef unsigned int _parse_weekday(pydt self, object weekday) except -1
     cdef object _parse_tzinfo(pydt self, object tz) except *

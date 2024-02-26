@@ -61,7 +61,9 @@ def parse_tzinfo(tz: object) -> object:
 
 @cython.cclass
 class pydt:
-    """Represents the pydt (Python Datetime) object."""
+    """Represents the pydt (Python Datetime) that makes
+    working with datetime easier.
+    """
 
     # Config
     _cfg: Config
@@ -84,9 +86,9 @@ class pydt:
         Equivalent to 'datetime.now(tz)'
 
         ### Notice
-        param 'tz' accept both string (timezone name) and tzinfo
+        Param 'tz' accept both string (timezone name) and tzinfo
         instance. However, timezone from `pytz` library should not
-        be used, and will yield incorrect result.
+        be used, and could yield incorrect result.
         """
         # Without a timezone
         if tz is None:
@@ -110,13 +112,14 @@ class pydt:
         second: cython.int = 0,
         microsecond: cython.int = 0,
         tz: str | datetime.tzinfo | None = None,
+        fold: cython.int = 0,
     ) -> pydt:
         """(Class method) Create from datetime values `<pydt>`.
 
         ### Notice
-        param 'tz' accept both string (timezone name) and tzinfo
+        Param 'tz' accept both string (timezone name) and tzinfo
         instance. However, timezone from `pytz` library should not
-        be used, and will yield incorrect result.
+        be used, and could yield incorrect result.
         """
         # Without a timezone
         if tz is None:
@@ -138,7 +141,8 @@ class pydt:
             # fmt: off
             cydt.gen_dt(
                 year, month, day, hour, minute, 
-                second, microsecond, tzinfo, 0)
+                second, microsecond, tzinfo, fold
+            )
             # fmt: on
         )
 
@@ -147,24 +151,25 @@ class pydt:
         cls,
         ordinal: cython.int,
         tz: str | datetime.tzinfo | None = None,
+        fold: cython.int = 0,
     ) -> pydt:
         """(Class method) Create from ordinal of a date `<pydt>`.
 
         ### Notice
-        param 'tz' accept both string (timezone name) and tzinfo
+        Param 'tz' accept both string (timezone name) and tzinfo
         instance. However, timezone from `pytz` library should not
-        be used, and will yield incorrect result.
+        be used, and could yield incorrect result.
         """
         # Without a timezone
         if tz is None:
-            return cls(cydt.dt_fr_ordinal(ordinal, None))
+            return cls(cydt.dt_fr_ordinal(ordinal, None, 0))
 
         # With specified timezone
         try:
             tzinfo = parse_tzinfo(tz)
         except Exception as err:
             raise errors.InvalidTimezoneError(f"<{cls.__name__}>\n{err}") from err
-        return cls(cydt.dt_fr_ordinal(ordinal, tzinfo))
+        return cls(cydt.dt_fr_ordinal(ordinal, tzinfo, fold))
 
     @classmethod
     def from_timestamp(
@@ -175,9 +180,9 @@ class pydt:
         """(Class method) Create from a timestamp `<pydt>`.
 
         ### Notice
-        param 'tz' accept both string (timezone name) and tzinfo
+        Param 'tz' accept both string (timezone name) and tzinfo
         instance. However, timezone from `pytz` library should not
-        be used, and will yield incorrect result.
+        be used, and could yield incorrect result.
         """
         # Without a timezone
         if tz is None:
@@ -195,64 +200,115 @@ class pydt:
         cls,
         seconds: float,
         tz: str | datetime.tzinfo | None = None,
+        fold: cython.int = 0,
     ) -> pydt:
         """(Class method) Create from total seconds since EPOCH `<pydt>`.
 
         ### Notice
-        param 'tz' accept both string (timezone name) and tzinfo
+        Param 'tz' accept both string (timezone name) and tzinfo
         instance. However, timezone from `pytz` library should not
-        be used, and will yield incorrect result.
+        be used, and could yield incorrect result.
         """
         # Without a timezone
         if tz is None:
-            return cls(cydt.dt_fr_seconds(seconds, None))
+            return cls(cydt.dt_fr_seconds(seconds, None, 0))
 
         # With specified timezone
         try:
             tzinfo = parse_tzinfo(tz)
         except Exception as err:
             raise errors.InvalidTimezoneError(f"<{cls.__name__}>\n{err}") from err
-        return cls(cydt.dt_fr_seconds(seconds, tzinfo))
+        return cls(cydt.dt_fr_seconds(seconds, tzinfo, fold))
 
     @classmethod
     def from_microseconds(
         cls,
         microseconds: int,
         tz: str | datetime.tzinfo | None = None,
+        fold: cython.int = 0,
     ) -> pydt:
         """(Class method) Create from total microseconds since EPOCH `<pydt>`.
 
         ### Notice
-        param 'tz' accept both string (timezone name) and tzinfo
+        Param 'tz' accept both string (timezone name) and tzinfo
         instance. However, timezone from `pytz` library should not
-        be used, and will yield incorrect result.
+        be used, and could yield incorrect result.
         """
         # Without a timezone
         if tz is None:
-            return cls(cydt.dt_fr_microseconds(microseconds, None))
+            return cls(cydt.dt_fr_microseconds(microseconds, None, 0))
 
         # With specified timezone
         try:
             tzinfo = parse_tzinfo(tz)
         except Exception as err:
             raise errors.InvalidTimezoneError(f"<{cls.__name__}>\n{err}") from err
-        return cls(cydt.dt_fr_microseconds(microseconds, tzinfo))
+        return cls(cydt.dt_fr_microseconds(microseconds, tzinfo, fold))
 
     # Initializer -----------------------------------------------------------------------------
     def __init__(
         self,
-        timeobj: str | datetime.datetime | datetime.date | None = None,
-        default: datetime.datetime | datetime.date | None = None,
+        dtobj: str | datetime.datetime | datetime.date | pydt | None = None,
+        default: str | datetime.datetime | datetime.date | pydt | None = None,
         day1st: bool | None = None,
         year1st: bool | None = None,
         ignoretz: bool = False,
         fuzzy: bool = False,
         cfg: Config | None = None,
     ) -> None:
-        """"""
+        """The pydt (Python Datetime) that makes working with datetime easier.
+
+        ### Datetime Object
+        :param dtobj `<object>`: The datetime object to convert to pydt. Defaults to `None`.
+        - Supported data types:
+            1. `<str>`: The datetime string, e.g. "2021-01-01 12:00:00" or "Jan 12, 2023".
+            2. `<datetime.datetime>`: Python native datetime instance.
+            3. `<datetime.date>`: Python native date instance.
+            4. `<pydt>`: Another pydt instance.
+            5. `<pandas.Timestamp>`: Pandas timestamp instance.
+            6. `<numpy.datetime64>`: Numpy datetime64 instance.
+            7. `None`: Defaults to the current local datetime.
+
+        ### Parser for 'dtobj' (Only applicable when 'dtobj' is type of `<str>`).
+        :param default `<object>`: The default to fill-in missing datetime elements when parsing string 'dtobj'. Defaults to `None`.
+            - `None`: If parser failed to extract Y/M/D values from the string,
+               the date of '1970-01-01' will be used to fill-in the missing year,
+               month & day values.
+            - `<date>`: If parser failed to extract Y/M/D values from the string,
+               the give `date` will be used to fill-in the missing year, month &
+               day values.
+            - `<datetime>`: If parser failed to extract datetime elements from
+               the string, the given `datetime` will be used to fill-in the
+               missing year, month, day, hour, minute, second and microsecond.
+
+        :param day1st `<bool>`: Whether to interpret first ambiguous date values as day. Defaults to `None`.
+        :param year1st `<bool>`: Whether to interpret first the ambiguous date value as year. Defaults to `None`.
+            - Both the 'day1st' & 'year1st' arguments works together to determine how
+              to interpret ambiguous Y/M/D values. If not provided (set to `None`),
+              defaults to the 'day1st' & 'year1st' settings of the Parser `<Config>`.
+            - For more information, please refer to the `cytimes.Parser.parse` method.
+
+        :param ignoretz `<bool>`: Whether to ignore timezone information. Defaults to `False`.
+            - `True`: Parser ignores any timezone information and only returns
+              timezone-naive datetime. Setting to `True` can further increase
+              parser performance.
+            - `False`: Parser will try to process the timzone information in
+              the string, and generate a timezone-aware datetime if timezone
+              has been matched by the Parser `<Config>` settings: 'utc' & 'tzinfo'.
+
+        :param fuzzy `<bool>`: Whether to allow fuzzy parsing. Defaults to `False`.
+            - `True`: Parser will increase its flexibility on tokens when parsing
+               complex (sentence like) time string, such as:
+                * 'On June 8th, 2020, I am going to be the first man on Mars' => <2020-06-08 00:00:00>
+                * 'Meet me at the AM/PM on Sunset at 3:00 PM on December 3rd, 2003' => <2003-12-03 15:00:00>
+            - `False`: A stricter parsing rule will be applied and complex time
+               string can lead to parser failure. However, this mode should be
+               able to handle most of the time strings.
+
+        :param cfg `<Config/None>`: The configurations of the Parser. Defaults to `None`.
+        """
         # Conifg
         self._cfg = cfg
-        self._default = default
         # fmt: off
         self._day1st = (
             (False if self._cfg is None else self._cfg._day1st) 
@@ -265,8 +321,11 @@ class pydt:
         # fmt: on
         self._ignoretz = bool(ignoretz)
         self._fuzzy = bool(fuzzy)
+        self._default = None
+        if default is not None:
+            self._default = self._parse_dtobj(default)
         # Prase
-        self._dt = self._parse_timeobj(timeobj)
+        self._dt = self._parse_dtobj(dtobj)
         # Hash
         self._hashcode = -1
 
@@ -327,14 +386,19 @@ class pydt:
         return self._dt
 
     @property
-    def dtiso(self) -> str:
-        """Access as datetime in ISO format `<str>`."""
-        return self._capi_dtiso()
+    def dt_str(self) -> str:
+        """Access as datetime in string format `<str>`."""
+        return self._capi_dt_str()
 
     @property
-    def dtisotz(self) -> str:
+    def dt_iso(self) -> str:
+        """Access as datetime in ISO format `<str>`."""
+        return self._capi_dt_iso()
+
+    @property
+    def dt_isotz(self) -> str:
         """Access as datetime in ISO format with timezone `<str>`."""
-        return self._capi_dtisotz()
+        return self._capi_dt_isotz()
 
     @property
     def date(self) -> datetime.date:
@@ -342,9 +406,9 @@ class pydt:
         return self._capi_date()
 
     @property
-    def dateiso(self) -> str:
+    def date_iso(self) -> str:
         """Access as date in ISO format `<str>`."""
-        return self._capi_dateiso()
+        return self._capi_date_iso()
 
     @property
     def time(self) -> datetime.time:
@@ -357,9 +421,9 @@ class pydt:
         return self._capi_timetz()
 
     @property
-    def timeiso(self) -> str:
+    def time_iso(self) -> str:
         """Access as time in ISO format `<str>`."""
-        return self._capi_timeiso()
+        return self._capi_time_iso()
 
     @property
     def ts(self) -> Timestamp:
@@ -497,14 +561,21 @@ class pydt:
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(check=False)
-    def _capi_dtiso(self) -> str:
+    def _capi_dt_str(self) -> str:
+        "(cfunc) Access as datetime in string format `<str>`."
+        return cydt.dt_to_isospaceformat_tz(self._dt)
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _capi_dt_iso(self) -> str:
         "(cfunc) Access as datetime in ISO format `<str>`."
         return cydt.dt_to_isoformat(self._dt)
 
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(check=False)
-    def _capi_dtisotz(self) -> str:
+    def _capi_dt_isotz(self) -> str:
         "(cfunc) Access as datetime in ISO format with timezone `<str>`."
         return cydt.dt_to_isoformat_tz(self._dt)
 
@@ -518,7 +589,7 @@ class pydt:
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(check=False)
-    def _capi_dateiso(self) -> str:
+    def _capi_date_iso(self) -> str:
         "(cfunc) Access as date in ISO format `<str>`."
         return cydt.date_to_isoformat(self._capi_date())
 
@@ -553,7 +624,7 @@ class pydt:
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(check=False)
-    def _capi_timeiso(self) -> str:
+    def _capi_time_iso(self) -> str:
         "(cfunc) Access as time in ISO format `<str>`."
         return cydt.time_to_isoformat(self._capi_time())
 
@@ -1736,22 +1807,26 @@ class pydt:
         return self._capi_tz_available()
 
     def tz_localize(self, tz: str | datetime.tzinfo | None = None) -> pydt:
-        """Localize to a specific 'tz' (<str> or <tzinfo>) timezone `<pydt>`.
+        """Localize to a specific 'tz' timezone `<pydt>`.
+
         Equivalent to `datetime.replace(tzinfo=tz<tzinfo>)`.
 
         ### Notice
-        Timezone from `pytz` library should not be used,
-        and will yield incorrect result.
+        Param 'tz' accept both string (timezone name) and tzinfo
+        instance. However, timezone from `pytz` library should not
+        be used, and could yield incorrect result.
         """
         return self._capi_tz_localize(tz)
 
     def tz_convert(self, tz: str | datetime.tzinfo | None = None) -> pydt:
-        """Convert to a specific 'tz' (<str> or <tzinfo>) timezone `<pydt>`.
+        """Convert to a specific 'tz' timezone `<pydt>`.
+
         Equivalent to `datetime.astimezone(tz<tzinfo>)`.
 
         ### Notice
-        Timezone from `pytz` library should not be used,
-        and will yield incorrect result.
+        Param 'tz' accept both string (timezone name) and tzinfo
+        instance. However, timezone from `pytz` library should not
+        be used, and could yield incorrect result.
         """
         return self._capi_tz_convert(tz)
 
@@ -1775,6 +1850,11 @@ class pydt:
         - If pydt is timezone-naive, first will localize to the given 'base_tz',
           then convert to the 'targ_tz'. In this case, the 'base_tz' must be
           specified, else it is ambiguous on how to convert to the target timezone.
+
+        ### Notice
+        Param 'targ_tz' & 'base_tz' accept both string (timezone name)
+        and tzinfo instance. However, timezone from `pytz` library should
+        not be used, and could yield incorrect result.
         """
         return self._capi_tz_switch(targ_tz, base_tz, naive)
 
@@ -1789,12 +1869,14 @@ class pydt:
     @cython.cfunc
     @cython.inline(True)
     def _capi_tz_localize(self, tz: object) -> pydt:
-        """(cfunc) Localize to a specific 'tz' (<str> or <tzinfo>) timezone `<pydt>`.
+        """(cfunc) Localize to a specific 'tz' timezone `<pydt>`.
+
         Equivalent to `datetime.replace(tzinfo=tz<tzinfo>)`.
 
         ### Notice
-        Timezone from `pytz` library should not be used,
-        and will yield incorrect result.
+        Param 'tz' accept both string (timezone name) and tzinfo
+        instance. However, timezone from `pytz` library should not
+        be used, and could yield incorrect result.
         """
         # Parse timezone
         tzinfo = self._parse_tzinfo(tz)
@@ -1807,7 +1889,15 @@ class pydt:
     @cython.cfunc
     @cython.inline(True)
     def _capi_tz_convert(self, tz: object) -> pydt:
-        """"""
+        """(cfunc) Convert to a specific 'tz' timezone `<pydt>`.
+
+        Equivalent to `datetime.astimezone(tz<tzinfo>)`.
+
+        ### Notice
+        Param 'tz' accept both string (timezone name) and tzinfo
+        instance. However, timezone from `pytz` library should not
+        be used, and could yield incorrect result.
+        """
         # Parse timezone
         tzinfo = self._parse_tzinfo(tz)
         if tzinfo is not None and tzinfo is self._capi_tzinfo():
@@ -1838,6 +1928,11 @@ class pydt:
         - If pydt is timezone-naive, first will localize to the given 'base_tz',
           then convert to the 'targ_tz'. In this case, the 'base_tz' must be
           specified, else it is ambiguous on how to convert to the target timezone.
+
+        ### Notice
+        Param 'targ_tz' & 'base_tz' accept both string (timezone name)
+        and tzinfo instance. However, timezone from `pytz` library should
+        not be used, and could yield incorrect result.
         """
         # Pydt is timezone-aware
         dt: datetime.datetime
@@ -1935,7 +2030,13 @@ class pydt:
         us *= freq_val
 
         # Generate
-        return self._new(cydt.dt_fr_microseconds(us, self._capi_tzinfo()))
+        return self._new(
+            cydt.dt_fr_microseconds(
+                us,
+                self._capi_tzinfo(),
+                self._capi_fold(),
+            )
+        )
 
     @cython.cfunc
     @cython.inline(True)
@@ -1958,7 +2059,13 @@ class pydt:
         us *= freq_val
 
         # Generate
-        return self._new(cydt.dt_fr_microseconds(us, self._capi_tzinfo()))
+        return self._new(
+            cydt.dt_fr_microseconds(
+                us,
+                self._capi_tzinfo(),
+                self._capi_fold(),
+            )
+        )
 
     @cython.cfunc
     @cython.inline(True)
@@ -1981,7 +2088,13 @@ class pydt:
         us *= freq_val
 
         # Generate
-        return self._new(cydt.dt_fr_microseconds(us, self._capi_tzinfo()))
+        return self._new(
+            cydt.dt_fr_microseconds(
+                us,
+                self._capi_tzinfo(),
+                self._capi_fold(),
+            )
+        )
 
     # Manipulate: Delta -----------------------------------------------------------------------
     def add_delta(
@@ -2157,7 +2270,7 @@ class pydt:
         :return `<int>`: The delta value.
         """
         # Parse to datetime
-        dt: datetime.datetime = self._parse_timeobj(other)
+        dt: datetime.datetime = self._parse_dtobj(other)
 
         # Unit: year
         delta: cython.longlong
@@ -2316,44 +2429,44 @@ class pydt:
 
     @cython.cfunc
     @cython.inline(True)
-    def _parse_timeobj(self, timeobj: object) -> datetime.datetime:
+    def _parse_dtobj(self, dtobj: object) -> datetime.datetime:
         """(Internal) Parser time object to `<datetime.datetime>`."""
         # Type of '<datetime>'
-        if cydt.is_dt_exact(timeobj):
-            return timeobj
+        if cydt.is_dt_exact(dtobj):
+            return dtobj
         # Type of '<str>'
-        if isinstance(timeobj, str):
-            return self._parse_timestr(timeobj)
-        # Type of '<date>'
-        if cydt.is_date(timeobj):
-            if cydt.is_dt(timeobj):
-                return cydt.dt_fr_dt(timeobj)  # subclase of datetime
-            else:
-                return cydt.dt_fr_date(timeobj, None)  # datetime.date
+        if isinstance(dtobj, str):
+            return self._parse_dtstr(dtobj)
         # Type of `<pydt>`
-        if isinstance(timeobj, pydt):
-            return access_pydt_datetime(timeobj)
+        if isinstance(dtobj, pydt):
+            return access_pydt_datetime(dtobj)
+        # Type of '<date>'
+        if cydt.is_date(dtobj):
+            if cydt.is_dt(dtobj):
+                return cydt.dt_fr_dt(dtobj)  # subclase of datetime
+            else:
+                return cydt.dt_fr_date(dtobj, None, 0)  # datetime.date
         # Type of '<None>'
-        if timeobj is None:
+        if dtobj is None:
             return cydt.gen_dt_now()
         # Type of `<numpy.datetime64>`
-        if cydt.is_dt64(timeobj):
-            return cydt.dt64_to_dt(timeobj)
+        if cydt.is_dt64(dtobj):
+            return cydt.dt64_to_dt(dtobj)
         # Invalid
         raise errors.InvalidTimeObjectError(
-            "<{}>\nFailed to parse 'timeobj': {}.\n"
+            "<{}>\nFailed to parse 'dtobj': {}.\n"
             "Error: Unsupported data type {}.".format(
-                self.__class__.__name__, repr(timeobj), type(timeobj)
+                self.__class__.__name__, repr(dtobj), type(dtobj)
             )
         )
 
     @cython.cfunc
     @cython.inline(True)
-    def _parse_timestr(self, timestr: object) -> datetime.datetime:
+    def _parse_dtstr(self, dtstr: object) -> datetime.datetime:
         """(Internal) Parse time string to `<datetime.datetime>`."""
         try:
             return Parser(self._cfg).parse(
-                timestr,
+                dtstr,
                 self._default,
                 self._day1st,
                 self._year1st,
@@ -2362,8 +2475,7 @@ class pydt:
             )
         except Exception as err:
             raise errors.InvalidTimeObjectError(
-                "<{}>\nFailed to parse 'timeobj': {}.\n"
-                "Error: {}.".format(self.__class__.__name__, repr(timestr), err)
+                "<{}> {}".format(self.__class__.__name__, err)
             ) from err
 
     @cython.cfunc
@@ -2530,9 +2642,12 @@ class pydt:
         if cydt.is_dt(other):
             return self._sub_datetime(other)
         if cydt.is_date(other):
-            return self._sub_datetime(cydt.dt_fr_date(other, None))
+            return self._sub_datetime(cydt.dt_fr_date(other, None, 0))
         if isinstance(other, str):
-            return self._sub_datetime(self._parse_timestr(other))
+            try:
+                return self._sub_datetime(self._parse_dtstr(other))
+            except Exception:
+                return NotImplemented
         if cydt.is_delta(other):
             return self._sub_timedelta(other)
         if isinstance(other, cytimedelta):
@@ -2552,9 +2667,12 @@ class pydt:
         if cydt.is_dt(other):
             return self._rsub_datetime(other)
         if cydt.is_date(other):
-            return self._rsub_datetime(cydt.dt_fr_date(other, None))
+            return self._rsub_datetime(cydt.dt_fr_date(other, None, 0))
         if isinstance(other, str):
-            return self._rsub_datetime(self._parse_timestr(other))
+            try:
+                return self._rsub_datetime(self._parse_dtstr(other))
+            except Exception:
+                return NotImplemented
         # . unlikely numpy object
         # TODO this will not work since numpy does not return NotImplemented
         if cydt.is_dt64(other):
@@ -2600,7 +2718,7 @@ class pydt:
             return self._dt == other
         if isinstance(other, str):
             try:
-                dt: datetime.datetime = self._parse_timestr(other)
+                dt: datetime.datetime = self._parse_dtstr(other)
             except Exception:
                 return NotImplemented
             return self._dt == dt
@@ -2615,7 +2733,7 @@ class pydt:
             return self._dt != other
         if isinstance(other, str):
             try:
-                dt: datetime.datetime = self._parse_timestr(other)
+                dt: datetime.datetime = self._parse_dtstr(other)
             except Exception:
                 return NotImplemented
             return self._dt != dt
@@ -2630,7 +2748,7 @@ class pydt:
             return self._dt > other
         if isinstance(other, str):
             try:
-                dt: datetime.datetime = self._parse_timestr(other)
+                dt: datetime.datetime = self._parse_dtstr(other)
             except Exception:
                 return NotImplemented
             return self._dt > dt
@@ -2645,7 +2763,7 @@ class pydt:
             return self._dt >= other
         if isinstance(other, str):
             try:
-                dt: datetime.datetime = self._parse_timestr(other)
+                dt: datetime.datetime = self._parse_dtstr(other)
             except Exception:
                 return NotImplemented
             return self._dt >= dt
@@ -2660,7 +2778,7 @@ class pydt:
             return self._dt < other
         if isinstance(other, str):
             try:
-                dt: datetime.datetime = self._parse_timestr(other)
+                dt: datetime.datetime = self._parse_dtstr(other)
             except Exception:
                 return NotImplemented
             return self._dt < dt
@@ -2675,7 +2793,7 @@ class pydt:
             return self._dt <= other
         if isinstance(other, str):
             try:
-                dt: datetime.datetime = self._parse_timestr(other)
+                dt: datetime.datetime = self._parse_dtstr(other)
             except Exception:
                 return NotImplemented
             return self._dt <= dt
@@ -2687,11 +2805,11 @@ class pydt:
     def __repr__(self) -> str:
         return "<%s (datetime='%s')>" % (
             self.__class__.__name__,
-            self._capi_dtisotz(),
+            self._capi_dt_str(),
         )
 
     def __str__(self) -> str:
-        return self._capi_dtisotz()
+        return self._capi_dt_str()
 
     # Special methods: hash -------------------------------------------------------------------
     def __hash__(self) -> int:
