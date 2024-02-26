@@ -1607,15 +1607,15 @@ class Parser:
 
         ### Time String & Default
         :param dtstr `<str>`: The string that contains date & time information.
-        :param default `<datetime/date>`: The base to fill-in missing datetime elements. Defaults to `None`.
+        :param default `<datetime/date>`: The default to fill-in missing datetime elements. Defaults to `None`.
         - `None`: If parser failed to extract Y/M/D values from the string,
            the date of '1970-01-01' will be used to fill-in the missing year,
            month & day values.
-        - `<date>`: If parser failed to extract Y/M/D values from the
-           string, the give `date` will be used to fill-in the missing
-           year, month & day values.
-        - `<datetime>`: If parser failed to extract any datetime elements
-           from the string, the given `datetime` will be used to fill-in the
+        - `<date>`: If parser failed to extract Y/M/D values from the string,
+           the give `date` will be used to fill-in the missing year, month &
+           day values.
+        - `<datetime>`: If parser failed to extract datetime elements from
+           the string, the given `datetime` will be used to fill-in the
            missing year, month, day, hour, minute, second and microsecond.
 
         ### Ambiguous Y/M/D
@@ -1652,8 +1652,8 @@ class Parser:
         :param fuzzy `<bool>`: Whether to allow fuzzy parsing. Defaults to `False`.
         - `True`: Parser will increase its flexibility on tokens when parsing
            complex (sentence like) time string, such as:
-           * 'On June 8th, 2020, I am going to be the first man on Mars' => <2020-06-08 00:00:00>
-           * 'Meet me at the AM/PM on Sunset at 3:00 PM on December 3rd, 2003' => <2003-12-03 15:00:00>
+            * 'On June 8th, 2020, I am going to be the first man on Mars' => <2020-06-08 00:00:00>
+            * 'Meet me at the AM/PM on Sunset at 3:00 PM on December 3rd, 2003' => <2003-12-03 15:00:00>
         - `False`: A stricter parsing rule will be applied and complex time
            string can lead to parser failure. However, this mode should be
            able to handle most of the time strings.
