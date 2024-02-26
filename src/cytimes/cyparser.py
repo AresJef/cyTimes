@@ -11,6 +11,7 @@ from cython.cimports import numpy as np  # type: ignore
 from cython.cimports.cpython import datetime  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_READ_CHAR as str_loc  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_GET_LENGTH as str_len  # type: ignore
+from cython.cimports.cpython.unicode import PyUnicode_FindChar as str_findc  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_Replace as str_replace  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_Contains as str_contains  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_FromOrdinal as str_fr_ucs4  # type: ignore
@@ -111,15 +112,6 @@ CONFIG_TZINFO: dict[str, int] = {
 
 
 # ISO Format ----------------------------------------------------------------------------------
-@cython.cfunc
-@cython.inline(True)
-@cython.exceptval(-1, check=False)
-def is_iso_utc(char: cython.Py_UCS4) -> cython.bint:
-    """Check if the charactor could represent the UTC offset
-    for ISO format `<bool>`"""
-    return char == CHAR_PLUS or char == CHAR_DASH or char == CHAR_LOWER_Z
-
-
 @cython.cfunc
 @cython.inline(True)
 @cython.exceptval(-1, check=False)
@@ -1946,7 +1938,7 @@ class Parser:
         Also it sets the 'iso_datetype' to enable iso date parser to perform
         quick value parsing.
 
-        iso_datetype:
+        Meaning for iso_datetype:
         - 0: Not isoformat
         - 1: YYYY-MM-DD
         - 2: YYYYMMDD
@@ -2022,8 +2014,9 @@ class Parser:
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _parse_isoformat_date(self, dstr: str, length: cython.uint) -> cython.bint:
-        """
-        iso_datetype:
+        """(Internal) Parse the date components of the isoformat string `<bool>`.
+
+        Meaning for iso_datetype:
         - 0: Not isoformat
         - 1: YYYY-MM-DD
         - 2: YYYYMMDD
@@ -2155,6 +2148,7 @@ class Parser:
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _parse_isoformat_time(self, tstr: str, length: cython.uint) -> cython.bint:
+        """(Internal) Parse the time components of the isoformat string `<bool>`."""
         # Validate 'tstr'
         if length < 2:
             return False  # exit: isoformat time to short [HH].
@@ -2220,7 +2214,7 @@ class Parser:
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _parse_isoformat_hms(self, tstr: str, length: cython.uint) -> cython.bint:
-        """(Internal) Parses HH[:?MM[:?SS[{.,}fff[fff]]]]"""
+        """(Internal) Parse the HMS.f components of the isoformat string `<bool>`."""
         # Parse HMS
         comps: cython.int[4] = [0, 0, 0, 0]
         pos: cython.uint = 0
@@ -2295,14 +2289,18 @@ class Parser:
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _find_isoformat_tz(self, tstr: str, length: cython.uint) -> cython.uint:
-        """(Internal) Find the location of possible isoformat timezone
+        """(Internal) Find the location of possible isoformat UTC timezone
         in 'tstr'. Equivalent to re.search('[+-Z]', tstr). Returns 0 if
         not found `<int>`."""
-        index: cython.uint = 0
-        for _ in range(length):
-            if is_iso_utc(str_loc(tstr, index)):
-                return index + 1
-            index += 1
+        loc: cython.Py_ssize_t = str_findc(tstr, CHAR_PLUS, 0, length, 1)
+        if loc >= 0:
+            return loc + 1
+        loc = str_findc(tstr, CHAR_DASH, 0, length, 1)
+        if loc >= 0:
+            return loc + 1
+        loc = str_findc(tstr, CHAR_LOWER_Z, 0, length, 1)
+        if loc >= 0:
+            return loc + 1
         return 0
 
     @cython.cfunc

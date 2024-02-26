@@ -19,7 +19,6 @@ cdef:
     dict CONFIG_AMPM, CONFIG_TZINFO
 
 # ISO Format
-cdef bint is_iso_utc(Py_UCS4 char) except -1
 cdef bint is_iso_sep(Py_UCS4 char) except -1
 cdef bint is_isodate_sep(Py_UCS4 char) except -1
 cdef bint is_isoweek_sep(Py_UCS4 char) except -1
