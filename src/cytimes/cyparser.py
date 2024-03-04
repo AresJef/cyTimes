@@ -13,6 +13,7 @@ from cython.cimports.cpython.unicode import PyUnicode_READ_CHAR as str_loc  # ty
 from cython.cimports.cpython.unicode import PyUnicode_GET_LENGTH as str_len  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_FindChar as str_findc  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_Replace as str_replace  # type: ignore
+from cython.cimports.cpython.unicode import PyUnicode_Substring as str_substr  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_Contains as str_contains  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_FromOrdinal as str_fr_ucs4  # type: ignore
 from cython.cimports.cpython.set import PySet_Add as set_add  # type: ignore
@@ -38,24 +39,6 @@ from cytimes import errors, cydatetime as cydt
 __all__ = ["Config", "Parser"]
 
 # Constants -----------------------------------------------------------------------------------
-# . data type
-PARSERINFO_DTYPE: object = parserinfo
-# . charactors
-CHAR_NULL: cython.Py_UCS4 = 0  # '' null
-CHAR_SPACE: cython.Py_UCS4 = 32  # " "
-CHAR_PLUS: cython.Py_UCS4 = 43  # "+"
-CHAR_COMMA: cython.Py_UCS4 = 44  # ","
-CHAR_DASH: cython.Py_UCS4 = 45  # "-"
-CHAR_PERIOD: cython.Py_UCS4 = 46  # "."
-CHAR_SLASH: cython.Py_UCS4 = 47  # "/"
-CHAR_COLON: cython.Py_UCS4 = 58  # ":"
-CHAR_LOWER_T: cython.Py_UCS4 = 116  # "t"
-CHAR_LOWER_W: cython.Py_UCS4 = 119  # "w"
-CHAR_LOWER_Z: cython.Py_UCS4 = 122  # "z"
-# . datetime
-US_FRACTION_CORRECTION: cython.uint[5] = [100000, 10000, 1000, 100, 10]
-# . timezone
-LOCAL_TZNAMES: set[str] = set(time.tzname)
 # . default config
 # fmt: off
 CONFIG_PERTAIN: set[str] = {"of"}
@@ -109,6 +92,24 @@ CONFIG_TZINFO: dict[str, int] = {
     "cet":  1 * 3_600, # Central European Time
 }
 # fmt: on
+# . datetime
+US_FRACTION_CORRECTION: cython.uint[5] = [100000, 10000, 1000, 100, 10]
+# . timezone
+TIMEZONE_NAME_LOCAL: set[str] = set(time.tzname)
+# . charactor
+CHAR_NULL: cython.Py_UCS4 = 0  # '' null
+CHAR_SPACE: cython.Py_UCS4 = 32  # " "
+CHAR_PLUS: cython.Py_UCS4 = 43  # "+"
+CHAR_COMMA: cython.Py_UCS4 = 44  # ","
+CHAR_DASH: cython.Py_UCS4 = 45  # "-"
+CHAR_PERIOD: cython.Py_UCS4 = 46  # "."
+CHAR_SLASH: cython.Py_UCS4 = 47  # "/"
+CHAR_COLON: cython.Py_UCS4 = 58  # ":"
+CHAR_LOWER_T: cython.Py_UCS4 = 116  # "t"
+CHAR_LOWER_W: cython.Py_UCS4 = 119  # "w"
+CHAR_LOWER_Z: cython.Py_UCS4 = 122  # "z"
+# . type
+TP_PARSERINFO: object = parserinfo
 
 
 # ISO Format ----------------------------------------------------------------------------------
@@ -1336,7 +1337,7 @@ class Config:
             cfg.import_parserinfo(info)
         """
         # Validate perserinfo
-        if not isinstance(info, PARSERINFO_DTYPE):
+        if not isinstance(info, TP_PARSERINFO):
             raise errors.InvalidParserInfo(
                 "<{}>\nConfig can only import "
                 "'dateutil.parser.parserinfo', instead got: "
@@ -1719,10 +1720,12 @@ class Parser:
                 return False  # exit: not isoformat
             # . parse date component
             self._result = Result()
-            if not self._parse_isoformat_date(self._dtstr[0:sep_loc], sep_loc):
+            if not self._parse_isoformat_date(
+                str_substr(self._dtstr, 0, sep_loc), sep_loc
+            ):
                 return False  # exit: not isoformat
             # . parse time component
-            tstr: str = self._dtstr[sep_loc + 1 : self._dtstr_len]
+            tstr: str = str_substr(self._dtstr, sep_loc + 1, self._dtstr_len)
             tstr_len: cython.uint = self._dtstr_len - sep_loc - 1
             if not self._parse_isoformat_time(tstr, tstr_len):
                 return False  # exit: not isoformat
@@ -1803,7 +1806,7 @@ class Parser:
         tzname: str = self._result.tzname
         offset: cython.int = self._result.tzoffset
         # . local timezone (handle ambiguous time)
-        if tzname is not None and set_contains(LOCAL_TZNAMES, tzname):
+        if tzname is not None and set_contains(TIMEZONE_NAME_LOCAL, tzname):
             # Build with local tzinfo
             dt = self._build_datetime(default, None)
             dt = cydt.dt_replace_tzinfo(dt, cydt.gen_tzinfo_local(dt))

@@ -4,20 +4,20 @@ from cpython cimport datetime
 
 # Constants
 cdef:
-    # . data type
-    object PARSERINFO_DTYPE
-    # . charactors
-    Py_UCS4 CHAR_NULL, CHAR_SPACE, CHAR_PLUS, CHAR_COMMA, CHAR_DASH, CHAR_PERIOD
-    Py_UCS4 CHAR_SLASH, CHAR_COLON, CHAR_LOWER_T, CHAR_LOWER_W, CHAR_LOWER_Z
-    # . datetime
-    int[5] US_FRACTION_CORRECTION
-    # . timezone
-    set LOCAL_TZNAMES
-    # . default config
+# . default config
     set CONFIG_PERTAIN, CONFIG_JUMP, CONFIG_UTC
     dict CONFIG_MONTH, CONFIG_WEEKDAY, CONFIG_HMS
     dict CONFIG_AMPM, CONFIG_TZINFO
-
+    # . datetime
+    int[5] US_FRACTION_CORRECTION
+    # . timezone
+    set TIMEZONE_NAME_LOCAL
+    # . charactor
+    Py_UCS4 CHAR_NULL, CHAR_SPACE, CHAR_PLUS, CHAR_COMMA, CHAR_DASH, CHAR_PERIOD
+    Py_UCS4 CHAR_SLASH, CHAR_COLON, CHAR_LOWER_T, CHAR_LOWER_W, CHAR_LOWER_Z
+    # . type
+    object TP_PARSERINFO
+    
 # ISO Format
 cdef bint is_iso_sep(Py_UCS4 char) except -1
 cdef bint is_isodate_sep(Py_UCS4 char) except -1
