@@ -33,8 +33,10 @@ from cytimes import cydatetime as cydt
 __all__ = ["cytimedelta"]
 
 # Contants ------------------------------------------------------------------------------------
-RLDELTA_DTYPE: object = relativedelta
+# . weekday
 WEEKDAY_REPRS: tuple[str, ...] = ("MO", "TU", "WE", "TH", "FR", "SA", "SU")
+# . type
+TP_RELATIVEDELTA: object = relativedelta
 
 
 # cytimedelta ---------------------------------------------------------------------------------
@@ -71,7 +73,7 @@ class cytimedelta:
         hours: cython.int = 0,
         minutes: cython.int = 0,
         seconds: cython.int = 0,
-        miliseconds: cython.int = 0,
+        milliseconds: cython.int = 0,
         microseconds: cython.int = 0,
         year: cython.int = -1,
         month: cython.int = -1,
@@ -80,7 +82,7 @@ class cytimedelta:
         hour: cython.int = -1,
         minute: cython.int = -1,
         second: cython.int = -1,
-        milisecond: cython.int = -1,
+        millisecond: cython.int = -1,
         microsecond: cython.int = -1,
     ):
         """The cythonized version of `dateutil.relativedelta.relativedelta` with
@@ -96,7 +98,7 @@ class cytimedelta:
         :param hour `<int>`: The absolute hour value. Defaults to `-1 (no change)`.
         :param minute `<int>`: The absolute minute value. Defaults to `-1 (no change)`.
         :param second `<int>`: The absolute second value. Defaults to `-1 (no change)`.
-        :param milisecond `<int>`: The absolute milisecond value. Defaults to `-1 (no change)`.
+        :param millisecond `<int>`: The absolute millisecond value. Defaults to `-1 (no change)`.
         :param microsecond `<int>`: The absolute microsecond value. Defaults to `-1 (no change)`.
 
         ### Relative delta
@@ -107,7 +109,7 @@ class cytimedelta:
         :param hours `<int>`: The relative delta of hours. Defaults to `0`.
         :param minutes `<int>`: The relative delta of minutes. Defaults to `0`.
         :param seconds `<int>`: The relative delta of seconds. Defaults to `0`.
-        :param miliseconds `<int>`: The relative delta of miliseconds. Defaults to `0`.
+        :param milliseconds `<int>`: The relative delta of milliseconds. Defaults to `0`.
         :param microseconds `<int>`: The relative delta of microseconds. Defaults to `0`.
 
         ### Arithmetic Operations
@@ -160,7 +162,7 @@ class cytimedelta:
         # Relative delta
         # . microseconds
         us: cython.longlong = microseconds
-        us += miliseconds * 1_000
+        us += milliseconds * 1_000
         if us > 999_999:
             seconds += us // 1_000_000
             self._microseconds = us % 1_000_000
@@ -223,10 +225,10 @@ class cytimedelta:
         self._hour = min(hour, 23) if hour >= 0 else -1
         self._minute = min(minute, 59) if minute >= 0 else -1
         self._second = min(second, 59) if second >= 0 else -1
-        if milisecond > 0:
-            self._microsecond = min(milisecond, 999) * 1_000
+        if millisecond > 0:
+            self._microsecond = min(millisecond, 999) * 1_000
             if microsecond > 0:
-                self._microsecond += min(microsecond, 999)
+                self._microsecond += microsecond % 1_000
         elif microsecond > 0:
             self._microsecond = min(microsecond, 999_999)
         else:
@@ -272,8 +274,8 @@ class cytimedelta:
         return self._seconds
 
     @property
-    def miliseconds(self) -> int:
-        """Access the relative delta of miliseconds `<int>`."""
+    def milliseconds(self) -> int:
+        """Access the relative delta of milliseconds `<int>`."""
         return int(self._microseconds / 1_000)
 
     @property
@@ -325,8 +327,8 @@ class cytimedelta:
         return self._second
 
     @property
-    def milisecond(self) -> int:
-        """Access the absolute milisecond value `<int>`.
+    def millisecond(self) -> int:
+        """Access the absolute millisecond value `<int>`.
         (Value of `-1` means not set)."""
         if self._microsecond == -1:
             return -1
@@ -350,7 +352,7 @@ class cytimedelta:
             return self._add_cytimedeta(o)
         if cydt.is_delta(o):
             return self._add_timedelta(o)
-        if isinstance(o, RLDELTA_DTYPE):
+        if isinstance(o, TP_RELATIVEDELTA):
             return self._add_relativedelta(o)
         # . unlikely numpy object
         if cydt.is_dt64(o):
@@ -368,7 +370,7 @@ class cytimedelta:
             return self._add_date(o)
         if cydt.is_delta(o):
             return self._add_timedelta(o)
-        if isinstance(o, RLDELTA_DTYPE):
+        if isinstance(o, TP_RELATIVEDELTA):
             return self._radd_relativedelta(o)
         # . unlikely numpy object
         # TODO: Below does nothing since numpy does not return NotImplemented
@@ -598,7 +600,7 @@ class cytimedelta:
             return self._sub_cytimedelta(o)
         if cydt.is_delta(o):
             return self._sub_timedelta(o)
-        if isinstance(o, RLDELTA_DTYPE):
+        if isinstance(o, TP_RELATIVEDELTA):
             return self._sub_relativedelta(o)
         # . unlikely numpy object
         if cydt.is_delta64(o):
@@ -614,7 +616,7 @@ class cytimedelta:
             return self._rsub_date(o)
         if cydt.is_delta(o):
             return self._rsub_timedelta(o)
-        if isinstance(o, RLDELTA_DTYPE):
+        if isinstance(o, TP_RELATIVEDELTA):
             return self._rsub_relativedelta(o)
         # . unlikely numpy object
         # TODO: Below does nothing since numpy does not return NotImplemented
@@ -997,7 +999,7 @@ class cytimedelta:
     def __eq__(self, o: object) -> bool:
         if isinstance(o, cytimedelta):
             return self._eq_cytimedelta(o)
-        if isinstance(o, RLDELTA_DTYPE):
+        if isinstance(o, TP_RELATIVEDELTA):
             return self._eq_relativedelta(o)
         return False
 
