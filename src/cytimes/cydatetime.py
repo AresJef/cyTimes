@@ -6,6 +6,10 @@
 import cython
 from cython.cimports.cpython import datetime  # type: ignore
 from cython.cimports.cpython.time import time as unix_time  # type: ignore
+from cython.cimports.cpython.set import PySet_Contains as set_contains  # type: ignore
+from cython.cimports.cpython.unicode import PyUnicode_GET_LENGTH as str_len  # type: ignore
+from cython.cimports.cpython.unicode import PyUnicode_FindChar as str_findc  # type: ignore
+from cython.cimports.cpython.unicode import PyUnicode_Substring as str_substr  # type: ignore
 from cython.cimports import numpy as np  # type: ignore
 from cython.cimports.cytimes import cytime  # type: ignore
 
@@ -14,7 +18,7 @@ np.import_umath()
 datetime.import_datetime()
 
 # Python imports
-from typing import Literal
+from typing import Literal, Callable
 import datetime, numpy as np
 from time import localtime as time_localtime
 from pandas import Series, DatetimeIndex, TimedeltaIndex
@@ -26,27 +30,34 @@ DAYS_IN_MONTH: cython.uint[13] = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30,
 DAYS_BR_QUARTER: cython.uint[5] = [0, 90, 181, 273, 365]
 DAYS_IN_QUARTER: cython.uint[5] = [0, 90, 91, 92, 92]
 # fmt: on
-# . datetime EPOCH
+# . datetime
 UTC: datetime.tzinfo = datetime.get_utc()
-EPOCH_NAI: datetime.datetime = datetime.datetime_new(1970, 1, 1, 0, 0, 0, 0, None, 0)  # type: ignore
 EPOCH_UTC: datetime.datetime = datetime.datetime_new(1970, 1, 1, 0, 0, 0, 0, UTC, 0)  # type: ignore
 EPOCH_US: cython.longlong = 62_135_683_200_000_000
 EPOCH_SEC: cython.longlong = 62_135_683_200
 EPOCH_DAY: cython.int = 719_163
-# . max & min datetime seconds
-DT_MIN_US: cython.longlong = 86_400_000_000
 DT_MAX_US: cython.longlong = 315_537_983_999_999_999
-# . nanoseconds conversion
+DT_MIN_US: cython.longlong = 86_400_000_000
+# . microsecond
+US_DAY: cython.longlong = 86_400_000_000
+US_HOUR: cython.longlong = 3_600_000_000
+# . nanosecond
 NS_DAY: cython.longlong = 864_00_000_000_000
 NS_HOUR: cython.longlong = 36_00_000_000_000
 NS_MINUTE: cython.longlong = 60_000_000_000
-# . microseconds conversion
-US_DAY: cython.longlong = 86_400_000_000
-US_HOUR: cython.longlong = 3_600_000_000
-# . numpy dtype
-DT64ARRAY_DTYPE: object = np.dtypes.DateTime64DType
-DELTA64ARRAY_DTYPE: object = np.dtypes.TimeDelta64DType
-PDSERIES_DTYPE: object = Series
+# . charactor
+CHAR_LEFT_BRACKET: cython.Py_UCS4 = 91  # [
+CHAR_RIGHT_BRACKET: cython.Py_UCS4 = 93  # ]
+# . unit
+UNIT_DELTA_ADJ: set[str] = {"s", "ms", "us", "ns"}
+# . type
+TP_DATETIME64DTYPE: object = np.dtypes.DateTime64DType
+TP_TIMEDELTA64DTYPE: object = np.dtypes.TimeDelta64DType
+TP_SERIES: object = Series
+TP_DATETIMEINDEX: object = DatetimeIndex
+TP_TIMDELTAINDEX: object = TimedeltaIndex
+# . function
+FN_TIME_LOCALTIME: object = time_localtime
 
 
 # Struct -----------------------------------------------------------------------------------------------
@@ -532,14 +543,12 @@ def localize_ts(timestamp: cython.double) -> cython.longlong:
     # Localize timestamp
     tms = cytime.localize_time(timestamp)
     # Calculate total seconds
-    sec: cython.longlong = (
-        ymd_to_ordinal(tms.tm_year, tms.tm_mon, tms.tm_mday) * 86_400
-        + tms.tm_hour * 3_600
-        + tms.tm_min * 60
-        + tms.tm_sec
+    ordinal: cython.longlong = ymd_to_ordinal(tms.tm_year, tms.tm_mon, tms.tm_mday)
+    seconds: cython.longlong = (
+        ordinal * 86_400 + tms.tm_hour * 3_600 + tms.tm_min * 60 + tms.tm_sec
     )
     # Return seconds since epoch
-    return sec - EPOCH_SEC
+    return seconds - EPOCH_SEC
 
 
 # Datetime.date ========================================================================================
@@ -1610,14 +1619,14 @@ def dt_sub_dt_us(dt_l: datetime.datetime, dt_r: datetime.datetime) -> cython.lon
     if tzinfo_l is tzinfo_r:
         return delta_us
     # Calculate left timezone offset
-    offset_l: cython.int
+    offset_l: cython.longlong
     if tzinfo_l is None:
         offset_l = 0
     else:
         delta: datetime.timedelta = dt_l.utcoffset()
         offset_l = 0 if delta is None else delta_to_microseconds(delta)
     # Calculate right timezone offset
-    offset_r: cython.int
+    offset_r: cython.longlong
     if tzinfo_r is None:
         offset_r = 0
     else:
@@ -1727,16 +1736,13 @@ def dt_astimezone(
     """Convert `<datetime.datetime>` to the new timezone.
     Equivalent to `datetime.astimezone(tzinfo)`.
     """
-    t_tz: datetime.tzinfo
-    b_tz: datetime.tzinfo
+    b_tz: datetime.tzinfo = access_dt_tzinfo(dt)
     if tzinfo is None:
-        t_tz = gen_tzinfo_local(None)
-        b_tz = access_dt_tzinfo(dt)
+        t_tz: datetime.tzinfo = gen_tzinfo_local(None)
         if b_tz is None:
             return dt_replace_tzinfo(dt, t_tz)  # exit: replace tzinfo
     else:
-        t_tz = tzinfo
-        b_tz = access_dt_tzinfo(dt)
+        t_tz: datetime.tzinfo = tzinfo
 
     if b_tz is None:
         b_tz = gen_tzinfo_local(dt)
@@ -2271,7 +2277,7 @@ def gen_tzinfo_local(dt: datetime.datetime = None) -> datetime.tzinfo:
     else:
         ts = time()
     # Generate tzinfo
-    return gen_tzinfo(time_localtime(ts).tm_gmtoff, None)
+    return gen_tzinfo(FN_TIME_LOCALTIME(ts).tm_gmtoff, None)
 
 
 # Datetime.tzinfo: check types -------------------------------------------------------------------------
@@ -2374,7 +2380,7 @@ def dt64_to_int(
     elif unit == "s":
         return dt64_to_seconds(dt64)
     elif unit == "ms":
-        return dt64_to_miliseconds(dt64)
+        return dt64_to_milliseconds(dt64)
     elif unit == "us":
         return dt64_to_microseconds(dt64)
     elif unit == "ns":
@@ -2520,12 +2526,12 @@ def dt64_to_seconds(dt64: object) -> cython.longlong:
 
 @cython.cfunc
 @cython.inline(True)
-def dt64_to_miliseconds(dt64: object) -> cython.longlong:
-    """Convert `numpy.datetime64` to total miliseconds `<int>`.
+def dt64_to_milliseconds(dt64: object) -> cython.longlong:
+    """Convert `numpy.datetime64` to total milliseconds `<int>`.
 
     ### Notice
     Percision will be lost if the original datetime64
-    unit is smaller than 'milisecond (ms)'.
+    unit is smaller than 'millisecond (ms)'.
     """
     # Access value & unit
     validate_dt64(dt64)
@@ -2710,7 +2716,7 @@ def delta64_to_int(
     elif unit == "s":
         return delta64_to_seconds(delta64)
     elif unit == "ms":
-        return delta64_to_miliseconds(delta64)
+        return delta64_to_milliseconds(delta64)
     elif unit == "us":
         return delta64_to_microseconds(delta64)
     elif unit == "ns":
@@ -2856,12 +2862,12 @@ def delta64_to_seconds(delta64: object) -> cython.longlong:
 
 @cython.cfunc
 @cython.inline(True)
-def delta64_to_miliseconds(delta64: object) -> cython.longlong:
-    """Convert `numpy.timedelta64` to total miliseconds `<int>`.
+def delta64_to_milliseconds(delta64: object) -> cython.longlong:
+    """Convert `numpy.timedelta64` to total milliseconds `<int>`.
 
     ### Notice
     Percision will be lost if the original timedelta64
-    unit is smaller than 'milisecond (ms)'.
+    unit is smaller than 'millisecond (ms)'.
     """
     # Access value & unit
     validate_delta64(delta64)
@@ -2969,7 +2975,7 @@ def is_dt64array(arr: np.ndarray) -> cython.bint:
     """Check if numpy.ndarray is dtype of ndarray[datetime64] `<bool>`.
     Equivalent to `isinstance(arr.dtype, np.dtypes.DateTime64DType)`.
     """
-    return isinstance(arr.dtype, DT64ARRAY_DTYPE)
+    return isinstance(arr.dtype, TP_DATETIME64DTYPE)
 
 
 @cython.cfunc
@@ -3007,7 +3013,7 @@ def dt64array_to_int(
     elif unit == "s":
         return dt64array_to_seconds(arr)
     elif unit == "ms":
-        return dt64array_to_miliseconds(arr)
+        return dt64array_to_milliseconds(arr)
     elif unit == "us":
         return dt64array_to_microseconds(arr)
     elif unit == "ns":
@@ -3165,13 +3171,13 @@ def dt64array_to_seconds(arr: np.ndarray) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def dt64array_to_miliseconds(arr: np.ndarray) -> np.ndarray:
+def dt64array_to_milliseconds(arr: np.ndarray) -> np.ndarray:
     """Convert `numpy.ndarray[datetime64]` to
-    total miliseconds `<numpy.ndarray[int64]>`.
+    total milliseconds `<numpy.ndarray[int64]>`.
 
     ### Notice
     Percision will be lost if the original datetime64
-    unit is smaller than 'milisecond (ms)'.
+    unit is smaller than 'millisecond (ms)'.
     """
     # Validate array
     if arr.shape[0] == 0:
@@ -3280,7 +3286,7 @@ def is_delta64array(arr: np.ndarray) -> cython.bint:
     """Check if numpy.ndarray is dtype of ndarray[timedelta64] `<bool>`.
     Equivalent to `isinstance(arr.dtype, np.dtypes.TimeDelta64DType)`.
     """
-    return isinstance(arr.dtype, DELTA64ARRAY_DTYPE)
+    return isinstance(arr.dtype, TP_TIMEDELTA64DTYPE)
 
 
 @cython.cfunc
@@ -3318,7 +3324,7 @@ def delta64array_to_int(
     elif unit == "s":
         return delta64array_to_seconds(arr)
     elif unit == "ms":
-        return delta64array_to_miliseconds(arr)
+        return delta64array_to_milliseconds(arr)
     elif unit == "us":
         return delta64array_to_microseconds(arr)
     elif unit == "ns":
@@ -3476,13 +3482,13 @@ def delta64array_to_seconds(arr: np.ndarray) -> np.ndarray:
 
 @cython.cfunc
 @cython.inline(True)
-def delta64array_to_miliseconds(arr: np.ndarray) -> np.ndarray:
+def delta64array_to_milliseconds(arr: np.ndarray) -> np.ndarray:
     """Convert `numpy.ndarray[timedelta64]` to
-    total miliseconds `<numpy.ndarray[int64]>`.
+    total milliseconds `<numpy.ndarray[int64]>`.
 
     ### Notice
     Percision will be lost if the original timedelta64
-    unit is smaller than 'milisecond (ms)'.
+    unit is smaller than 'millisecond (ms)'.
     """
     # Validate array
     if arr.shape[0] == 0:
@@ -3583,22 +3589,44 @@ def delta64array_to_nanoseconds(arr: np.ndarray) -> np.ndarray:
 
 
 # pandas.Series ========================================================================================
-# pandas.Series type checks ----------------------------------------------------------------------------
 @cython.cfunc
 @cython.inline(True)
-@cython.exceptval(-1, check=False)
-def is_pdseries(obj: object) -> cython.bint:
-    """Check if an object is type of pandas.Series `<bool>`."""
-    return isinstance(obj, PDSERIES_DTYPE)
-
-
-@cython.cfunc
-@cython.inline(True)
-def validate_pdseries(obj: object):
-    if not is_pdseries(obj):
+def get_series_unit(s: Series) -> str:
+    """Get the datetime/timedelta unit of the Series.
+    Returns `None` if not the corret series dtype, or the
+    unit `<str>`: 'D', 's', 'ms', 'us', 'ns', etc."""
+    # Get the dtype string
+    try:
+        unit: str = s.dtype.str
+    except Exception as err:
         raise TypeError(
-            "Expect type of `pandas.Series`, instead got: %s." % (type(obj))
-        )
+            "Expect type of `pandas.Series`, instead got: %s." % (type(s))
+        ) from err
+
+    # Parse unit
+    length: cython.int = str_len(unit)
+    pos_s: cython.int = str_findc(unit, CHAR_LEFT_BRACKET, 0, length, 1)
+    if pos_s == -1:
+        return None  # exit:  not datetime64/timedelta64
+    pos_s += 1
+    pos_e: cython.int = str_findc(unit, CHAR_RIGHT_BRACKET, pos_s, length, 1)
+    if pos_e == -1:
+        return None  # exit:  not datetime64/timedelta64
+    if pos_e == pos_s:
+        return None  # exit:  not datetime64/timedelta64
+    return str_substr(unit, pos_s, pos_e)
+
+
+@cython.cfunc
+@cython.inline(True)
+def get_series_values(s: Series) -> np.ndarray:
+    """Get the inner value of a Series `<ndarray>`."""
+    try:
+        return s.values
+    except Exception as err:
+        raise TypeError(
+            "Expect type of `pandas.Series`, instead got: %s." % (type(s))
+        ) from err
 
 
 # pandas.Series[datetime64] ============================================================================
@@ -3625,7 +3653,7 @@ def dt64series_to_int(
     elif unit == "s":
         return dt64series_to_seconds(s)
     elif unit == "ms":
-        return dt64series_to_miliseconds(s)
+        return dt64series_to_milliseconds(s)
     elif unit == "us":
         return dt64series_to_microseconds(s)
     elif unit == "ns":
@@ -3647,12 +3675,10 @@ def dt64series_to_days(s: Series) -> object:
     Percision will be lost if the original datetime64
     unit is smaller than 'day (D)'.
     """
-    # Validate series
-    validate_pdseries(s)
     # Conversion
-    arr = dt64array_to_days(s.values)
+    arr = dt64array_to_days(get_series_values(s))
     # Reconstruction
-    return Series(arr, index=s.index)
+    return TP_SERIES(arr, index=s.index, name=s.name)
 
 
 @cython.cfunc
@@ -3665,12 +3691,10 @@ def dt64series_to_hours(s: Series) -> object:
     Percision will be lost if the original datetime64
     unit is smaller than 'hour (H)'.
     """
-    # Validate series
-    validate_pdseries(s)
     # Conversion
-    arr = dt64array_to_hours(s.values)
+    arr = dt64array_to_hours(get_series_values(s))
     # Reconstruction
-    return Series(arr, index=s.index)
+    return TP_SERIES(arr, index=s.index, name=s.name)
 
 
 @cython.cfunc
@@ -3683,12 +3707,10 @@ def dt64series_to_minutes(s: Series) -> object:
     Percision will be lost if the original datetime64
     unit is smaller than 'minute (m)'.
     """
-    # Validate series
-    validate_pdseries(s)
     # Conversion
-    arr = dt64array_to_minutes(s.values)
+    arr = dt64array_to_minutes(get_series_values(s))
     # Reconstruction
-    return Series(arr, index=s.index)
+    return TP_SERIES(arr, index=s.index, name=s.name)
 
 
 @cython.cfunc
@@ -3701,30 +3723,26 @@ def dt64series_to_seconds(s: Series) -> object:
     Percision will be lost if the original datetime64
     unit is smaller than 'second (s)'.
     """
-    # Validate series
-    validate_pdseries(s)
     # Conversion
-    arr = dt64array_to_seconds(s.values)
+    arr = dt64array_to_seconds(get_series_values(s))
     # Reconstruction
-    return Series(arr, index=s.index)
+    return TP_SERIES(arr, index=s.index, name=s.name)
 
 
 @cython.cfunc
 @cython.inline(True)
-def dt64series_to_miliseconds(s: Series) -> object:
+def dt64series_to_milliseconds(s: Series) -> object:
     """Convert `pandas.Series[datetime64]` to
-    total miliseconds `<pandas.Series[int64]>`.
+    total milliseconds `<pandas.Series[int64]>`.
 
     ### Notice
     Percision will be lost if the original datetime64
-    unit is smaller than 'milisecond (ms)'.
+    unit is smaller than 'millisecond (ms)'.
     """
-    # Validate series
-    validate_pdseries(s)
     # Conversion
-    arr = dt64array_to_miliseconds(s.values)
+    arr = dt64array_to_milliseconds(get_series_values(s))
     # Reconstruction
-    return Series(arr, index=s.index)
+    return TP_SERIES(arr, index=s.index, name=s.name)
 
 
 @cython.cfunc
@@ -3737,12 +3755,10 @@ def dt64series_to_microseconds(s: Series) -> object:
     Percision will be lost if the original datetime64
     unit is smaller than 'microsecond (us)'.
     """
-    # Validate series
-    validate_pdseries(s)
     # Conversion
-    arr = dt64array_to_microseconds(s.values)
+    arr = dt64array_to_microseconds(get_series_values(s))
     # Reconstruction
-    return Series(arr, index=s.index)
+    return TP_SERIES(arr, index=s.index, name=s.name)
 
 
 @cython.cfunc
@@ -3755,12 +3771,10 @@ def dt64series_to_nanoseconds(s: Series) -> object:
     Percision will be lost if the original datetime64
     unit is smaller than 'nanosecond (ns)'.
     """
-    # Validate series
-    validate_pdseries(s)
     # Conversion
-    arr = dt64array_to_nanoseconds(s.values)
+    arr = dt64array_to_nanoseconds(get_series_values(s))
     # Reconstruction
-    return Series(arr, index=s.index)
+    return TP_SERIES(arr, index=s.index, name=s.name)
 
 
 @cython.cfunc
@@ -3773,12 +3787,10 @@ def dt64series_to_ordinals(s: Series) -> object:
     Percision will be lost if the original datetime64
     unit is smaller than 'day (D)'.
     """
-    # Validate series
-    validate_pdseries(s)
     # Conversion
-    arr = dt64array_to_days(s.values) + 719_163
+    arr = dt64array_to_days(get_series_values(s)) + 719_163
     # Reconstruction
-    return Series(arr, index=s.index)
+    return TP_SERIES(arr, index=s.index, name=s.name)
 
 
 @cython.cfunc
@@ -3791,37 +3803,13 @@ def dt64series_to_timestamps(s: Series) -> object:
     Percision will be lost if the original datetime64
     unit is smaller than 'microseconds (us)'.
     """
-    # Validate series
-    validate_pdseries(s)
     # Conversion
-    arr = dt64array_to_microseconds(s.values) / 1_000_000
+    arr = dt64array_to_microseconds(get_series_values(s)) / 1_000_000
     # Reconstruction
-    return Series(arr, index=s.index)
+    return TP_SERIES(arr, index=s.index, name=s.name)
 
 
-# pandas.Series[datetime64] adjustment -----------------------------------------------------------------
-@cython.cfunc
-@cython.inline(True)
-def dt64series_adj_to_ns(s: Series) -> object:
-    """Adjust `pandas.Series[datetime64]` to `datetime64[ns]`.
-
-    This function tries to adjust any non-`datetime64[ns]` Series
-    to `datetime64[ns]` by converting the values to nanoseconds.
-    Support both timezone-naive and timezone-aware Series.
-    """
-    # Validate series
-    validate_pdseries(s)
-    # Check dtype
-    dtype: str = s.dtype.str
-    if dtype == "<M8[ns]" or dtype == "|M8[ns]":
-        return s  # exit: already datetime64[us]
-    # Adjust to nanoseconds
-    arr = dt64array_to_nanoseconds(s.values)
-    # Reconstruction
-    return Series(DatetimeIndex(arr, tz=s.dt.tz), index=s.index)
-
-
-# pandas.Series[timedelta64] ===========================================================================
+# pandas.Series[timedelta64] ============================================================================
 # pandas.Series[timedelta64]: conversion ---------------------------------------------------------------
 @cython.cfunc
 @cython.inline(True)
@@ -3845,7 +3833,7 @@ def delta64series_to_int(
     elif unit == "s":
         return delta64series_to_seconds(s)
     elif unit == "ms":
-        return delta64series_to_miliseconds(s)
+        return delta64series_to_milliseconds(s)
     elif unit == "us":
         return delta64series_to_microseconds(s)
     elif unit == "ns":
@@ -3867,12 +3855,10 @@ def delta64series_to_days(s: Series) -> object:
     Percision will be lost if the original timedelta64
     unit is smaller than 'day (D)'.
     """
-    # Validate series
-    validate_pdseries(s)
     # Conversion
-    arr = delta64array_to_days(s.values)
+    arr = delta64array_to_days(get_series_values(s))
     # Reconstruction
-    return Series(arr, index=s.index)
+    return TP_SERIES(arr, index=s.index, name=s.name)
 
 
 @cython.cfunc
@@ -3885,12 +3871,10 @@ def delta64series_to_hours(s: Series) -> object:
     Percision will be lost if the original timedelta64
     unit is smaller than 'hour (h)'.
     """
-    # Validate series
-    validate_pdseries(s)
     # Conversion
-    arr = delta64array_to_hours(s.values)
+    arr = delta64array_to_hours(get_series_values(s))
     # Reconstruction
-    return Series(arr, index=s.index)
+    return TP_SERIES(arr, index=s.index, name=s.name)
 
 
 @cython.cfunc
@@ -3903,12 +3887,10 @@ def delta64series_to_minutes(s: Series) -> object:
     Percision will be lost if the original timedelta64
     unit is smaller than 'minute (m)'.
     """
-    # Validate series
-    validate_pdseries(s)
     # Conversion
-    arr = delta64array_to_minutes(s.values)
+    arr = delta64array_to_minutes(get_series_values(s))
     # Reconstruction
-    return Series(arr, index=s.index)
+    return TP_SERIES(arr, index=s.index, name=s.name)
 
 
 @cython.cfunc
@@ -3921,30 +3903,26 @@ def delta64series_to_seconds(s: Series) -> object:
     Percision will be lost if the original timedelta64
     unit is smaller than 'second (s)'.
     """
-    # Validate series
-    validate_pdseries(s)
     # Conversion
-    arr = delta64array_to_seconds(s.values)
+    arr = delta64array_to_seconds(get_series_values(s))
     # Reconstruction
-    return Series(arr, index=s.index)
+    return TP_SERIES(arr, index=s.index, name=s.name)
 
 
 @cython.cfunc
 @cython.inline(True)
-def delta64series_to_miliseconds(s: Series) -> object:
+def delta64series_to_milliseconds(s: Series) -> object:
     """Convert `pandas.Series[timedelta64]` to
-    total miliseconds `<pandas.Series[int64]>`.
+    total milliseconds `<pandas.Series[int64]>`.
 
     ### Notice
     Percision will be lost if the original timedelta64
-    unit is smaller than 'milisecond (ms)'.
+    unit is smaller than 'millisecond (ms)'.
     """
-    # Validate series
-    validate_pdseries(s)
     # Conversion
-    arr = delta64array_to_miliseconds(s.values)
+    arr = delta64array_to_milliseconds(get_series_values(s))
     # Reconstruction
-    return Series(arr, index=s.index)
+    return TP_SERIES(arr, index=s.index, name=s.name)
 
 
 @cython.cfunc
@@ -3957,12 +3935,10 @@ def delta64series_to_microseconds(s: Series) -> object:
     Percision will be lost if the original timedelta64
     unit is smaller than 'microsecond (us)'.
     """
-    # Validate series
-    validate_pdseries(s)
     # Conversion
-    arr = delta64array_to_microseconds(s.values)
+    arr = delta64array_to_microseconds(get_series_values(s))
     # Reconstruction
-    return Series(arr, index=s.index)
+    return TP_SERIES(arr, index=s.index, name=s.name)
 
 
 @cython.cfunc
@@ -3975,30 +3951,33 @@ def delta64series_to_nanoseconds(s: Series) -> object:
     Percision will be lost if the original timedelta64
     unit is smaller than 'nanosecond (ns)'.
     """
-    # Validate series
-    validate_pdseries(s)
     # Conversion
-    arr = delta64array_to_nanoseconds(s.values)
+    arr = delta64array_to_nanoseconds(get_series_values(s))
     # Reconstruction
-    return Series(arr, index=s.index)
+    return TP_SERIES(arr, index=s.index, name=s.name)
 
 
-# pandas.Series[timedelta64]: adjustment ---------------------------------------------------------------
+# pandas.Series[timedelta64]: adjustment ----------------------------------------------------------------
 @cython.cfunc
 @cython.inline(True)
-def delta64series_adj_to_ns(s: Series) -> object:
-    """Adjust `pandas.Series[timedelta64]` to `timedelta64[ns]`.
-
-    This function tries to adjust any non-`timedelta64[ns]` Series
-    to `timedelta64[ns]` by converting the values to nanoseconds.
-    """
-    # Validate series
-    validate_pdseries(s)
-    # Check dtype
-    dtype: str = s.dtype.str
-    if dtype == "<m8[ns]" or dtype == "|m8[ns]":
-        return s  # exit: already timedelta64[ns]
-    # Adjust to nanoseconds
-    arr = delta64array_to_nanoseconds(s.values)
-    # Reconstruction
-    return Series(TimedeltaIndex(arr), index=s.index)
+def delta64series_adjust_unit(delta: Series, unit: object) -> object:
+    """Adjust `pandas.Series[timedelta64]` to the desired unit."""
+    # Get the unit
+    s_unit = get_series_unit(delta)
+    if s_unit is None:
+        raise ValueError(
+            "Expect type of `Series[timedelta64] / TimedeltaIndex`, "
+            "instead got: `%s[%s]`." % (type(delta), delta.dtype)
+        )
+    # Validate unit
+    if not set_contains(UNIT_DELTA_ADJ, unit):
+        raise ValueError(
+            "Invalid delta 'unit' to adjust to: {}. "
+            "Must be one of the following <str>: "
+            "['s', 'ms', 'us', 'ns'].".format(repr(unit))
+        )
+    # Already at desired unit
+    if s_unit == unit:
+        return delta
+    # Convert to microseconds
+    return delta.astype("<m8[%s]" % unit)

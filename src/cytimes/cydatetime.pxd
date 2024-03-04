@@ -11,19 +11,25 @@ cdef:
     unsigned int[13] DAYS_IN_MONTH
     unsigned int[5] DAYS_BR_QUARTER
     unsigned int[5] DAYS_IN_QUARTER
+    # . datetime
     datetime.tzinfo UTC
-    # . datetime EPOCH
-    datetime.datetime EPOCH_NAI, EPOCH_UTC
+    datetime.datetime EPOCH_UTC
     long long EPOCH_US, EPOCH_SEC
     int EPOCH_DAY
-    # . max & min datetime seconds
-    long long DT_MIN_US, DT_MAX_US
-    # . nanoseconds conversion
-    long long NS_DAY, NS_HOUR, NS_MINUTE
-    # . microseconds conversion
+    long long DT_MAX_US, DT_MIN_US
+    # . microsecond
     long long US_DAY, US_HOUR
-    # . numpy dtype
-    object DT64ARRAY_DTYPE, DELTA64ARRAY_DTYPE, PDSERIES_DTYPE
+    # . nanosecond
+    long long NS_DAY, NS_HOUR, NS_MINUTE
+    # . charactor
+    Py_UCS4 CHAR_LEFT_BRACKET, CHAR_RIGHT_BRACKET
+    # . unit
+    set UNIT_DELTA_ADJ
+    # . type
+    object TP_DATETIME64DTYPE, TP_TIMEDELTA64DTYPE
+    object TP_SERIES, TP_DATETIMEINDEX, TP_TIMDELTAINDEX
+    # . function
+    object FN_TIME_LOCALTIME
 
 # Struct
 cdef struct ymd:
@@ -257,7 +263,7 @@ cdef long long dt64_to_days(object dt64) except *
 cdef long long dt64_to_hours(object dt64) except *
 cdef long long dt64_to_minutes(object dt64) except *
 cdef long long dt64_to_seconds(object dt64) except *
-cdef long long dt64_to_miliseconds(object dt64) except *
+cdef long long dt64_to_milliseconds(object dt64) except *
 cdef long long dt64_to_microseconds(object dt64) except *
 cdef long long dt64_to_nanoseconds(object dt64) except *
 cdef datetime.date dt64_to_date(object dt64) except *
@@ -274,7 +280,7 @@ cdef long long delta64_to_days(object delta64) except *
 cdef long long delta64_to_hours(object delta64) except *
 cdef long long delta64_to_minutes(object delta64) except * 
 cdef long long delta64_to_seconds(object delta64) except *
-cdef long long delta64_to_miliseconds(object delta64) except *
+cdef long long delta64_to_milliseconds(object delta64) except *
 cdef long long delta64_to_microseconds(object delta64) except *
 cdef long long delta64_to_nanoseconds(object delta64) except *
 cdef datetime.timedelta delta64_to_delta(object delta64) except *
@@ -288,7 +294,7 @@ cdef np.ndarray dt64array_to_days(np.ndarray arr) except *
 cdef np.ndarray dt64array_to_hours(np.ndarray arr) except *
 cdef np.ndarray dt64array_to_minutes(np.ndarray arr) except *
 cdef np.ndarray dt64array_to_seconds(np.ndarray arr) except *
-cdef np.ndarray dt64array_to_miliseconds(np.ndarray arr) except *
+cdef np.ndarray dt64array_to_milliseconds(np.ndarray arr) except *
 cdef np.ndarray dt64array_to_microseconds(np.ndarray arr) except *
 cdef np.ndarray dt64array_to_nanoseconds(np.ndarray arr) except *
 
@@ -301,13 +307,13 @@ cdef np.ndarray delta64array_to_days(np.ndarray arr) except *
 cdef np.ndarray delta64array_to_hours(np.ndarray arr) except *
 cdef np.ndarray delta64array_to_minutes(np.ndarray arr) except *
 cdef np.ndarray delta64array_to_seconds(np.ndarray arr) except *
-cdef np.ndarray delta64array_to_miliseconds(np.ndarray arr) except *
+cdef np.ndarray delta64array_to_milliseconds(np.ndarray arr) except *
 cdef np.ndarray delta64array_to_microseconds(np.ndarray arr) except *
 cdef np.ndarray delta64array_to_nanoseconds(np.ndarray arr) except *
 
-# pandas.Series: check types
-cdef bint is_pdseries(object obj) except -1
-cdef validate_pdseries(object obj) except *
+# pandas.Series
+cdef str get_series_unit(object s) except *
+cdef np.ndarray get_series_values(object s) except *
 
 # pandas.Series[datetime64]: conversion
 cdef object dt64series_to_int(object s, object unit) except *
@@ -315,13 +321,11 @@ cdef object dt64series_to_days(object s) except *
 cdef object dt64series_to_hours(object s) except *
 cdef object dt64series_to_minutes(object s) except *
 cdef object dt64series_to_seconds(object s) except *
-cdef object dt64series_to_miliseconds(object s) except *
+cdef object dt64series_to_milliseconds(object s) except *
 cdef object dt64series_to_microseconds(object s) except *
 cdef object dt64series_to_nanoseconds(object s) except *
 cdef object dt64series_to_ordinals(object s) except *
 cdef object dt64series_to_timestamps(object s) except *
-# pandas.Series[datetime64]: adjustment
-cdef object dt64series_adj_to_ns(object s) except *
 
 # pandas.Series[timedelta64]: conversion
 cdef object delta64series_to_int(object s, object unit) except *
@@ -329,8 +333,8 @@ cdef object delta64series_to_days(object s) except *
 cdef object delta64series_to_hours(object s) except *
 cdef object delta64series_to_minutes(object s) except *
 cdef object delta64series_to_seconds(object s) except *
-cdef object delta64series_to_miliseconds(object s) except *
+cdef object delta64series_to_milliseconds(object s) except *
 cdef object delta64series_to_microseconds(object s) except *
 cdef object delta64series_to_nanoseconds(object s) except *
 # pandas.Series[timedelta64]: adjustment
-cdef object delta64series_adj_to_ns(object series) except *
+cdef object delta64series_adjust_unit(object delta, object unit) except *
