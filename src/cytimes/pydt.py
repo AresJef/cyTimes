@@ -30,9 +30,13 @@ from cytimes import errors, cydatetime as cydt
 __all__ = ["pydt"]
 
 # Constants -----------------------------------------------------------------------------------
-RLDELTA_DTYPE: object = relativedelta
-ZONEINFO_DTYPE: object = ZoneInfo
-TIMEZONES_AVAILABLE: set[str] = available_timezones()
+# . timezone
+TIMEZONE_AVAILABLE: set[str] = available_timezones()
+# . type
+TP_ZONEINFO: object = ZoneInfo
+TP_TIMESTAMP: object = Timestamp
+TP_DATETIME64: object = np.datetime64
+TP_RELATIVEDELTA: object = relativedelta
 
 
 # pydt (Python Datetime) ----------------------------------------------------------------------
@@ -40,6 +44,7 @@ TIMEZONES_AVAILABLE: set[str] = available_timezones()
 @cython.inline(True)
 @cython.exceptval(check=False)
 def access_pydt_datetime(pt: pydt) -> datetime.datetime:
+    """Access the datetime of the pydt `<datetime.datetime>`."""
     return pt._dt
 
 
@@ -51,11 +56,30 @@ def parse_tzinfo(tz: object) -> object:
     if tz is None or cydt.is_tzinfo(tz):
         return tz
     try:
-        return ZONEINFO_DTYPE(tz)
+        return TP_ZONEINFO(tz)
     except Exception as err:
         raise errors.InvalidTimezoneError(
             "Failed to create timezone [{}]: {}.".format(repr(tz), err)
         ) from err
+
+
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(check=False)
+def cal_absolute_microsecond(
+    millisecond: cython.int,
+    microsecond: cython.int,
+) -> cython.int:
+    """Calcualte the absolute microsecond along with a given millisecond `<int>`."""
+    if millisecond > 0:
+        us: cython.int = min(millisecond, 999) * 1_000
+        if microsecond > 0:
+            us += microsecond % 1_000
+    elif microsecond > 0:
+        us: cython.int = min(microsecond, 999_999)
+    else:
+        us: cython.int = -1
+    return us
 
 
 @cython.cclass
@@ -244,7 +268,7 @@ class pydt:
             raise errors.InvalidTimezoneError(f"<{cls.__name__}>\n{err}") from err
         return cls(cydt.dt_fr_microseconds(microseconds, tzinfo, fold))
 
-    # Initializer -----------------------------------------------------------------------------
+    # Constructor -----------------------------------------------------------------------------
     def __init__(
         self,
         dtobj: str | datetime.datetime | datetime.date | pydt | None = None,
@@ -427,12 +451,12 @@ class pydt:
     @property
     def ts(self) -> Timestamp:
         """Access as `<pandas.Timestamp>`."""
-        return Timestamp(self._dt)
+        return TP_TIMESTAMP(self._dt)
 
     @property
     def dt64(self) -> np.datetime64:
         """Access as `<numpy.datetime64>`."""
-        return np.datetime64(cydt.dt_to_microseconds_utc(self._dt), "us")
+        return TP_DATETIME64(cydt.dt_to_microseconds_utc(self._dt), "us")
 
     @property
     def ordinal(self) -> int:
@@ -1353,7 +1377,7 @@ class pydt:
     def _capi_to_curr_month(self, day: cython.int) -> pydt:
         """(cfunc) Go to specific 'day' of the
         current month `<pydt>`."""
-        # Invalid day value
+        # Invalid 'day' value
         if day < 1:
             return self  # exit: invalid day
 
@@ -1566,26 +1590,13 @@ class pydt:
         of the current week `<pydt>`."""
         # Validate weekday
         if weekday > 6:
-            weekday = 6
+            weekday = weekday % 7
         cur_wkd: cython.uint = self._capi_weekday()
         if weekday == cur_wkd:
             return self  # exit: same weekday
 
         # Generate
-        delta: cython.int = weekday - cur_wkd
-        return self._new(
-            cydt.gen_dt(
-                self._capi_year(),
-                self._capi_month(),
-                self._capi_day() + delta,
-                self._capi_hour(),
-                self._capi_minute(),
-                self._capi_second(),
-                self._capi_microsecond(),
-                self._capi_tzinfo(),
-                self._capi_fold(),
-            )
-        )
+        return self._new(cytimedelta(weekday=weekday)._add_datetime(self._dt))
 
     @cython.cfunc
     @cython.inline(True)
@@ -1598,20 +1609,7 @@ class pydt:
             return self  # exit: same weekday
 
         # Generate
-        delta: cython.int = new_wkd - cur_wkd
-        return self._new(
-            cydt.gen_dt(
-                self._capi_year(),
-                self._capi_month(),
-                self._capi_day() + delta,
-                self._capi_hour(),
-                self._capi_minute(),
-                self._capi_second(),
-                self._capi_microsecond(),
-                self._capi_tzinfo(),
-                self._capi_fold(),
-            )
-        )
+        return self._new(cytimedelta(weekday=new_wkd)._add_datetime(self._dt))
 
     @cython.cfunc
     @cython.inline(True)
@@ -1698,11 +1696,12 @@ class pydt:
         hour: cython.int = -1,
         minute: cython.int = -1,
         second: cython.int = -1,
+        millisecond: cython.int = -1,
         microsecond: cython.int = -1,
     ) -> pydt:
-        """Go to specific 'hour', 'minute', 'second'
-        and 'microsecond' of the current datetime `<pydt>`."""
-        return self._capi_to_time(hour, minute, second, microsecond)
+        """Go to specific 'hour', 'minute', 'second', 'millisecond'
+        and 'microsecond' of the current time `<pydt>`."""
+        return self._capi_to_time(hour, minute, second, millisecond, microsecond)
 
     # . c-api - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     @cython.cfunc
@@ -1779,20 +1778,22 @@ class pydt:
         hour: cython.int,
         minute: cython.int,
         second: cython.int,
+        millisecond: cython.int,
         microsecond: cython.int,
     ) -> pydt:
-        """(cfunc) Go to specific 'hour', 'minute', "second'
-        and 'microsecond' of the time `<pydt>`."""
+        """(cfunc) Go to specific 'hour', 'minute', "second',
+        'millisecond' and 'microsecond' of the time `<pydt>`."""
+        microsecond = cal_absolute_microsecond(millisecond, microsecond)
         return self._new(
             # fmt: off
             cydt.gen_dt(
                 self._capi_year(),
                 self._capi_month(),
                 self._capi_day(),
-                hour if 0 <= hour <= 23 else self._capi_hour(),
-                minute if 0 <= minute <= 59 else self._capi_minute(),
-                second if 0 <= second <= 59 else self._capi_second(),
-                microsecond if 0 <= microsecond <= 999_999 else self._capi_microsecond(),
+                min(hour, 23) if hour >= 0 else self._capi_hour(),
+                min(minute, 59) if minute >= 0 else self._capi_minute(),
+                min(second, 59) if second >= 0 else self._capi_second(),
+                microsecond if microsecond >= 0 else self._capi_microsecond(),
                 self._capi_tzinfo(),
                 self._capi_fold(),
             )
@@ -1831,14 +1832,14 @@ class pydt:
 
     def tz_switch(
         self,
-        targ_tz: str | datetime.tzinfo,
+        targ_tz: str | datetime.tzinfo | None,
         base_tz: str | datetime.tzinfo | None = None,
         naive: bool = False,
     ) -> pydt:
         """Switch to 'targ_tz' timezone from 'base_tz' timezone `<pydt>`.
 
-        :param targ_tz `<str/tzinfo>`: The target timezone to convert.
-        :param base_tz `<str/tzinfo>`: The base timezone to localize. Defaults to `None`.
+        :param targ_tz `<str/tzinfo/None>`: The target timezone to convert.
+        :param base_tz `<str/tzinfo/None>`: The base timezone to localize. Defaults to `None`.
         :param naive `<bool>`: Whether to return as timezone-naive. Defaults to `False`.
         :return `<pydt>`: pydt after switch of timezone.
 
@@ -1863,7 +1864,7 @@ class pydt:
     @cython.exceptval(check=False)
     def _capi_tz_available(self) -> set[str]:
         """(cfunc) Access all the available timezone names `<set[str]>`."""
-        return TIMEZONES_AVAILABLE
+        return TIMEZONE_AVAILABLE
 
     @cython.cfunc
     @cython.inline(True)
@@ -1915,8 +1916,8 @@ class pydt:
     ) -> pydt:
         """(cfunc) Switch to 'targ_tz' timezone from 'base_tz' timezone `<pydt>`.
 
-        :param targ_tz `<str/tzinfo>`: The target timezone to convert.
-        :param base_tz `<str/tzinfo>`: The base timezone to localize. Defaults to `None`.
+        :param targ_tz `<str/tzinfo/None>`: The target timezone to convert.
+        :param base_tz `<str/tzinfo/None>`: The base timezone to localize. Defaults to `None`.
         :param naive `<bool>`: Whether to return as timezone-naive. Defaults to `False`.
         :return `<pydt>`: pydt after switch of timezone.
 
@@ -1935,16 +1936,16 @@ class pydt:
         """
         # Pydt is timezone-aware
         dt: datetime.datetime
-        locl_tz = self._capi_tzinfo()
+        curr_tz = self._capi_tzinfo()
         targ_tz = self._parse_tzinfo(targ_tz)
-        if locl_tz is not None:
-            # . local == target timezone
-            if locl_tz is targ_tz:
+        if curr_tz is not None:
+            # . current == target timezone
+            if curr_tz is targ_tz:
                 if naive:
                     dt = cydt.dt_replace_tzinfo(self._dt, None)
                 else:
                     return self  # exit: not action
-            # . local => target timezone
+            # . current => target timezone
             else:
                 dt = cydt.dt_astimezone(self._dt, targ_tz)
                 if naive:
@@ -1969,7 +1970,7 @@ class pydt:
         # Invalid
         else:
             raise errors.InvalidTimezoneError(
-                "<{}>\nCannot switch timezone-naive pydt without "
+                "<{}>\nCannot switch timezone-naive '<pydt>' without "
                 "a valid 'base_tz'.".format(self.__class__.__name__)
             )
 
@@ -2105,35 +2106,13 @@ class pydt:
         hours: int = 0,
         minutes: int = 0,
         seconds: int = 0,
-        miliseconds: int = 0,
+        milliseconds: int = 0,
         microseconds: int = 0,
-        year: int = -1,
-        month: int = -1,
-        day: int = -1,
-        weekday: int | str | None = None,
-        hour: int = -1,
-        minute: int = -1,
-        second: int = -1,
-        milisecond: int = -1,
-        microsecond: int = -1,
     ) -> pydt:
         """Add 'timedelta' to the current `<pydt>`.
 
         Equivalent to `pydt/datetime + cytimes.cytimedelta`.
         For more information, please refer to `<cytimedelta>`.
-
-        ### Absolute Delta
-        :param year `<int>`: The absolute year value. Defaults to `-1 (no change)`.
-        :param month `<int>`: The absolute month value. Defaults to `-1 (no change)`.
-        :param day `<int>`: The absolute day value. Defaults to `-1 (no change)`.
-        :param weekday `<int/str/None>`: The absolute weekday value. Defaults to `None (no change)`.
-            Accepts both integer and string. Where 0=Monday...6=Sunday,
-            or string of weekday name (case-insensitive).
-        :param hour `<int>`: The absolute hour value. Defaults to `-1 (no change)`.
-        :param minute `<int>`: The absolute minute value. Defaults to `-1 (no change)`.
-        :param second `<int>`: The absolute second value. Defaults to `-1 (no change)`.
-        :param milisecond `<int>`: The absolute milisecond value. Defaults to `-1 (no change)`.
-        :param microsecond `<int>`: The absolute microsecond value. Defaults to `-1 (no change)`.
 
         ### Relative delta
         :param years `<int>`: The relative delta of years. Defaults to `0`.
@@ -2143,24 +2122,15 @@ class pydt:
         :param hours `<int>`: The relative delta of hours. Defaults to `0`.
         :param minutes `<int>`: The relative delta of minutes. Defaults to `0`.
         :param seconds `<int>`: The relative delta of seconds. Defaults to `0`.
-        :param miliseconds `<int>`: The relative delta of miliseconds. Defaults to `0`.
+        :param milliseconds `<int>`: The relative delta of milliseconds. Defaults to `0`.
         :param microseconds `<int>`: The relative delta of microseconds. Defaults to `0`.
         """
-        # Parse weekday
-        if weekday is None:
-            weekday = -1
-        elif weekday != -1:
-            weekday = self._parse_weekday(weekday)
-            if weekday == 100:
-                weekday = -1
-
         # Generate
         return self._new(
             # fmt: off
             cytimedelta(
-                years, months, days, weeks, hours, minutes, seconds, 
-                miliseconds, microseconds, year, month, day, weekday, 
-                hour, minute, second, milisecond, microsecond,
+                years, months, days, weeks, hours, minutes, 
+                seconds, milliseconds, microseconds,
             )._add_datetime(self._dt)
             # fmt: on
         )
@@ -2174,35 +2144,13 @@ class pydt:
         hours: int = 0,
         minutes: int = 0,
         seconds: int = 0,
-        miliseconds: int = 0,
+        milliseconds: int = 0,
         microseconds: int = 0,
-        year: int = -1,
-        month: int = -1,
-        day: int = -1,
-        weekday: int | str | None = None,
-        hour: int = -1,
-        minute: int = -1,
-        second: int = -1,
-        milisecond: int = -1,
-        microsecond: int = -1,
     ) -> pydt:
         """Substract 'timedelta' to the current `<pydt>`.
 
         Equivalent to `pydt/datetime - cytimes.cytimedelta`.
         For more information, please refer to `<cytimedelta>`.
-
-        ### Absolute Delta
-        :param year `<int>`: The absolute year value. Defaults to `-1 (no change)`.
-        :param month `<int>`: The absolute month value. Defaults to `-1 (no change)`.
-        :param day `<int>`: The absolute day value. Defaults to `-1 (no change)`.
-        :param weekday `<int/str/None>`: The absolute weekday value. Defaults to `None (no change)`.
-            Accepts both integer and string. Where 0=Monday...6=Sunday,
-            or string of weekday name (case-insensitive).
-        :param hour `<int>`: The absolute hour value. Defaults to `-1 (no change)`.
-        :param minute `<int>`: The absolute minute value. Defaults to `-1 (no change)`.
-        :param second `<int>`: The absolute second value. Defaults to `-1 (no change)`.
-        :param milisecond `<int>`: The absolute milisecond value. Defaults to `-1 (no change)`.
-        :param microsecond `<int>`: The absolute microsecond value. Defaults to `-1 (no change)`.
 
         ### Relative delta
         :param years `<int>`: The relative delta of years. Defaults to `0`.
@@ -2212,24 +2160,15 @@ class pydt:
         :param hours `<int>`: The relative delta of hours. Defaults to `0`.
         :param minutes `<int>`: The relative delta of minutes. Defaults to `0`.
         :param seconds `<int>`: The relative delta of seconds. Defaults to `0`.
-        :param miliseconds `<int>`: The relative delta of miliseconds. Defaults to `0`.
+        :param milliseconds `<int>`: The relative delta of milliseconds. Defaults to `0`.
         :param microseconds `<int>`: The relative delta of microseconds. Defaults to `0`.
         """
-        # Parse weekday
-        if weekday is None:
-            weekday = -1
-        elif weekday != -1:
-            weekday = self._parse_weekday(weekday)
-            if weekday == 100:
-                weekday = -1
-
         # Generate
         return self._new(
             # fmt: off
             cytimedelta(
-                years, months, days, weeks, hours, minutes, seconds, 
-                miliseconds, microseconds, year, month, day, weekday, 
-                hour, minute, second, milisecond, microsecond,
+                years, months, days, weeks, hours, minutes, 
+                seconds, milliseconds, microseconds, 
             )._rsub_datetime(self._dt)
             # fmt: on
         )
@@ -2244,7 +2183,7 @@ class pydt:
         and the given object based on the specified 'unit' `<int>`.
 
         :param other `<str/date/datetime/pydt>`: The target object.
-        :param unit `<str>`: The specific time unit for the delta calculation.
+        :param unit `<str>`: The specific time unit to calculate the delta.
         :param inclusive `<bool>`: Whether to include the endpoint (result + 1). Defaults to `False`.
         :return `<int>`: The delta value.
         """
@@ -2269,26 +2208,26 @@ class pydt:
         :return `<int>`: The delta value.
         """
         # Parse to datetime
-        dt: datetime.datetime = self._parse_dtobj(other)
+        o_dt: datetime.datetime = self._parse_dtobj(other)
 
         # Unit: year
         delta: cython.longlong
         if unit == "Y":
-            base_y: cython.int = self._capi_year()
-            targ_y: cython.int = cydt.access_dt_year(dt)
-            delta = abs(base_y - targ_y)
-            return delta + 1 if inclusive else delta  # exit
+            m_yer: cython.int = self._capi_year()
+            o_yer: cython.int = cydt.access_dt_year(o_dt)
+            delta = abs(m_yer - o_yer)
+            return delta + inclusive  # exit
         # Unit: month
         if unit == "M":
-            base_y: cython.int = self._capi_year()
-            targ_y: cython.int = cydt.access_dt_year(dt)
-            base_m: cython.int = self._capi_month()
-            targ_m: cython.int = cydt.access_dt_month(dt)
-            delta = abs((base_y - targ_y) * 12 + (base_m - targ_m))
-            return delta + 1 if inclusive else delta  # exit
+            m_yer: cython.int = self._capi_year()
+            o_yer: cython.int = cydt.access_dt_year(o_dt)
+            m_mth: cython.int = self._capi_month()
+            o_mth: cython.int = cydt.access_dt_month(o_dt)
+            delta = abs((m_yer - o_yer) * 12 + (m_mth - o_mth))
+            return delta + inclusive  # exit
 
         # Calculate delta in microseconds
-        diff: cython.longlong = cydt.dt_sub_dt_us(self._dt, dt)
+        diff: cython.longlong = cydt.dt_sub_dt_us(self._dt, o_dt)
         delta = abs(diff)
 
         # Unit: week
@@ -2296,9 +2235,9 @@ class pydt:
             delta = delta // cydt.US_DAY
             if diff > 0:
                 delta += cydt.ymd_weekday(
-                    cydt.access_dt_year(dt),
-                    cydt.access_dt_month(dt),
-                    cydt.access_dt_day(dt),
+                    cydt.access_dt_year(o_dt),
+                    cydt.access_dt_month(o_dt),
+                    cydt.access_dt_day(o_dt),
                 )
             else:
                 delta += self._capi_weekday()
@@ -2329,7 +2268,7 @@ class pydt:
             )
 
         # Return delta
-        return delta + 1 if inclusive else delta  # exit
+        return delta + inclusive  # exit
 
     # Manipulate: Replace ---------------------------------------------------------------------
     def replace(
@@ -2340,6 +2279,7 @@ class pydt:
         hour: cython.int = -1,
         minute: cython.int = -1,
         second: cython.int = -1,
+        millisecond: cython.int = -1,
         microsecond: cython.int = -1,
         tzinfo: str | datetime.tzinfo | None = -1,
         fold: cython.int = -1,
@@ -2354,6 +2294,7 @@ class pydt:
         :param hour `<int>`: The absolute hour value. Defaults to `-1 (no change)`.
         :param minute `<int>`: The absolute minute value. Defaults to `-1 (no change)`.
         :param second `<int>`: The absolute second value. Defaults to `-1 (no change)`.
+        :param millisecond `<int>`: The absolute millisecond value. Defaults to `-1 (no change)`.
         :param microsecond `<int>`: The absolute microsecond value. Defaults to `-1 (no change)`.
         :param tzinfo `<str/tzinfo/None>`: The timezone name or instance. Defaults to `-1 (no change)`.
         :param fold `<int>`: The ambiguous timezone fold value. Defaults to `-1 (no change)`.
@@ -2361,8 +2302,8 @@ class pydt:
         """
         # fmt: off
         return self._capi_replace(
-            year, month, day, hour, minute, 
-            second, microsecond, tzinfo, fold
+            year, month, day, hour, minute, second, 
+            millisecond, microsecond, tzinfo, fold
         )
         # fmt: on
 
@@ -2377,6 +2318,7 @@ class pydt:
         hour: cython.int = -1,
         minute: cython.int = -1,
         second: cython.int = -1,
+        millisecond: cython.int = -1,
         microsecond: cython.int = -1,
         tzinfo: object = -1,
         fold: cython.int = -1,
@@ -2391,6 +2333,7 @@ class pydt:
         :param hour `<int>`: The absolute hour value. Defaults to `-1 (no change)`.
         :param minute `<int>`: The absolute minute value. Defaults to `-1 (no change)`.
         :param second `<int>`: The absolute second value. Defaults to `-1 (no change)`.
+        :param millisecond `<int>`: The absolute millisecond value. Defaults to `-1 (no change)`.
         :param microsecond `<int>`: The absolute microsecond value. Defaults to `-1 (no change)`.
         :param tzinfo `<str/tzinfo/None>`: The timezone name or instance. Defaults to `-1 (no change)`.
         :param fold `<int>`: The ambiguous timezone fold value. Defaults to `-1 (no change)`.
@@ -2404,8 +2347,8 @@ class pydt:
         return self._new(
             # fmt: off
             cydt.dt_replace(
-                self._dt, year, month, day, hour, minute, 
-                second, microsecond, tzinfo, fold
+                self._dt, year, month, day, hour, minute, second, 
+                cal_absolute_microsecond(millisecond, microsecond), tzinfo, fold
             )
             # fmt: on
         )
@@ -2429,7 +2372,7 @@ class pydt:
     @cython.cfunc
     @cython.inline(True)
     def _parse_dtobj(self, dtobj: object) -> datetime.datetime:
-        """(Internal) Parser time object to `<datetime.datetime>`."""
+        """(Internal) Parser object to `<datetime.datetime>`."""
         # Type of '<datetime>'
         if cydt.is_dt_exact(dtobj):
             return dtobj
@@ -2452,7 +2395,7 @@ class pydt:
         if cydt.is_dt64(dtobj):
             return cydt.dt64_to_dt(dtobj)
         # Invalid
-        raise errors.InvalidTimeObjectError(
+        raise errors.InvalidDatetimeObjectError(
             "<{}>\nFailed to parse 'dtobj': {}.\n"
             "Error: Unsupported data type {}.".format(
                 self.__class__.__name__, repr(dtobj), type(dtobj)
@@ -2462,7 +2405,7 @@ class pydt:
     @cython.cfunc
     @cython.inline(True)
     def _parse_dtstr(self, dtstr: object) -> datetime.datetime:
-        """(Internal) Parse time string to `<datetime.datetime>`."""
+        """(Internal) Parse string to `<datetime.datetime>`."""
         try:
             return Parser(self._cfg).parse(
                 dtstr,
@@ -2473,7 +2416,7 @@ class pydt:
                 self._fuzzy,
             )
         except Exception as err:
-            raise errors.InvalidTimeObjectError(
+            raise errors.InvalidDatetimeObjectError(
                 "<{}> {}".format(self.__class__.__name__, err)
             ) from err
 
@@ -2592,7 +2535,7 @@ class pydt:
             return self._add_cytimedelta(other)
         if isinstance(other, cytimedelta):
             return self._add_cytimedelta(other)
-        if isinstance(other, RLDELTA_DTYPE):
+        if isinstance(other, TP_RELATIVEDELTA):
             return self._add_relativedelta(other)
         # . unlikely numpy object
         if cydt.is_delta64(other):
@@ -2606,7 +2549,7 @@ class pydt:
             return self._add_cytimedelta(other)
         if isinstance(other, cytimedelta):
             return self._add_cytimedelta(other)
-        if isinstance(other, RLDELTA_DTYPE):
+        if isinstance(other, TP_RELATIVEDELTA):
             return self._add_relativedelta(other)
         # . unlikely numpy object
         # TODO: this will not work since numpy does not return NotImplemented
@@ -2651,7 +2594,7 @@ class pydt:
             return self._sub_timedelta(other)
         if isinstance(other, cytimedelta):
             return self._sub_cytimedelta(other)
-        if isinstance(other, RLDELTA_DTYPE):
+        if isinstance(other, TP_RELATIVEDELTA):
             return self._sub_relativedelta(other)
         # . unlikely numpy object
         if cydt.is_dt64(other):

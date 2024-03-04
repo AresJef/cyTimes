@@ -6,14 +6,16 @@ from cytimes cimport cydatetime as cydt
 from cytimes.cytimedelta cimport cytimedelta
 
 # Constants
-# . timezone
 cdef:
-    object RLDELTA_DTYPE, ZONEINFO_DTYPE
-    set TIMEZONES_AVAILABLE
+    # . timezone
+    set TIMEZONE_AVAILABLE
+    # . type
+    object TP_ZONEINFO, TP_TIMESTAMP, TP_DATETIME64, TP_RELATIVEDELTA
 
 # pydt (Python Datetime)
 cdef datetime.datetime access_pydt_datetime(pydt pt) noexcept
 cdef object parse_tzinfo(object tz) except *
+cdef int cal_absolute_microsecond(int millisecond, int microsecond) noexcept
 
 cdef class pydt:
     cdef:
@@ -109,7 +111,7 @@ cdef class pydt:
     cdef bint _capi_is_time_end(pydt self) except -1
     cdef pydt _capi_to_time_start(pydt self) noexcept
     cdef pydt _capi_to_time_end(pydt self) noexcept
-    cdef pydt _capi_to_time(pydt self, int hour, int minute, int second, int microsecond) noexcept
+    cdef pydt _capi_to_time(pydt self, int hour, int minute, int second, int millisecond, int microsecond) noexcept
     # Manipulate: Timezone
     cdef set _capi_tz_available(pydt self) noexcept
     cdef pydt _capi_tz_localize(pydt self, object tz) except *
@@ -123,8 +125,8 @@ cdef class pydt:
     cdef long long _capi_cal_delta(pydt self, object other, object unit, bint inclusive=?) except *
     # Manipulate: Replace
     cdef pydt _capi_replace(
-        pydt self, int year=?, int month=?, int day=?, int hour=?, int minute=?, 
-        int second=?, int microsecond=?, object tzinfo=?, int fold=?) except *
+        pydt self, int year=?, int month=?, int day=?, int hour=?, int minute=?, int second=?, 
+        int millisecond=?, int microsecond=?, object tzinfo=?, int fold=?) except *
     # Core methods
     cdef pydt _new(pydt self, datetime.datetime dt) noexcept
     cdef datetime.datetime _parse_dtobj(pydt self, object dtobj) except *
