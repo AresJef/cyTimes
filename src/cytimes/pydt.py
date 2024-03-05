@@ -1596,7 +1596,8 @@ class pydt:
             return self  # exit: same weekday
 
         # Generate
-        return self._new(cytimedelta(weekday=weekday)._add_datetime(self._dt))
+        delta: cython.int = weekday - cur_wkd
+        return self._new(cydt.dt_add(self._dt, days=delta))
 
     @cython.cfunc
     @cython.inline(True)
@@ -1609,7 +1610,8 @@ class pydt:
             return self  # exit: same weekday
 
         # Generate
-        return self._new(cytimedelta(weekday=new_wkd)._add_datetime(self._dt))
+        delta: cython.int = new_wkd - cur_wkd
+        return self._new(cydt.dt_add(self._dt, days=delta))
 
     @cython.cfunc
     @cython.inline(True)
