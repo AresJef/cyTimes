@@ -32,7 +32,7 @@ if platform.system() == "Windows":
         extension("cydatetime.py", True),
         extension("cymath.py", False),
         extension("cyparser.py", True),
-        extension("cytime.pyx", False),
+        extension("cytime.py", False),
         extension("cytimedelta.py", True),
         extension("pydt.py", True),
         extension("pddt.py", True),
