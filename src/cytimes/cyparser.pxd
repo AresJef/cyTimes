@@ -101,6 +101,7 @@ cdef class Parser:
     cdef bint _parse_isoformat_date(Parser self, str dstr, unsigned int length) except -1
     cdef bint _parse_isoformat_time(Parser self, str tstr, unsigned int length) except -1
     cdef bint _parse_isoformat_hms(Parser self, str tstr, unsigned int length) except -1
+    cdef bint _parse_isoformat_extra(Parser self, str estr, unsigned int length, bint ignoretz) except -1
     cdef unsigned int _find_isoformat_tz(Parser self, str tstr, unsigned int length) except -1
     cdef Py_UCS4 _get_char(Parser self, unsigned int index) noexcept
     # Numeric token
@@ -126,11 +127,13 @@ cdef class Parser:
     cdef bint _parse_tzoffset_token(Parser self, str token) except -1
     cdef int _calculate_tzoffset(Parser self, str token_r1, int sign, int offset) noexcept
     # Get token
+    cdef bint _parse_tokens(Parser self, str dtstr, unsigned int length) except -1
     cdef str _get_token(Parser self, int index) noexcept
     cdef str _get_token_r1(Parser self) noexcept
     cdef str _get_token_r2(Parser self) noexcept
     cdef str _get_token_r3(Parser self) noexcept
     cdef str _get_token_r4(Parser self) noexcept
+    cdef _reset_tokens(Parser self) noexcept
     # Config
     cdef bint _is_token_pertain(Parser self, object token) except -1
     cdef bint _is_token_jump(Parser self, object token) except -1

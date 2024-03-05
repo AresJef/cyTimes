@@ -88,6 +88,7 @@ CONFIG_AMPM: dict[str, int] = {
     "p": 1,  "pm": 1, "afternoon": 1, "nachmittag": 1, "pomeriggio": 1, "tarde": 1,  "tarde": 1, "middag": 1,  "eftermiddag": 1, "popołudnie": 1, "öğleden": 1, "下午": 1 }
 CONFIG_TZINFO: dict[str, int] = {
     "utc": 0, # Universal Time Coordinate
+    "gmt": 0, # Greenwich Mean Time
     "pst": -8 * 3_600, # Pacific Standard Time
     "cet":  1 * 3_600, # Central European Time
 }
@@ -1739,10 +1740,8 @@ class Parser:
     @cython.exceptval(-1, check=False)
     def _process_core(self) -> cython.bint:
         """(Internal) The core process to parse the 'dtstr' `<bool>`."""
-        # Convert dtstr to tokens
-        self._tokens = parse_timelex(self._dtstr, self._dtstr_len)
-        self._tokens_count = list_len(self._tokens)
-        self._index = 0
+        # Parse tokens
+        self._parse_tokens(self._dtstr, self._dtstr_len)
         self._result = Result()
 
         # Parse token
@@ -1750,11 +1749,7 @@ class Parser:
             # . access token
             token = self._get_token(self._index)
             # . reset tokens
-            self._token_r1 = None
-            self._token_r2 = None
-            self._token_r3 = None
-            self._token_r4 = None
-
+            self._reset_tokens()
             # . numeric token
             if self._parse_numeric_token(token):
                 self._index += 1
@@ -2038,6 +2033,7 @@ class Parser:
         if not 1 <= year <= 9_999:
             return False  # exit: invalid year
         self._result.append_ymd(year, 1)
+        self._result._century_specified = True
 
         # Parse month & day
         if self._isodate_type <= 2:
@@ -2156,17 +2152,17 @@ class Parser:
         if length < 2:
             return False  # exit: isoformat time to short [HH].
 
-        # Search for isoformat timezone
+        # Find isoformat timezone position
         if self._ignoretz:
             tz_pos: cython.uint = 0
         else:
             tz_pos: cython.uint = self._find_isoformat_tz(tstr, length)
 
-        # Parse HMS.f (without iso timezone)
+        # Parse HMS.f (w/o isoformat timezone)
         if tz_pos == 0:
             return self._parse_isoformat_hms(tstr, length)  # exit: success/fail
 
-        # Parse HMS.f (with iso timezone)
+        # Parse HMS.f (w/t isoformat timezone)
         hms_len: cython.uint = tz_pos - 1
         if not self._parse_isoformat_hms(tstr[0:hms_len], hms_len):
             return False  # exit: invalid time component
@@ -2179,9 +2175,9 @@ class Parser:
 
         # Parse timezone
         pos_ed: cython.uint = tz_pos + 2
-        # . parse tz hour
         if pos_ed > length:
             return False  # exit: incomplete tzoffset
+        # . parse tz hour
         try:
             hour: cython.int = int(tstr[tz_pos:pos_ed])
         except Exception:
@@ -2207,10 +2203,18 @@ class Parser:
         tzsign: cython.int = 1 if tz_sep == CHAR_PLUS else -1
         # . calculate tzoffset
         offset: cython.int = tzsign * (hour * 3_600 + minute * 60)
-        if self._result.tzoffset != -100_000:
+        if self._result.tzoffset != -100_000:  # [tz] + tzoffset => UTC
             self._result.tzoffset = self._result.tzoffset - offset
         else:
-            self._result.tzoffset = offset
+            self._result.tzoffset = offset  # tzoffset is UTC
+
+        # Parse extra characters
+        if pos_ed < length:
+            return self._parse_isoformat_extra(
+                tstr[pos_ed:length], length - pos_ed, True
+            )
+
+        # Finished
         return True  # exit: success
 
     @cython.cfunc
@@ -2267,25 +2271,57 @@ class Parser:
                 comps[3] = val
                 pos = pos_ed
 
-            # Parse [possible] timezone name
-            if not self._ignoretz and pos < length:
-                # . search for first alpha
-                while pos < length:
-                    if is_ascii_alpha_lower(str_loc(tstr, pos)):
-                        break
-                    pos += 1
-                # . parse timezone name
-                if length - pos >= 3:
-                    offset = self._token_to_tzoffset(tstr[pos:length])
-                    if offset == -100_000:
-                        return False  # exit: invalid timezone name
-                    self._result.tzoffset = offset
+            # Extra characters
+            if pos < length:
+                # Append HMS
+                self._result.hour = comps[0]
+                self._result.minute = comps[1]
+                self._result.second = comps[2]
+                self._result.microsecond = comps[3]
+                # Parse extra characters
+                return self._parse_isoformat_extra(
+                    tstr[pos:length], length - pos, self._ignoretz
+                )
 
         # Append HMS
         self._result.hour = comps[0]
         self._result.minute = comps[1]
         self._result.second = comps[2]
         self._result.microsecond = comps[3]
+        return True  # exit: success
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _parse_isoformat_extra(
+        self,
+        estr: str,
+        length: cython.uint,
+        ignoretz: cython.bint,
+    ) -> cython.bint:
+        """(Internal) Parse the extra components of the isoformat string `<int>`.
+        Extra components limits to AM/PM & timezone name.
+        """
+        # Parse tokens
+        self._parse_tokens(estr, length)
+
+        # Parse token
+        while self._index < self._tokens_count:
+            # . access token
+            token = self._get_token(self._index)
+            # . reset tokens
+            self._reset_tokens()
+            # . am/pm token
+            if self._parse_ampm_token(token):
+                self._index += 1
+            # . tzname token
+            elif not ignoretz and self._parse_tzname_token(token):
+                self._index += 1
+            # . jump token
+            else:
+                self._index += 1
+
+        # Finished
         return True  # exit: success
 
     @cython.cfunc
@@ -2900,6 +2936,19 @@ class Parser:
     # Get token ----------------------------------------------------------------------------
     @cython.cfunc
     @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _parse_tokens(self, dtstr: str, length: cython.uint) -> cython.bint:
+        """(Internal) Parse the tokens from the datetime string."""
+        # Convert dtstr to tokens
+        self._tokens = parse_timelex(dtstr, length)
+        self._tokens_count = list_len(self._tokens)
+        # Reset index
+        self._index = 0
+        # Success
+        return True
+
+    @cython.cfunc
+    @cython.inline(True)
     @cython.exceptval(check=False)
     def _get_token(self, index: cython.int) -> str:
         """(Internal) Get the token by index `<str>`."""
@@ -2947,6 +2996,16 @@ class Parser:
             return self._get_token(self._index + 4)
         else:
             return self._token_r4
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _reset_tokens(self):
+        """(Internal) Reset the cached tokens."""
+        self._token_r1 = None
+        self._token_r2 = None
+        self._token_r3 = None
+        self._token_r4 = None
 
     # Config -------------------------------------------------------------------------------
     @cython.cfunc
