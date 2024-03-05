@@ -110,6 +110,14 @@ pt = pydt.from_ordinal(1)
 pt = pydt.from_timestamp(1)
 ...
 
+# . multi-language support
+# . common month / weekday / ampm
+# . EN / DE / FR / IT / ES / PT / NL / SE / PL / TR / CN
+pt = pydt("februar 23, 2023") # DE
+pt = pydt("martes mayo 23, 2023") # ES
+pt = pydt("2023年3月15日 12时15分50秒") # CN
+...
+
 # Access in different data types
 pt.dt # -> datetime.datetime
 pt.date # -> datetime.date
