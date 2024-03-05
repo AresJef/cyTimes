@@ -116,7 +116,17 @@ class pddt:
             3. Another `<pddt>`.
 
         ### Parser for 'dtobj'. (Only applicable when 'dtobj' must be parsed into Series of Timestamps).
-        :param default `<object>`: The default value to fill-in missing/error datetime string.
+        :param default `<object>`: The default to fill-in missing datetime elements when parsing string 'dtobj'. Defaults to `None`.
+            - `None`: If parser failed to extract Y/M/D values from the string,
+               the date of '1970-01-01' will be used to fill-in the missing year,
+               month & day values.
+            - `<date>`: If parser failed to extract Y/M/D values from the string,
+               the give `date` will be used to fill-in the missing year, month &
+               day values.
+            - `<datetime>`: If parser failed to extract datetime elements from
+               the string, the given `datetime` will be used to fill-in the
+               missing year, month, day, hour, minute, second and microsecond.
+
         :param day1st `<bool>`: Whether to interpret first ambiguous date values as day. Defaults to `False`.
         :param year1st `<bool>`: Whether to interpret first the ambiguous date value as year. Defaults to `False`.
             - Both the 'day1st' & 'year1st' arguments works together to determine how
@@ -1567,9 +1577,10 @@ class pddt:
     def _parse_dtseries(self, dtobj: object) -> object:
         """(Internal) Parse object to `<Series[Timestamp]>`."""
         try:
+            # . parse through pandas
             s = FN_PD_TODATETIME(
                 dtobj,
-                errors="raise" if self._default is None else "coerce",
+                errors="raise",
                 dayfirst=self._day1st,
                 yearfirst=self._year1st,
                 utc=self._utc,
@@ -1579,30 +1590,23 @@ class pddt:
                 origin="unix",
                 cache=True,
             )
-        except OutOfBoundsDatetime as err:
-            dts = [self._parse_datetime(dt, self._default) for dt in dtobj]
+        except Exception as err:
+            # . fallback: parse each element through cyparser
             try:
+                dts = [self._parse_datetime(dt, self._default) for dt in dtobj]
                 return Series(dts).astype("<M8[us]")
             except Exception:
-                raise err
-        except Exception as err:
-            raise errors.InvalidDatetimeObjectError(
-                "<{}>\nUnable to parse 'dtobj' to pandas Series of "
-                "datetime64: {}".format(self.__class__.__name__, err)
-            ) from err
+                raise errors.InvalidDatetimeObjectError(
+                    "<{}>\nUnable to parse 'dtobj' to pandas Series of "
+                    "Timestamps: {}".format(self.__class__.__name__, err)
+                ) from err
 
         # Type `<DatetimeIndex>`
         if isinstance(s, TP_DATETIMEINDEX):
-            # . fill default
-            if self._default is not None and s.hasnans:
-                s = s.fillna(cydt.dt_replace_tzinfo(self._default, s.tz))
             return TP_SERIES(s)
 
         # Type `<Series[Timestamp]>`
-        elif isinstance(s, TP_SERIES):
-            # . fill default
-            if self._default is not None and s.hasnans:
-                s = s.fillna(cydt.dt_replace_tzinfo(self._default, s.dt.tz))
+        if isinstance(s, TP_SERIES):
             return s
 
         # Parse failed
