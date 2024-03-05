@@ -1,6 +1,4 @@
 from timeit import timeit
-from time import perf_counter
-from zoneinfo import ZoneInfo
 from dateutil.parser import parserinfo
 import warnings
 
@@ -460,7 +458,7 @@ def test_parser() -> None:
         # fmt: on
 
 
-def test_pydt_pddt() -> None:
+def test_pydt_pddt(test_us: bool = True) -> None:
     import pandas as pd
     from cytimes.pydt import pydt
     from cytimes.pddt import pddt
@@ -495,7 +493,8 @@ def test_pydt_pddt() -> None:
         for month in range(1, 12 + 1):
             dts.append("%d-%02d-02 03:04:05.000006" % (year, month))
     # "us"
-    dts += ["2300-01-02 03:04:05.000006"]
+    if test_us:
+        dts += ["2300-01-02 03:04:05.000006"]
     # other to compare delta
     other = "2400-01-01 04:05:06.000007"
 
@@ -816,19 +815,14 @@ def test_pydt_pddt() -> None:
 
 
 def benchmark() -> None:
-    import pendulum
     from zoneinfo import ZoneInfo
     from datetime import datetime
     from cytimes.pydt import pydt
     from pendulum import parse as plparse
     from dateutil.parser import parse, isoparse
 
-    rounds = 100_000
-    text = "2023-08-01 12:00:00.000001+02:00"
-    for _ in range(1_000):
-        pt = pydt(text)
-
     # Strict ISO Without timezone
+    rounds = 100_000
     print("Strict Isoformat w/o Timezone".center(80, "-"))
     text = "2023-08-01 12:00:00.000001"
     print(f"Text: {repr(text)}\t\t\tRounds: {rounds}")
@@ -888,9 +882,9 @@ def benchmark() -> None:
     print()
 
     # Datetime Strings Parsing
+    rounds = 1_000
     # fmt: off
     print("Datetime Stings Parsing".center(80, "-"))
-    rounds = 1_000
     texts = gen_test_datetimes()
     print(f"Total datetime strings: {len(texts)}\tRounds: {rounds}")
     t1 = timeit("for text in texts: pydt(text, fuzzy=True)", number=rounds, globals=locals())
@@ -903,5 +897,5 @@ def benchmark() -> None:
 
 if __name__ == "__main__":
     test_parser()
-    test_pydt_pddt()
+    test_pydt_pddt(True)
     benchmark()
