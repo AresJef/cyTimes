@@ -821,64 +821,71 @@ def benchmark() -> None:
     from pendulum import parse as plparse
     from dateutil.parser import parse, isoparse
 
+    def gain(base_t, comp_t) -> str:
+        if base_t < comp_t:
+            res = (comp_t - base_t) / base_t
+        else:
+            res = -(base_t - comp_t) / comp_t
+        return f"+{res:.2f}x" if res >= 0 else f"{res:.2f}x"
+
     # Strict ISO Without timezone
     rounds = 100_000
     print("Strict Isoformat w/o Timezone".center(80, "-"))
     text = "2023-08-01 12:00:00.000001"
-    print(f"Text: {repr(text)}\t\t\tRounds: {rounds}")
+    print(f"Text: {repr(text)}\tRounds: {rounds}")
     t1 = timeit(lambda: pydt(text), number=rounds)
     t2 = timeit(lambda: datetime(2023, 8, 1, 12, 0, 0, 1), number=rounds)
     t3 = timeit(lambda: datetime.fromisoformat(text), number=rounds)
     t4 = timeit(lambda: plparse(text), number=rounds)
     t5 = timeit(lambda: isoparse(text), number=rounds)
     t6 = timeit(lambda: parse(text, ignoretz=True), number=rounds)
-    print(f"- pydt():\t\t{t1}")
-    print(f"- direct create:\t{t2}\t\tPerf Diff: {-t1/t2}x")
-    print(f"- dt.fromisoformat():\t{t3}\t\tPerf Diff: {-t1/t3}x")
-    print(f"- pendulum.parse():\t{t4}\t\tPerf Diff: {t4/t1}x")
-    print(f"- dateutil.isoparse():\t{t5}\t\tPerf Diff: {t5/t1}x")
-    print(f"- dateutil.parse():\t{t6}\t\tPerf Diff: {t6/t1}x")
+    print(f"- pydt():\t\t{t1:.6f}s")
+    print(f"- direct create:\t{t2:.6f}s\tPerf Diff: {gain(t1, t2)}")
+    print(f"- dt.fromisoformat():\t{t3:.6f}s\tPerf Diff: {gain(t1, t3)}")
+    print(f"- pendulum.parse():\t{t4:.6f}s\tPerf Diff: {gain(t1, t4)}")
+    print(f"- dateutil.isoparse():\t{t5:.6f}s\tPerf Diff: {gain(t1, t5)}")
+    print(f"- dateutil.parse():\t{t6:.6f}s\tPerf Diff: {gain(t1, t6)}")
     print()
 
     # Strict ISO With timezone
     print("Strict Isoformat w/t Timezone".center(80, "-"))
     text = "2023-08-01 12:00:00.000001+02:00"
     tz = ZoneInfo("CET")
-    print(f"Text: {repr(text)}\t\tRounds: {rounds}")
+    print(f"Text: {repr(text)}\tRounds: {rounds}")
     t1 = timeit(lambda: pydt(text), number=rounds)
     t2 = timeit(lambda: datetime(2023, 8, 1, 12, 0, 0, 1, tz), number=rounds)
     t3 = timeit(lambda: datetime.fromisoformat(text), number=rounds)
     t4 = timeit(lambda: plparse(text), number=rounds)
     t5 = timeit(lambda: isoparse(text), number=rounds)
     t6 = timeit(lambda: parse(text), number=rounds)
-    print(f"- pydt():\t\t{t1}")
-    print(f"- direct create:\t{t2}\t\tPerf Diff: {-t1/t2}x")
-    print(f"- dt.fromisoformat():\t{t3}\t\tPerf Diff: {-t1/t3}x")
-    print(f"- pendulum.parse():\t{t4}\t\tPerf Diff: {t4/t1}x")
-    print(f"- dateutil.isoparse():\t{t5}\t\tPerf Diff: {t5/t1}x")
-    print(f"- dateutil.parse():\t{t6}\t\tPerf Diff: {t6/t1}x")
+    print(f"- pydt():\t\t{t1:.6f}s")
+    print(f"- direct create:\t{t2:.6f}s\tPerf Diff: {gain(t1, t2)}")
+    print(f"- dt.fromisoformat():\t{t3:.6f}s\tPerf Diff: {gain(t1, t3)}")
+    print(f"- pendulum.parse():\t{t4:.6f}s\tPerf Diff: {gain(t1, t4)}")
+    print(f"- dateutil.isoparse():\t{t5:.6f}s\tPerf Diff: {gain(t1, t5)}")
+    print(f"- dateutil.parse():\t{t6:.6f}s\tPerf Diff: {gain(t1, t6)}")
     print()
 
     # Loose ISO Without timezone
     print("Loose Isoformat w/o Timezone".center(80, "-"))
     text = "2023/08/01 12:00:00.000001"
-    print(f"Text: {repr(text)}\t\t\tRounds: {rounds}")
+    print(f"Text: {repr(text)}\tRounds: {rounds}")
     t1 = timeit(lambda: pydt(text), number=rounds)
     t4 = timeit(lambda: plparse(text), number=rounds)
     t6 = timeit(lambda: parse(text, ignoretz=True), number=rounds)
-    print(f"- pydt():\t\t{t1}")
-    print(f"- pendulum.parse():\t{t4}\t\tPerf Diff: {t4/t1}x")
-    print(f"- dateutil.parse():\t{t6}\t\tPerf Diff: {t6/t1}x")
+    print(f"- pydt():\t\t{t1:.6f}s")
+    print(f"- pendulum.parse():\t{t4:.6f}s\tPerf Diff: {gain(t1, t4)}")
+    print(f"- dateutil.parse():\t{t6:.6f}s\tPerf Diff: {gain(t1, t6)}")
     print()
 
     # Loose ISO With timezone
     print("Loose Isoformat w/t Timezone".center(80, "-"))
     text = "2023/08/01 12:00:00.000001+02:00"
-    print(f"Text: {repr(text)}\t\tRounds: {rounds}")
+    print(f"Text: {repr(text)}\tRounds: {rounds}")
     t1 = timeit(lambda: pydt(text), number=rounds)
     t6 = timeit(lambda: parse(text), number=rounds)
-    print(f"- pydt():\t\t{t1}")
-    print(f"- dateutil.parse():\t{t6}\t\tPerf Diff: {t6/t1}x")
+    print(f"- pydt():\t\t{t1:.6f}s")
+    print(f"- dateutil.parse():\t{t6:.6f}s\tPerf Diff: {gain(t1, t6)}")
     print()
 
     # Datetime Strings Parsing
@@ -889,8 +896,8 @@ def benchmark() -> None:
     print(f"Total datetime strings: {len(texts)}\tRounds: {rounds}")
     t1 = timeit("for text in texts: pydt(text, fuzzy=True)", number=rounds, globals=locals())
     t2 = timeit("for text in texts: parse(text, fuzzy=True)", number=rounds, globals=locals())
-    print(f"- pydt():\t\t{t1}")
-    print(f"- dateutil.parse():\t{t2}\t\tPerf Diff: {t2/t1}x")
+    print(f"- pydt():\t\t{t1:.6f}s")
+    print(f"- dateutil.parse():\t{t2:.6f}s\tPerf Diff: {gain(t1, t2)}")
     print()
     # fmt: on
 

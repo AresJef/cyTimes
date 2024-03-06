@@ -46,49 +46,49 @@ over python codes. The following results are tested on an Apple M1 Pro:
 ##### Strict Isoformat without Timezone
 ```
 -------------------------Strict Isoformat w/o Timezone--------------------------
-Text: '2023-08-01 12:00:00.000001'               Rounds: 100000
-- pydt():                0.0727469171397388
-- direct create:         0.013459332985803485    Perf Diff: -5.404942222357538x
-- dt.fromisoformat():    0.009812582982704043    Perf Diff: -7.413635866108314x
-- pendulum.parse():      0.4064326249063015      Perf Diff: 5.5869395004820515x
-- dateutil.isoparse():   0.29077695799060166     Perf Diff: 3.997103512057442x
-- dateutil.parse():      1.9294464997947216      Perf Diff: 26.522725301038776x
+Text: '2023-08-01 12:00:00.000001'           Rounds: 100000
+- pydt():                    0.074330s
+- direct create:             0.013534s       Perf Diff: -4.49x
+- dt.fromisoformat():        0.009996s       Perf Diff: -6.44x
+- pendulum.parse():          0.401372s       Perf Diff: +4.40x
+- dateutil.isoparse():       0.303617s       Perf Diff: +3.08x
+- dateutil.parse():          2.002287s       Perf Diff: +25.94x
 ```
 
 ##### Strict Isoformat with Timezone
 ```
 -------------------------Strict Isoformat w/t Timezone--------------------------
-Text: '2023-08-01 12:00:00.000001+02:00'         Rounds: 100000
-- pydt():                0.09097179211676121
-- direct create:         0.014719957951456308    Perf Diff: -6.180166574984066x
-- dt.fromisoformat():    0.012942458968609571    Perf Diff: -7.028941898707402x
-- pendulum.parse():      0.40357612492516637     Perf Diff: 4.436277614572892x
-- dateutil.isoparse():   0.42020483408123255     Perf Diff: 4.619067342785824x
-- dateutil.parse():      2.508688542060554       Perf Diff: 27.576554047002638x
+Text: '2023-08-01 12:00:00.000001+02:00'     Rounds: 100000
+- pydt():                    0.090997s
+- direct create:             0.015171s       Perf Diff: -5.00x
+- dt.fromisoformat():        0.013202s       Perf Diff: -5.89x
+- pendulum.parse():          0.417198s       Perf Diff: +3.58x
+- dateutil.isoparse():       0.442597s       Perf Diff: +3.86x
+- dateutil.parse():          2.585248s       Perf Diff: +27.41x
 ```
 ##### Loose Isoformat without Timezone
 ```
 --------------------------Loose Isoformat w/o Timezone--------------------------
-Text: '2023/08/01 12:00:00.000001'               Rounds: 100000
-- pydt():                0.07247600005939603
-- pendulum.parse():      0.8165926251094788      Perf Diff: 11.267076334790264x
-- dateutil.parse():      1.9235264579765499      Perf Diff: 26.540185115074898x
+Text: '2023/08/01 12:00:00.000001'           Rounds: 100000
+- pydt():                    0.074071s
+- pendulum.parse():          0.863186s       Perf Diff: +10.65x
+- dateutil.parse():          2.056935s       Perf Diff: +26.77x
 ```
 
 ##### Loose Isoformat with Timezone
 ```
 --------------------------Loose Isoformat w/t Timezone--------------------------
-Text: '2023/08/01 12:00:00.000001+02:00'         Rounds: 100000
-- pydt():                0.09058075002394617
-- dateutil.parse():      2.50379070895724        Perf Diff: 27.64153209479201x
+Text: '2023/08/01 12:00:00.000001+02:00'     Rounds: 100000
+- pydt():                    0.090140s
+- dateutil.parse():          2.583445s       Perf Diff: +27.66x
 ```
 
 ##### Parsing Datetime Strings
 ```
 ----------------------------Datetime Stings Parsing-----------------------------
-Total datetime strings: 374                      Rounds: 1000
-- pydt():                0.6471776249818504
-- dateutil.parse():      7.1415234580636024      Perf Diff: 11.034873862123835x
+Total datetime strings: 374                  Rounds: 1000
+- pydt():                    0.644587s
+- dateutil.parse():          7.360487s       Perf Diff: +10.42x
 ```
 
 ### Usage (pydt)
