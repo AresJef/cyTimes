@@ -30,22 +30,20 @@ def extension(filename: str, include_np: bool, *extra_compile_args: str) -> Exte
 if platform.system() == "Windows":
     extensions = [
         extension("cydatetime.py", True),
-        extension("cymath.py", False),
         extension("cyparser.py", True),
-        extension("cytime.py", False),
         extension("cytimedelta.py", True),
-        extension("pydt.py", True),
-        extension("pddt.py", True),
+        extension("pddatetime.py", True),
+        extension("pydatetime.py", True),
+        extension("typeref.py", False),
     ]
 else:
     extensions = [
-        extension("cydatetime.py", True, "-Wno-unreachable-code"),
-        extension("cymath.py", False, "-Wno-unreachable-code"),
-        extension("cyparser.py", True, "-Wno-unreachable-code"),
-        extension("cytime.py", False, "-Wno-unreachable-code"),
+        extension("cydatetime.py", True, "-Wno-unreachable-code", "-Wno-sign-compare"),
+        extension("cyparser.py", True, "-Wno-unreachable-code", "-Wno-sign-compare"),
         extension("cytimedelta.py", True, "-Wno-unreachable-code"),
-        extension("pydt.py", True, "-Wno-unreachable-code"),
-        extension("pddt.py", True, "-Wno-unreachable-code"),
+        extension("pddatetime.py", True, "-Wno-unreachable-code"),
+        extension("pydatetime.py", True, "-Wno-unreachable-code", "-Wno-sign-compare"),
+        extension("typeref.py", False, "-Wno-unreachable-code"),
     ]
 
 # Build
