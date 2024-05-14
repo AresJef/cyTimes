@@ -447,7 +447,7 @@ def test_cytimedelta(rounds: int) -> None:
     from random import randint
     from datetime import datetime, date, timedelta
     from dateutil.relativedelta import relativedelta
-    from cytimes.cytimedelta import cytimedelta
+    from cytimes.cydelta import cytimedelta
 
     def test_add(
         obj: object,

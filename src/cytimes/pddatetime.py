@@ -16,7 +16,7 @@ from cython.cimports.cpython import datetime  # type: ignore
 from cython.cimports.cpython.set import PySet_Contains as set_contains  # type: ignore
 from cython.cimports.cpython.dict import PyDict_GetItem as dict_getitem  # type: ignore
 from cython.cimports.cytimes import cydatetime as cydt, typeref  # type: ignore
-from cython.cimports.cytimes.cytimedelta import combine_ms_us  # type: ignore
+from cython.cimports.cytimes.cydelta import combine_ms_us  # type: ignore
 from cython.cimports.cytimes.pydatetime import pydt, access_pydt, TIMEZONE_AVAILABLE  # type: ignore
 from cython.cimports.cytimes.cyparser import Config, Parser, CONFIG_MONTH, CONFIG_WEEKDAY  # type: ignore
 

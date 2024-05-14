@@ -1,7 +1,7 @@
 # /usr/bin/python
 # -*- coding: UTF-8 -*-
 from cytimes.cyparser import Config, Parser
-from cytimes.cytimedelta import cytimedelta
+from cytimes.cydelta import cytimedelta
 from cytimes.pydatetime import pydt
 from cytimes.pddatetime import pddt
 from cytimes.errors import (

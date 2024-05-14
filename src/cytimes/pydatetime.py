@@ -11,7 +11,7 @@ from cython.cimports.cpython import datetime  # type: ignore
 from cython.cimports.libc.math import roundl, ceill, floorl  # type: ignore
 from cython.cimports.cpython.dict import PyDict_GetItem as dict_getitem  # type: ignore
 from cython.cimports.cytimes import cydatetime as cydt, typeref  # type: ignore
-from cython.cimports.cytimes.cytimedelta import cytimedelta, combine_ms_us  # type: ignore
+from cython.cimports.cytimes.cydelta import cytimedelta, combine_ms_us  # type: ignore
 from cython.cimports.cytimes.cyparser import Config, Parser, CONFIG_MONTH, CONFIG_WEEKDAY  # type: ignore
 
 np.import_array()
@@ -25,7 +25,7 @@ import datetime, numpy as np
 from zoneinfo import available_timezones
 from pandas import Timestamp
 from cytimes.cyparser import Config
-from cytimes.cytimedelta import cytimedelta
+from cytimes.cydelta import cytimedelta
 from cytimes import cydatetime as cydt, typeref, errors
 
 __all__ = ["pydt"]
