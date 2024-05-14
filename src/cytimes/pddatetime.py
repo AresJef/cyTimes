@@ -91,7 +91,7 @@ class pddt:
         else:
             dt = cydt.gen_dt_now_tz(parse_tzinfo(tz))  # type: ignore
         # Generate pddt
-        return cls(Series([dt] * size, name=name), unit=unit, copy=False)
+        return cls(typeref.SERIES([dt] * size, name=name), unit=unit, copy=False)
 
     @classmethod
     def from_dtobj(
@@ -163,7 +163,7 @@ class pddt:
                 % (type(dtobj), repr(dtobj))
             )
         # Generate pddt
-        return cls(Series([dt] * size, name=name), unit=unit, copy=False)
+        return cls(typeref.SERIES([dt] * size, name=name), unit=unit, copy=False)
 
     @classmethod
     def from_datetime(
@@ -217,7 +217,7 @@ class pddt:
             ) 
         # fmt: on
         # Generate pddt
-        return cls(Series([dt] * size, name=name), unit=unit, copy=False)
+        return cls(typeref.SERIES([dt] * size, name=name), unit=unit, copy=False)
 
     @classmethod
     def from_range(
@@ -2033,13 +2033,11 @@ class pddt:
                 # fmt: off
                 dt: Series = typeref.SERIES(
                     dts, index=dtsobj.index, dtype="<M8[us]",
-                    name=name if name is not None else dtsobj.name,
+                    name=dtsobj.name if name is None else name,
                 )
                 # fmt: on
-            elif name is not None:
-                dt: Series = typeref.SERIES(dts, dtype="<M8[us]", name=name)
             else:
-                dt: Series = typeref.SERIES(dts, dtype="<M8[us]")
+                dt: Series = typeref.SERIES(dts, dtype="<M8[us]", name=name)
         except Exception as err:
             raise errors.InvalidDatetimeObjectError(
                 "<'%s'>\nFailed to parse 'dtsobj': %s" % (self.__class__.__name__, err)
@@ -2520,7 +2518,7 @@ class pddt:
         if isinstance(other, (datetime.date, str, pydt, typeref.DATETIME64)):
             other = self._parse_dtobj(other, self._default, False)
             o_dt: Series = self._parse_dtsobj(
-                Series(other, index=self._dt.index), None, None, None, False
+                typeref.SERIES(other, index=self._dt.index), None, None, None, False
             )
         else:
             o_dt: Series = self._parse_dtsobj(other, self._default, None, None, False)
