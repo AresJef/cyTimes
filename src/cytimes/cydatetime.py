@@ -443,8 +443,8 @@ def days_of_year_to_ymd(year: cython.uint, days: cython.uint) -> ymd:  # type: i
     days -= leap
     month: cython.uint = 3
     for _ in range(10):
-        days_bf_month: cython.uint = DAYS_BR_MONTH[month]
-        if days <= days_bf_month:
+        days_bf: cython.uint = DAYS_BR_MONTH[month]
+        if days <= days_bf:
             day: cython.uint = days - DAYS_BR_MONTH[month - 1]
             return ymd(year, month, day)  # type: ignore
         month += 1
@@ -2302,8 +2302,7 @@ def validate_dt64(obj: object):
     Raise `TypeError` if object type is incorrect."""
     if not np.is_datetime64_object(obj):
         raise TypeError(
-            "Expects <'numpy.datetime64'>, "
-            "instead got: %s %s." % (type(obj), repr(obj))
+            "Expects <'numpy.datetime64'>, " "instead got: %s %r." % (type(obj), obj)
         )
 
 
@@ -2396,7 +2395,7 @@ def dt64_to_int(
     else:
         raise ValueError(
             "Does not support conversion of "
-            "<'numpy.datetime64'> to time unit: %s." % repr(unit)
+            "<'numpy.datetime64'> to time unit: %r." % unit
         )
 
 
@@ -2414,7 +2413,7 @@ def dt64_to_days(dt64: object) -> cython.longlong:
     val: np.npy_datetime = np.get_datetime64_value(dt64)
     unit: np.NPY_DATETIMEUNIT = np.get_datetime64_unit(dt64)
 
-    # Converstion
+    # Conversion
     # . common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
         return val // NS_DAY
@@ -2458,7 +2457,7 @@ def dt64_to_hours(dt64: object) -> cython.longlong:
     val: np.npy_datetime = np.get_datetime64_value(dt64)
     unit: np.NPY_DATETIMEUNIT = np.get_datetime64_unit(dt64)
 
-    # Converstion
+    # Conversion
     # . common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
         return val // NS_HOUR
@@ -2502,7 +2501,7 @@ def dt64_to_minutes(dt64: object) -> cython.longlong:
     val: np.npy_datetime = np.get_datetime64_value(dt64)
     unit: np.NPY_DATETIMEUNIT = np.get_datetime64_unit(dt64)
 
-    # Converstion
+    # Conversion
     # . common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
         return val // NS_MINUTE
@@ -2546,7 +2545,7 @@ def dt64_to_seconds(dt64: object) -> cython.longlong:
     val: np.npy_datetime = np.get_datetime64_value(dt64)
     unit: np.NPY_DATETIMEUNIT = np.get_datetime64_unit(dt64)
 
-    # Converstion
+    # Conversion
     # . common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
         return val // 1_000_000_000
@@ -2590,7 +2589,7 @@ def dt64_to_milliseconds(dt64: object) -> cython.longlong:
     val: np.npy_datetime = np.get_datetime64_value(dt64)
     unit: np.NPY_DATETIMEUNIT = np.get_datetime64_unit(dt64)
 
-    # Converstion
+    # Conversion
     # . common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
         return val // 1_000_000
@@ -2634,7 +2633,7 @@ def dt64_to_microseconds(dt64: object) -> cython.longlong:
     val: np.npy_datetime = np.get_datetime64_value(dt64)
     unit: np.NPY_DATETIMEUNIT = np.get_datetime64_unit(dt64)
 
-    # Converstion
+    # Conversion
     # . common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
         return val // 1_000
@@ -2678,7 +2677,7 @@ def dt64_to_nanoseconds(dt64: object) -> cython.longlong:
     val: np.npy_datetime = np.get_datetime64_value(dt64)
     unit: np.NPY_DATETIMEUNIT = np.get_datetime64_unit(dt64)
 
-    # Converstion
+    # Conversion
     # . common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
         return val
@@ -2775,27 +2774,35 @@ def validate_td64(obj: object):
     Raise `TypeError` if the object type is incorrect."""
     if not np.is_timedelta64_object(obj):
         raise TypeError(
-            "Expects <'numpy.timedelta64'>, "
-            "instead got: %s %s." % (type(obj), repr(obj))
+            "Expects <'numpy.timedelta64'>, " "instead got: %s %r." % (type(obj), obj)
         )
 
 
 # numpy.timedelta64: conversion ------------------------------------------------------------------------
 @cython.cfunc
 @cython.inline(True)
+@cython.cdivision(True)
 def td64_to_isoformat(td64: object) -> str:
     """Convert numpy.timedelta64 to ISO format: '%H:%M:%S.f' `<'str'>`."""
     us: cython.longlong = td64_to_microseconds(td64)
-    days: cython.longlong = us // US_DAY
-    secs: cython.longlong = us // 1_000_000
-    hours: cython.longlong = secs // 3_600 % 24 + days * 24
-    minutes: cython.longlong = secs // 60 % 60
-    seconds: cython.longlong = secs % 60
-    microseconds: cython.longlong = us % 1_000_000
-    if microseconds == 0:
-        return "%02d:%02d:%02d" % (hours, minutes, seconds)
+    negate: cython.bint = us < 0
+    us = abs(us)
+    hours = us // US_HOUR
+    us %= US_HOUR
+    minutes = us // 60_000_000
+    us %= 60_000_000
+    seconds = us // 1_000_000
+    us %= 1_000_000
+    if us == 0:
+        if negate:
+            return "-%02d:%02d:%02d" % (hours, minutes, seconds)
+        else:
+            return "%02d:%02d:%02d" % (hours, minutes, seconds)
     else:
-        return "%02d:%02d:%02d.%06d" % (hours, minutes, seconds, microseconds)
+        if negate:
+            return "-%02d:%02d:%02d.%06d" % (hours, minutes, seconds, us)
+        else:
+            return "%02d:%02d:%02d.%06d" % (hours, minutes, seconds, us)
 
 
 @cython.cfunc
@@ -2828,7 +2835,7 @@ def td64_to_int(
     else:
         raise ValueError(
             "Does not support conversion of "
-            "<'numpy.timedelta64'> to time unit: %s." % repr(unit)
+            "<'numpy.timedelta64'> to time unit: %r." % unit
         )
 
 
@@ -2846,7 +2853,7 @@ def td64_to_days(td64: object) -> cython.longlong:
     val: np.npy_timedelta = np.get_timedelta64_value(td64)
     unit: np.NPY_DATETIMEUNIT = np.get_datetime64_unit(td64)
 
-    # Converstion
+    # Conversion
     # . common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
         return val // NS_DAY
@@ -2890,7 +2897,7 @@ def td64_to_hours(td64: object) -> cython.longlong:
     val: np.npy_timedelta = np.get_timedelta64_value(td64)
     unit: np.NPY_DATETIMEUNIT = np.get_datetime64_unit(td64)
 
-    # Converstion
+    # Conversion
     # . common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
         return val // NS_HOUR
@@ -2934,7 +2941,7 @@ def td64_to_minutes(td64: object) -> cython.longlong:
     val: np.npy_timedelta = np.get_timedelta64_value(td64)
     unit: np.NPY_DATETIMEUNIT = np.get_datetime64_unit(td64)
 
-    # Converstion
+    # Conversion
     # . common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
         return val // NS_MINUTE
@@ -2978,7 +2985,7 @@ def td64_to_seconds(td64: object) -> cython.longlong:
     val: np.npy_timedelta = np.get_timedelta64_value(td64)
     unit: np.NPY_DATETIMEUNIT = np.get_datetime64_unit(td64)
 
-    # Converstion
+    # Conversion
     # . common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
         return val // 1_000_000_000
@@ -3022,7 +3029,7 @@ def td64_to_milliseconds(td64: object) -> cython.longlong:
     val: np.npy_timedelta = np.get_timedelta64_value(td64)
     unit: np.NPY_DATETIMEUNIT = np.get_datetime64_unit(td64)
 
-    # Converstion
+    # Conversion
     # . common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
         return val // 1_000_000
@@ -3066,7 +3073,7 @@ def td64_to_microseconds(td64: object) -> cython.longlong:
     val: np.npy_timedelta = np.get_timedelta64_value(td64)
     unit: np.NPY_DATETIMEUNIT = np.get_datetime64_unit(td64)
 
-    # Converstion
+    # Conversion
     # . common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
         return val // 1_000
@@ -3110,7 +3117,7 @@ def td64_to_nanoseconds(td64: object) -> cython.longlong:
     val: np.npy_timedelta = np.get_timedelta64_value(td64)
     unit: np.NPY_DATETIMEUNIT = np.get_datetime64_unit(td64)
 
-    # Converstion
+    # Conversion
     # . common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
         return val
@@ -3286,7 +3293,7 @@ def dt64array_to_int(
     else:
         raise ValueError(
             "Does not support conversion of "
-            "<'ndarray[datetime64]'> to time unit: %s." % repr(unit)
+            "<'ndarray[datetime64]'> to time unit: %r." % unit
         )
 
 
@@ -3926,7 +3933,7 @@ def td64array_to_int(
     else:
         raise ValueError(
             "Does not support conversion of "
-            "<'ndarray[timedelta64]'> to time unit: %s." % repr(unit)
+            "<'ndarray[timedelta64]'> to time unit: %r." % unit
         )
 
 
@@ -4508,7 +4515,7 @@ def dt64series_to_int(
     else:
         raise ValueError(
             "Does not support conversion of "
-            "<'Series[datetime64]'> to time unit: %s." % repr(unit)
+            "<'Series[datetime64]'> to time unit: %r." % unit
         )
 
 
@@ -4828,7 +4835,7 @@ def td64series_to_int(
     else:
         raise ValueError(
             "Does not support conversion of "
-            "<'Series[timedelta64]'> to time unit: %s." % repr(unit)
+            "<'Series[timedelta64]'> to time unit: %r." % unit
         )
 
 
@@ -5008,8 +5015,8 @@ def td64series_adjust_unit(s: Series, unit: Literal["s", "ms", "us", "ns"]) -> o
     # Validate target unit
     if not set_contains(TD_UNIT_ADJUSTMENT, unit):
         raise ValueError(
-            "Cannot adjust <'Series[timedelta64]'> to unit: %s. "
-            "Supported units are <'str'>: ['s', 'ms', 'us', 'ns']." % repr(unit)
+            "Cannot adjust <'Series[timedelta64]'> to unit: %r. "
+            "Supported units are <'str'>: ['s', 'ms', 'us', 'ns']." % unit
         )
     # Already is target unit
     if get_td64series_unit(s) == unit:

@@ -13,35 +13,35 @@ from dateutil.relativedelta import relativedelta
 
 # Constants -------------------------------------------------------------------------
 # . native types
-ZONEINFO: type = ZoneInfo
-STRUCT_TIME: type = struct_time
+ZONEINFO: type[ZoneInfo] = ZoneInfo
+STRUCT_TIME: type[struct_time] = struct_time
 
 # . numpy types
-DATETIME64: type = np.datetime64
+DATETIME64: type[np.datetime64] = np.datetime64
 DT64_ARRAY: type = np.dtypes.DateTime64DType
-TIMEDELTA64: type = np.timedelta64
+TIMEDELTA64: type[np.timedelta64] = np.timedelta64
 TD64_ARRAY: type = np.dtypes.TimeDelta64DType
 
 # . pandas types
-SERIES: type = Series
-DATETIMEINDEX: type = DatetimeIndex
-TIMESTAMP: type = Timestamp
-DT64TZ_ARRAY: type = DatetimeTZDtype
-TIMEDELTAINDEX: type = TimedeltaIndex
-TIMEDELTA: type = Timedelta
+SERIES: type[Series] = Series
+DATETIMEINDEX: type[DatetimeIndex] = DatetimeIndex
+TIMESTAMP: type[Timestamp] = Timestamp
+DT64TZ_ARRAY: type[DatetimeTZDtype] = DatetimeTZDtype
+TIMEDELTAINDEX: type[TimedeltaIndex] = TimedeltaIndex
+TIMEDELTA: type[Timedelta] = Timedelta
 
 # . pandas offsets
-BASEOFFSET: type = BaseOffset
-OFST_DATEOFFSET: object = offsets.DateOffset
-OFST_MICRO: object = offsets.Micro
-OFST_DAY: object = offsets.Day
-OFST_MONTHBEGIN: object = offsets.MonthBegin
-OFST_MONTHEND: object = offsets.MonthEnd
-OFST_QUARTERBEGIN: object = offsets.QuarterBegin
-OFST_QUARTEREND: object = offsets.QuarterEnd
-OFST_YEARBEGIN: object = offsets.YearBegin
-OFST_YEAREND: object = offsets.YearEnd
+BASEOFFSET: type[BaseOffset] = BaseOffset
+OFST_DATEOFFSET: type[offsets.DateOffset] = offsets.DateOffset
+OFST_MICRO: type[offsets.Micro] = offsets.Micro
+OFST_DAY: type[offsets.Day] = offsets.Day
+OFST_MONTHBEGIN: type[offsets.MonthBegin] = offsets.MonthBegin
+OFST_MONTHEND: type[offsets.MonthEnd] = offsets.MonthEnd
+OFST_QUARTERBEGIN: type[offsets.QuarterBegin] = offsets.QuarterBegin
+OFST_QUARTEREND: type[offsets.QuarterEnd] = offsets.QuarterEnd
+OFST_YEARBEGIN: type[offsets.YearBegin] = offsets.YearBegin
+OFST_YEAREND: type[offsets.YearEnd] = offsets.YearEnd
 
 # . dateutil types
-PARSERINFO: type = parserinfo
-RELATIVEDELTA: type = relativedelta
+PARSERINFO: type[parserinfo] = parserinfo
+RELATIVEDELTA: type[relativedelta] = relativedelta

@@ -28,7 +28,7 @@ cdef inline object parse_tzinfo(object tz):
         return typeref.ZONEINFO(tz)
     except Exception as err:
         raise errors.InvalidTimezoneError(
-            "<'pydt'>\nInvalid timezone: %s %s." % (type(tz), repr(tz))
+            "<'pydt'>\nInvalid timezone: %s %r." % (type(tz), tz)
         ) from err
 
 # pydt (Python Datetime)

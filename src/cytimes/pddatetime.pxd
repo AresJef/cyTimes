@@ -33,7 +33,7 @@ cdef inline object parse_tzinfo(object tz):
         return typeref.ZONEINFO(tz)
     except Exception as err:
         raise errors.InvalidTimezoneError(
-            "<'pddt'>\nInvalid timezone: %s %s." % (type(tz), repr(tz))
+            "<'pddt'>\nInvalid timezone: %s %r." % (type(tz), tz)
         ) from err
 
 cdef inline int ndarray_setitem_1d(np.ndarray arr, np.npy_intp i, object item):

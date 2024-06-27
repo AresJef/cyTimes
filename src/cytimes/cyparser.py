@@ -326,9 +326,9 @@ class Result:
         try:
             num: cython.int = int(value)
         except Exception as err:
-            raise ValueError("Invalid Y/M/D value: %s" % repr(value)) from err
+            raise ValueError("Invalid Y/M/D value: %r" % value) from err
         if num < 0:
-            raise ValueError("Invalid Y/M/D value: %s" % repr(value))
+            raise ValueError("Invalid Y/M/D value: %r" % value)
 
         # Pre-determine the year label.
         if num >= 100 or str_len(value) > 2:
@@ -621,7 +621,7 @@ class Config:
         if not isinstance(info, typeref.PARSERINFO):
             raise errors.InvalidParserInfo(
                 "<'%s'>\nConfig can only import from <'dateutil.parser.parserinfo'>, "
-                "instead got: %s %s." % (cls.__name__, type(info), repr(info))
+                "instead got: %s %r." % (cls.__name__, type(info), info)
             )
 
         # Import settings
@@ -1206,8 +1206,8 @@ class Config:
             w: str = word
         except Exception as err:
             raise errors.InvalidConfigWord(
-                "<'%s'>\nThe 'word' for [Config.%s] must be <'str'>, instead got: %s %s"
-                % (self.__class__.__name__, setting, type(word), repr(word))
+                "<'%s'>\nThe 'word' for [Config.%s] must be <'str'>, instead got: %s %r"
+                % (self.__class__.__name__, setting, type(word), word)
             ) from err
         w = w.lower()
 
@@ -1264,8 +1264,8 @@ class Config:
             v: cython.int = value
         except Exception as err:
             raise errors.InvalidConfigValue(
-                "<'%s'>\nThe value for [Config.%s] must be <'int'> instead got: %s %s."
-                % (self.__class__.__name__, setting, type(value), repr(value))
+                "<'%s'>\nThe value for [Config.%s] must be <'int'> instead got: %s %r."
+                % (self.__class__.__name__, setting, type(value), value)
             ) from err
         if not min <= v <= max:
             raise errors.InvalidConfigValue(

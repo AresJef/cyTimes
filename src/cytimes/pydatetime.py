@@ -1502,8 +1502,8 @@ class pydt:
             return cydt.dt64_to_dt(dtobj)
         # Invalid
         raise errors.InvalidDatetimeObjectError(
-            "<'%s'>\nUnsupported 'dtobj' type: %s %s."
-            % (self.__class__.__name__, type(dtobj), repr(dtobj))
+            "<'%s'>\nUnsupported 'dtobj' type: %s %r."
+            % (self.__class__.__name__, type(dtobj), dtobj)
         )
 
     @cython.cfunc
@@ -1549,8 +1549,8 @@ class pydt:
 
         # Incorrect data type
         raise errors.InvalidMonthError(
-            "<'%s'>\nInvalid 'month' data type: %s %s."
-            % (self.__class__.__name__, type(month), repr(month))
+            "<'%s'>\nInvalid 'month' data type: %s %r."
+            % (self.__class__.__name__, type(month), month)
         )
 
     @cython.cfunc
@@ -1596,8 +1596,8 @@ class pydt:
 
         # Incorrect data type
         raise errors.InvalidWeekdayError(
-            "<'%s'>\nInvalid 'weekday' data type: %s %s."
-            % (self.__class__.__name__, type(weekday), repr(weekday))
+            "<'%s'>\nInvalid 'weekday' data type: %s %r."
+            % (self.__class__.__name__, type(weekday), weekday)
         )
 
     @cython.cfunc
@@ -1619,8 +1619,8 @@ class pydt:
         if freq == "us":
             return 1
         raise errors.InvalidFrequencyError(
-            "<'%s'>\nInvalid 'freq' input: %s. Must be one of the following <'str'>: "
-            "['D', 'h', 'm', 's', 'ms', 'us']." % (self.__class__.__name__, repr(freq))
+            "<'%s'>\nInvalid 'freq' input: %r. Must be one of the following <'str'>: "
+            "['D', 'h', 'm', 's', 'ms', 'us']." % (self.__class__.__name__, freq)
         )
 
     # Special methods: addition ---------------------------------------------------------------
@@ -2231,9 +2231,9 @@ class pydt:
             incl = -1
         else:
             raise errors.InvalidDeltaInclusiveError(
-                "<'%s'>\nInvalid 'inclusive' input: %s. "
+                "<'%s'>\nInvalid 'inclusive' input: %r. "
                 "Must be one of the following <'str'>: ['one', 'both', 'neither']."
-                % (self.__class__.__name__, repr(inclusive))
+                % (self.__class__.__name__, inclusive)
             )
 
         # Unit: year
@@ -2271,10 +2271,10 @@ class pydt:
         # Invalid unit: != microsecond
         elif unit != "us":
             raise errors.InvalidDeltaUnitError(
-                "<'%s'>\nInvalid delta 'unit' input: %s. "
+                "<'%s'>\nInvalid delta 'unit' input: %r. "
                 "Must be one of the following <'str'>: "
                 "['Y', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us']."
-                % (self.__class__.__name__, repr(unit))
+                % (self.__class__.__name__, unit)
             )
         # Return delta
         return delta + incl  # exit

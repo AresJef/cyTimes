@@ -159,8 +159,7 @@ class pddt:
         # Invalid
         else:
             raise errors.InvalidDatetimeObjectError(
-                "<'pddt'>\nUnsupported 'dtobj' type: %s %s."
-                % (type(dtobj), repr(dtobj))
+                "<'pddt'>\nUnsupported 'dtobj' type: %s %r." % (type(dtobj), dtobj)
             )
         # Generate pddt
         return cls(typeref.SERIES([dt] * size, name=name), unit=unit, copy=False)
@@ -1562,7 +1561,7 @@ class pddt:
         # Invalid
         raise errors.InvalidTimezoneError(
             "<'%s'>\nCannot switch timezone-naive '<'pddt'>' without "
-            "a valid 'base_tz': %s." % (self.__class__.__name__, repr(base_tz))
+            "a valid 'base_tz': %r." % (self.__class__.__name__, base_tz)
         )
 
     @cython.ccall
@@ -1902,8 +1901,8 @@ class pddt:
             return cydt.dt64_to_dt(dtobj) if strict else dtobj
         # Invalid
         raise errors.InvalidDatetimeObjectError(
-            "<'%s'>\nUnsupported 'dtobj' type: %s %s."
-            % (self.__class__.__name__, type(dtobj), repr(dtobj))
+            "<'%s'>\nUnsupported 'dtobj' type: %s %r."
+            % (self.__class__.__name__, type(dtobj), dtobj)
         )
 
     @cython.cfunc
@@ -2095,8 +2094,8 @@ class pddt:
 
         # Incorrect data type
         raise errors.InvalidMonthError(
-            "<'%s'>\nInvalid 'month' data type: %s %s."
-            % (self.__class__.__name__, type(month), repr(month))
+            "<'%s'>\nInvalid 'month' data type: %s %r."
+            % (self.__class__.__name__, type(month), month)
         )
 
     @cython.cfunc
@@ -2142,8 +2141,8 @@ class pddt:
 
         # Incorrect data type
         raise errors.InvalidWeekdayError(
-            "<'%s'>\nInvalid 'weekday' data type: %s %s."
-            % (self.__class__.__name__, type(weekday), repr(weekday))
+            "<'%s'>\nInvalid 'weekday' data type: %s %r."
+            % (self.__class__.__name__, type(weekday), weekday)
         )
 
     @cython.cfunc
@@ -2155,8 +2154,8 @@ class pddt:
         if set_contains(UNIT_FREQUENCY, freq):
             return freq
         raise errors.InvalidFrequencyError(
-            "<'%s'>\nInvalid 'freq' input: %s. Must be one of the following <'str'>: "
-            "['D', 'h', 'm', 's', 'ms', 'us']." % (self.__class__.__name__, repr(freq))
+            "<'%s'>\nInvalid 'freq' input: %r. Must be one of the following <'str'>: "
+            "['D', 'h', 'm', 's', 'ms', 'us']." % (self.__class__.__name__, freq)
         )
 
     @cython.cfunc
@@ -2461,8 +2460,7 @@ class pddt:
             return dt.dt.tz_localize(tz, ambiguous, nonexistent)
         except Exception as err:
             raise errors.InvalidTimezoneError(
-                "<'%s'>\nInvalid 'tz' timezone: %s"
-                % (self.__class__.__name__, repr(tz))
+                "<'%s'>\nInvalid 'tz' timezone: %r" % (self.__class__.__name__, tz)
             ) from err
 
     @cython.cfunc
@@ -2493,8 +2491,7 @@ class pddt:
             return dt.dt.tz_convert(targ_tz)
         except Exception as err:
             raise errors.InvalidTimezoneError(
-                "<'%s'>\nInvalid 'tz' timezone: %s"
-                % (self.__class__.__name__, repr(tz))
+                "<'%s'>\nInvalid 'tz' timezone: %r" % (self.__class__.__name__, tz)
             ) from err
 
     # C-API: Delta -----------------------------------------------------------------------------
@@ -2538,9 +2535,9 @@ class pddt:
             incl = -1
         else:
             raise errors.InvalidDeltaInclusiveError(
-                "<'%s'>\nInvalid 'inclusive' input: %s. "
+                "<'%s'>\nInvalid 'inclusive' input: %r. "
                 "Must be one of the following <'str'>: ['one', 'both', 'neither']."
-                % (self.__class__.__name__, repr(inclusive))
+                % (self.__class__.__name__, inclusive)
             )
 
         # Unit: year
@@ -2595,10 +2592,10 @@ class pddt:
         # Invalid unit
         else:
             raise errors.InvalidDeltaUnitError(
-                "<'%s'>\nInvalid delta 'unit' input: %s. "
+                "<'%s'>\nInvalid delta 'unit' input: %r. "
                 "Must be one of the following <'str'>: "
                 "['Y', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us', 'ns']."
-                % (self.__class__.__name__, repr(unit))
+                % (self.__class__.__name__, unit)
             )
         # Return delta
         delta = FN_NP_ABS(m_val - o_val)
