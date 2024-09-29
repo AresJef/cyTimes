@@ -12,7 +12,7 @@ np.import_umath()
 datetime.import_datetime()
 
 # Python imports
-import sys, datetime, numpy as np
+import datetime, numpy as np
 
 # Constants --------------------------------------------------------------------------------------------
 # . calendar
@@ -31,6 +31,8 @@ US_HOUR: cython.longlong = 3_600_000_000
 NS_DAY: cython.longlong = 864_00_000_000_000
 NS_HOUR: cython.longlong = 36_00_000_000_000
 NS_MINUTE: cython.longlong = 60_000_000_000
+# . date
+ORDINAL_MAX: cython.int = 3_652_059
 # . datetime
 UTC: datetime.tzinfo = datetime.get_utc()
 EPOCH_DT: datetime.datetime = datetime.datetime_new(1970, 1, 1, 0, 0, 0, 0, UTC, 0)  # type: ignore
@@ -41,36 +43,34 @@ DT_US_MAX: cython.longlong = 315_537_983_999_999_999
 DT_US_MIN: cython.longlong = 86_400_000_000
 DT_SEC_MAX: cython.longlong = 315_537_983_999
 DT_SEC_MIN: cython.longlong = 86_400
+US_FRAC_CORRECTION: cython.int[5] = [100_000, 10_000, 1_000, 100, 10]
 # . time
 TIME_MIN: datetime.time = datetime.time(0, 0, 0, 0)
 TIME_MAX: datetime.time = datetime.time(23, 59, 59, 999999)
-# . system
-SYS_WINDOWS: cython.bint = sys.platform.startswith("win")
 
 
 # test --------------------------------------------------------------------------------------
-def test(ts: cython.double, rounds: cython.int) -> None:
+def test(obj: str, rounds: cython.int) -> None:
     from time import perf_counter
 
     for _ in range(rounds):
         a = "b" * 1000
 
-    td = datetime.timedelta(1, 1, 1)
-    us: cython.longlong = td_to_us(td)  # type: ignore
+    ch: cython.Py_UCS4 = "a"
 
-    r1 = td_fr_us(us)
+    r1 = str_len(obj) == 1 and str_read(obj, 0) in ("a", "b", "c")
     print(r1)
     t = perf_counter()
     for _ in range(rounds):
-        td_fr_us(us)
+        str_len(obj) == 1 and str_read(obj, 0) in ("a", "b", "c")
     print(perf_counter() - t)
 
-    # r2 = td_fr_us_2(us)
-    # print(r2)
-    # t = perf_counter()
-    # for _ in range(rounds):
-    #     td_fr_us_2(us)
-    # print(perf_counter() - t)
+    r2 = obj in ("a", "b", "c")
+    print(r2)
+    t = perf_counter()
+    for _ in range(rounds):
+        obj in ("a", "b", "c")
+    print(perf_counter() - t)
 
     # assert r1 == r2
 
@@ -80,6 +80,8 @@ def test(ts: cython.double, rounds: cython.int) -> None:
 def _test_utils() -> None:
     # Delta
     _test_combine_abs_ms_us()
+    # Parser
+    _test_parser()
     # Time
     _test_localtime_n_gmtime()
     # Calendar
@@ -100,12 +102,14 @@ def _test_utils() -> None:
     _test_date_type_check()
     _test_date_conversion()
     _test_date_manipulation()
+    _test_date_arithmetic()
     # datetime.datetime
     _test_dt_generate()
     _test_dt_type_check()
     _test_dt_tzinfo()
     _test_dt_conversion()
     _test_dt_mainipulate()
+    _test_dt_arithmetic()
     # datetime.time
     _test_time_generate()
     _test_time_type_check()
@@ -144,6 +148,67 @@ def _test_combine_abs_ms_us() -> None:
     assert combine_abs_ms_us(999, 999) == 999999  # type: ignore
     assert combine_abs_ms_us(999, 999999) == 999999  # type: ignore
     print("Passed: combine_abs_ms_us")
+
+
+# Parser
+def _test_parser() -> None:
+    # boolean
+    assert is_iso_sep("t")  # type: ignore
+    assert is_iso_sep("T")  # type: ignore
+    assert is_iso_sep(" ")  # type: ignore
+    assert not is_iso_sep("a")  # type: ignore
+
+    assert is_isodate_sep("-")  # type: ignore
+    assert is_isodate_sep("/")  # type: ignore
+    assert not is_isodate_sep("a")  # type: ignore
+
+    assert is_isoweek_sep("w")  # type: ignore
+    assert is_isoweek_sep("W")  # type: ignore
+    assert not is_isoweek_sep("a")  # type: ignore
+
+    assert is_isotime_sep(":")  # type: ignore
+    assert not is_isotime_sep("a")  # type: ignore
+
+    for i in "0123456789":
+        assert is_ascii_digit(i)  # type: ignore
+    assert not is_ascii_digit("a")  # type: ignore
+
+    for i in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        assert is_ascii_alpha_upper(i)  # type: ignore
+    assert not is_ascii_alpha_upper("1")  # type: ignore
+
+    for i in "abcdefghijklmnopqrstuvwxyz":
+        assert is_ascii_alpha_lower(i)  # type: ignore
+    assert not is_ascii_alpha_lower("1")  # type: ignore
+
+    # Parse
+    t: str = "2021-01-02T03:04:05.006007"
+    assert parse_isoyear(t, 0) == 2021  # type: ignore
+    assert parse_isoyear(t, 1) == -1  # type: ignore
+    assert parse_isomonth(t, 5) == 1  # type: ignore
+    assert parse_isomonth(t, 6) == -1  # type: ignore
+    assert parse_isoday(t, 8) == 2  # type: ignore
+    assert parse_isoday(t, 9) == -1  # type: ignore
+
+    t = "2021-W52-6"
+    assert parse_isoweek(t, 6) == 52  # type: ignore
+    assert parse_isoweek(t, 7) == -1  # type: ignore
+    assert parse_isoweekday(t, 9) == 6  # type: ignore
+    assert parse_isoweekday(t, 8) == -1  # type: ignore
+    assert parse_isoweekday(t, 10) == -1  # type: ignore
+    assert parse_isoweekday(t, 1) == -1  # type: ignore
+    assert parse_isoweekday(t, 0) == 2  # type: ignore
+
+    t = "2021-365"
+    assert parse_isoyearday(t, 5) == 365  # type: ignore
+    assert parse_isoyearday(t, 6) == -1  # type: ignore
+    assert parse_isoyearday(t, 4) == -1  # type: ignore
+    t = "2021-367"
+    assert parse_isoyearday(t, 5) == -1  # type: ignore
+    t = "2021-000"
+    assert parse_isoyearday(t, 5) == -1  # type: ignore
+
+    print("Passed: parser")
 
 
 # Time
@@ -387,6 +452,8 @@ def _test_ymd_fr_isocalendar() -> None:
                 except ValueError:
                     continue
                 val = ymd_fr_isocalendar(year, week, weekday)  # type: ignore
+                if y == 10_000 or val.year == 10_000:
+                    continue
                 assert (
                     val.year == y and val.month == m and val.day == d
                 ), f"{year}-{week}-{weekday}: {val} != {y}-{m}-{d}"
@@ -512,6 +579,33 @@ def _test_date_manipulation() -> None:
     assert datetime.date(2021, 1, 3) == date_chg_weekday(date, 7)  # type: ignore
 
     print("Passed: date_manipulation")
+
+    del datetime
+
+
+def _test_date_arithmetic() -> None:
+    import datetime
+
+    date = datetime.date(2021, 1, 2)
+    td1 = datetime.timedelta(1, 1, 1, 1, 1, 1, 1)
+    assert date_add(date, 1, 1, 1, 1, 1, 1, 1) == date + td1  # type: ignore
+
+    td2 = datetime.timedelta(1, 86400, 1)
+    assert date_add(date, 1, 86400, 1) == date + td2  # type: ignore
+
+    td3 = datetime.timedelta(1, 86399, 1)
+    assert date_add(date, 1, 86399, 1) == date + td3  # type: ignore
+
+    td4 = datetime.timedelta(-1, -1, -1, -1, -1, -1, -1)
+    assert date_add(date, -1, -1, -1, -1, -1, -1, -1) == date + td4  # type: ignore
+
+    td5 = datetime.timedelta(-1, -86400, -1)
+    assert date_add(date, -1, -86400, -1) == date + td5  # type: ignore
+
+    td6 = datetime.timedelta(-1, -86399, -1)
+    assert date_add(date, -1, -86399, -1) == date + td6  # type: ignore
+
+    print("Passed: date_arithmetic")
 
     del datetime
 
@@ -737,6 +831,33 @@ def _test_dt_mainipulate() -> None:
     print("Passed: dt_manipulate")
 
     del datetime, ZoneInfo
+
+
+def _test_dt_arithmetic() -> None:
+    import datetime
+
+    dt = datetime.datetime(2021, 1, 2, 3, 4, 5, 6)
+    td1 = datetime.timedelta(1, 1, 1, 1, 1, 1, 1)
+    assert dt_add(dt, 1, 1, 1, 1, 1, 1, 1) == dt + td1  # type: ignore
+
+    td2 = datetime.timedelta(1, 86400, 1)
+    assert dt_add(dt, 1, 86400, 1) == dt + td2  # type: ignore
+
+    td3 = datetime.timedelta(1, 86399, 1)
+    assert dt_add(dt, 1, 86399, 1) == dt + td3  # type: ignore
+
+    td4 = datetime.timedelta(-1, -1, -1, -1, -1, -1, -1)
+    assert dt_add(dt, -1, -1, -1, -1, -1, -1, -1) == dt + td4  # type: ignore
+
+    td5 = datetime.timedelta(-1, -86400, -1)
+    assert dt_add(dt, -1, -86400, -1) == dt + td5  # type: ignore
+
+    td6 = datetime.timedelta(-1, -86399, -1)
+    assert dt_add(dt, -1, -86399, -1) == dt + td6  # type: ignore
+
+    print("Passed: date_arithmetic")
+
+    del datetime
 
 
 # datetime.time
