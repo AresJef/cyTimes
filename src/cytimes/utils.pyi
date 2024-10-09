@@ -113,9 +113,9 @@ def parse_isofraction(data: str, pos: int) -> int:
     """
 
 def slice_to_uint(s: str, start: int, size: int) -> int:
-    """Slice & convert 'data' from 'start' with the 
+    """Slice & convert 'data' from 'start' with the
     given 'size' to an unsigned `<'int'>`.
-    
+
     :raises `ValueError`: If cannot convert characters into an integer.
     """
 
@@ -159,6 +159,11 @@ def hms_fr_us(us: int) -> dict:
 # . year
 def is_leap_year(year: int) -> bool:
     """(cfunc) Determines whether the given 'year' is a leap year `<'bool'>`."""
+
+def is_long_year(year: int) -> bool:
+    """Whether the given 'year' is a long year
+    (maximum ISO week number is 53) `<'bool'>`.
+    """
 
 def leap_bt_years(year1: int, year2: int) -> int:
     """(cfunc) Calculate total leap years between 'year1' and 'year2' `<'int'>`."""
@@ -323,7 +328,7 @@ def date_replace(
 ) -> datetime.date:
     """(cfunc) Replace datetime.date values `<'datetime.date'>`.
 
-    #### Default '-1' mean keep the current value.
+    #### Default '-1' mean keep the original value.
 
     Equivalent to:
     >>> date.replace(year, month, day)
@@ -420,25 +425,79 @@ def dt_utcoffset(dt: datetime.datetime) -> datetime.timedelta | None:
     >>> dt.utcoffset()
     """
 
+def dt_utcoffset_seconds(dt: datetime.datetime) -> int:
+    """(cfunc) Get the tzinfo 'utcoffset' of the datetime in total seconds `<'int'>`.
+
+    #### Returns `-100_000` if utcoffset is None.
+
+    Equivalent to:
+    >>> dt.utcoffset().total_seconds()
+    """
+
 def dt_utcformat(dt: datetime.datetime) -> str | None:
     """(cfunc) Get the tzinfo of the datetime as UTC format '+/-HH:MM' `<'str/None'>`."""
 
-# . conversion
-def dt_to_tm(dt: datetime.datetime, utc: bool = False) -> dict:
-    """(cfunc) Convert datetime.datetime to `<'struct:tm'>`.
+# . value check
+def dt_is_1st_of_year(dt: datetime.datetime) -> bool:
+    """(cfunc) Check if datetime is the 1st day of the year `<'bool'>`
 
-    If 'dt' is timezone-aware, setting 'utc=True', checks 'isdst'
-    and substracts 'utcoffset' from the datetime before conversion.
+    First day of the year: XXXX-01-01
     """
 
+def dt_is_lst_of_year(dt: datetime.datetime) -> bool:
+    """(cfunc) Check if datetime is the last day of the year `<'bool'>`
+
+    Last day of the year: XXXX-12-31
+    """
+
+def dt_is_1st_of_quarter(dt: datetime.datetime) -> bool:
+    """(cfunc) Check if datetime is the 1st day of the quarter `<'bool'>`.
+
+    First day of the quarter: XXXX-(1, 4, 7, 10)-01
+    """
+
+def dt_is_lst_of_quarter(dt: datetime.datetime) -> bool:
+    """Check if datetime is the 1st day of the quarter `<'bool'>`.
+
+    Last day of the quarter: XXXX-(3, 6, 9, 12)-(30, 31)
+    """
+
+def dt_is_1st_of_month(dt: datetime.datetime) -> bool:
+    """(cfunc) Check if datetime is the 1st day of the month `<'bool'>`.
+
+    First day of the month: XXXX-XX-01
+    """
+
+def dt_is_lst_of_month(dt: datetime.datetime) -> bool:
+    """Check if datetime is the last day of the month `<'bool'>`.
+
+    Last day of the month: XXXX-XX-(28, 29, 30, 31)
+    """
+
+def dt_is_start_of_time(dt: datetime.datetime) -> bool:
+    """Check if datetime is at start of the time `<'bool'>`.
+
+    Start of time: 00:00:00.000000
+    """
+
+def dt_is_end_of_time(dt: datetime.datetime) -> bool:
+    """Check if datetime is at end of the time `<'bool'>`.
+
+    End of time: 23:59:59.999999
+    """
+
+# . conversion
+def dt_to_tm(dt: datetime.datetime, utc: bool = False) -> dict:
+    """(cfunc) Convert datetime.datetime to `<'struct:tm'>`."""
+
 def dt_to_strformat(dt: datetime.datetime, fmt: str) -> str:
-    """(cfunc) Convert datetime.datetime to str with the specified 'fmt' `<'str'>`.
+    """(cfunc) Convert datetime.datetime to string with the specified 'fmt' `<'str'>`.
 
     Equivalent to:
     >>> dt.strftime(fmt)
     """
 
-def dt_to_isoformat(dt: datetime.datetime, sep: str = " ", utc: bool = False) -> str:
+def dt_to_isoformat(dt: datetime.datetime, sep: str = "T", utc: bool = False) -> str:
     """(cfunc) Convert datetime.datetime to ISO format `<'str'>`.
 
     If 'dt' is timezone-aware, setting 'utc=True'
@@ -485,11 +544,12 @@ def dt_to_ts(dt: datetime.datetime) -> float:
 def dt_combine(
     date: datetime.date | None = None,
     time: datetime.time | None = None,
+    tz: datetime.tzinfo | None = None,
 ) -> datetime.datetime:
     """(cfunc) Combine datetime.date & datetime.time to `<'datetime.datetime'>`.
 
     - If 'date' is None, use current local date.
-    - If 'time' is None, all time fields are set to 0.
+    - If 'time' is None, all time fields set to 0.
     """
 
 def dt_fr_date(
@@ -534,16 +594,47 @@ def dt_replace(
     hour: int = -1,
     minute: int = -1,
     second: int = -1,
+    millisecond: int = -1,
     microsecond: int = -1,
     tz: object | datetime.tzinfo | None = -1,
     fold: int = -1,
 ) -> datetime.datetime:
     """(cfunc) Replace the datetime.datetime values `<'datetime.datetime'>`.
 
-    #### Default '-1' mean keep the current value.
+    #### Default '-1' mean keep the original value.
 
     Equivalent to:
     >>> dt.replace(year, month, day, hour, minute, second, microsecond, tz, fold)
+    """
+
+def dt_replace_date(
+    dt: datetime.datetime,
+    year: int = -1,
+    month: int = -1,
+    day: int = -1,
+) -> datetime.datetime:
+    """(cfunc) Replace datetime.datetime date component values `<'datetime.datetime'>`.
+
+    #### Default '-1' mean keep the original value.
+
+    Equivalent to:
+    >>> dt.replace(year, month, day)
+    """
+
+def dt_replace_time(
+    dt: datetime.datetime,
+    hour: int = -1,
+    minute: int = -1,
+    second: int = -1,
+    millisecond: int = -1,
+    microsecond: int = -1,
+) -> datetime.datetime:
+    """(cfunc) Replace datetime.datetime time component values `<'datetime.datetime'>`.
+
+    #### Default '-1' mean keep the original value.
+
+    Equivalent to:
+    >>> dt.replace(hour, minute, second, microsecond)
     """
 
 def dt_replace_tz(
@@ -726,7 +817,7 @@ def time_replace(
 ) -> datetime.time:
     """(cfunc) Replace the datetime.time values `<'datetime.time'>`.
 
-    #### Default '-1' mean keep the current value.
+    #### Default '-1' mean keep the original value.
 
     Equivalent to:
     >>> time.replace(hour, minute, second, microsecond, tz, fold)
@@ -808,8 +899,19 @@ def tz_new(hours: int = 0, minutes: int = 0, seconds: int = 0) -> datetime.tzinf
     >>> datetime.timezone(datetime.timedelta(hours=hours, minutes=minites))
     """
 
-def tz_local() -> datetime.tzinfo:
+def tz_local(dt: datetime.datetime | None = None) -> datetime.tzinfo:
     """(cfunc) Get the local `<'datetime.tzinfo'>`."""
+
+def tz_local_seconds(dt: datetime.datetime | None = None) -> int:
+    """Get the local timezone offset in total seconds `<'int'>`."""
+
+def tz_parse(tz: datetime.tzinfo | str) -> datetime.tzinfo | None:
+    """(cfunc) Parse 'tz' object into `<'datetime.tzinfo'>`.
+
+    :param tz `<'datetime.tzinfo/str/None'>`: The timezone object.
+        - If 'tz' is an instance of `<'datetime.tzinfo'>`, return 'tz' directly.
+        - If 'tz' is a string, use Python 'Zoneinfo' to create the timezone object.
+    """
 
 # . type check
 def is_tz(obj: object) -> bool:
@@ -855,6 +957,18 @@ def tz_utcoffset(
 
     Equivalent to:
     >>> tz.utcoffset(dt)
+    """
+
+def tz_utcoffset_seconds(
+    tz: datetime.tzinfo | None,
+    dt: datetime.datetime | None = None,
+) -> int:
+    """(cfunc) Get the 'utcoffset' of the tzinfo in total seconds `<'int'>`.
+
+    #### Returns `-100_000` if utcoffset is None.
+
+    Equivalent to:
+    >>> tz.utcoffset(dt).total_seconds()
     """
 
 def tz_utcformat(
@@ -995,7 +1109,10 @@ def dt64_to_date(dt64: np.datetime64) -> datetime.date:
     returns datetime.date discards the resolution above days.
     """
 
-def dt64_to_dt(dt64: np.datetime64) -> datetime.datetime:
+def dt64_to_dt(
+    dt64: np.datetime64,
+    tz: datetime.tzinfo | None = None,
+) -> datetime.datetime:
     """(cfunc) Convert np.datetime64 to `<'datetime.datetime'>`.
 
     If 'dt64' resolution is higher than 'us',

@@ -13,6 +13,8 @@ datetime.import_datetime()
 
 # Python imports
 import datetime, numpy as np
+from zoneinfo import ZoneInfo
+from cytimes import errors
 
 # Constants --------------------------------------------------------------------------------------------
 # . calendar
@@ -49,30 +51,26 @@ TIME_MIN: datetime.time = datetime.time(0, 0, 0, 0)
 TIME_MAX: datetime.time = datetime.time(23, 59, 59, 999999)
 
 
-# test --------------------------------------------------------------------------------------
-def test(obj: str, rounds: cython.int) -> None:
-    from time import perf_counter
+# datetime.tzinfo --------------------------------------------------------------------------------------
+@cython.cfunc
+@cython.inline(True)
+def tz_parse(tz: datetime.tzinfo | str) -> object:
+    """(cfunc) Parse 'tz' object into `<'datetime.tzinfo/None'>`.
 
-    for _ in range(rounds):
-        a = "b" * 1000
-
-    ch: cython.Py_UCS4 = "a"
-
-    r1 = str_len(obj) == 1 and str_read(obj, 0) in ("a", "b", "c")
-    print(r1)
-    t = perf_counter()
-    for _ in range(rounds):
-        str_len(obj) == 1 and str_read(obj, 0) in ("a", "b", "c")
-    print(perf_counter() - t)
-
-    r2 = obj in ("a", "b", "c")
-    print(r2)
-    t = perf_counter()
-    for _ in range(rounds):
-        obj in ("a", "b", "c")
-    print(perf_counter() - t)
-
-    # assert r1 == r2
+    :param tz `<'datetime.tzinfo/str'>`: The timezone object.
+        - If 'tz' is an instance of `<'datetime.tzinfo'>`, return 'tz' directly.
+        - If 'tz' is a string, use Python 'Zoneinfo' to create the timezone object.
+    """
+    if is_tz(tz):  # type: ignore
+        return tz
+    try:
+        return ZoneInfo(tz)
+    except Exception as err:
+        if tz is None:
+            return None
+        raise errors.InvalidTimezoneError(
+            "invalid timezone '%s': %s." % (tz, err)
+        ) from err
 
 
 ########## The REST utility functions are in the utils.pxd file ##########
@@ -511,18 +509,18 @@ def _test_date_conversion() -> None:
     date = datetime.date(2021, 1, 2)
     dt = datetime.datetime(2021, 1, 2)
 
-    cmp = {
-        "tm_sec": 0,
-        "tm_min": 0,
-        "tm_hour": 0,
-        "tm_mday": 2,
-        "tm_mon": 1,
-        "tm_year": 2021,
-        "tm_wday": 6,
-        "tm_yday": 2,
-        "tm_isdst": -1,
-    }
-    assert cmp == date_to_tm(date)  # type: ignore
+    _tm = date_to_tm(date)  # type: ignore
+    assert tuple(date.timetuple()) == (
+        _tm.tm_year,
+        _tm.tm_mon,
+        _tm.tm_mday,
+        _tm.tm_hour,
+        _tm.tm_min,
+        _tm.tm_sec,
+        _tm.tm_wday,
+        _tm.tm_yday,
+        _tm.tm_isdst,
+    )
     assert "01/02/2021" == date_to_strformat(date, "%m/%d/%Y")  # type: ignore
     assert "2021-01-02" == date_to_isoformat(date)  # type: ignore
     assert date.toordinal() == date_to_ordinal(date)  # type: ignore
@@ -702,21 +700,32 @@ def _test_dt_conversion() -> None:
     dt_tz3 = datetime.datetime(2021, 1, 2, 3, 4, 5, 6, tz3)
     dt_tz4 = datetime.datetime(2021, 1, 2, 3, 4, 5, 6, ZoneInfo("CET"))
 
-    cmp = {
-        "tm_sec": 5,
-        "tm_min": 4,
-        "tm_hour": 3,
-        "tm_mday": 2,
-        "tm_mon": 1,
-        "tm_year": 2021,
-        "tm_wday": 6,
-        "tm_yday": 2,
-        "tm_isdst": -1,
-    }
-    assert cmp == dt_to_tm(dt, False)  # type: ignore
-    cmp["tm_min"] -= 1
-    cmp["tm_hour"] -= 1
-    assert cmp == dt_to_tm(dt_tz1, True)  # type: ignore
+    for d in (dt, dt_tz1, dt_tz2, dt_tz3, dt_tz4):
+        _tm = dt_to_tm(d, False)  # type: ignore
+        assert tuple(d.timetuple()) == (
+            _tm.tm_year,
+            _tm.tm_mon,
+            _tm.tm_mday,
+            _tm.tm_hour,
+            _tm.tm_min,
+            _tm.tm_sec,
+            _tm.tm_wday,
+            _tm.tm_yday,
+            _tm.tm_isdst,
+        )
+        _tm = dt_to_tm(d, True)  # type: ignore
+        assert tuple(d.utctimetuple()) == (
+            _tm.tm_year,
+            _tm.tm_mon,
+            _tm.tm_mday,
+            _tm.tm_hour,
+            _tm.tm_min,
+            _tm.tm_sec,
+            _tm.tm_wday,
+            _tm.tm_yday,
+            _tm.tm_isdst,
+        )
+
     assert "01/02/2021 000006.05-04-03" == dt_to_strformat(dt, "%m/%d/%Y %f.%S-%M-%H")  # type: ignore
     assert "01/02/2021 000006.05-04-03+01:01" == dt_to_strformat(dt_tz1, "%m/%d/%Y %f.%S-%M-%H%z")  # type: ignore
     assert "01/02/2021 000006.05-04-03UTC+01:01" == dt_to_strformat(dt_tz1, "%m/%d/%Y %f.%S-%M-%H%Z")  # type: ignore
@@ -806,9 +815,9 @@ def _test_dt_mainipulate() -> None:
     assert datetime.datetime(2021, 2, 2, 3, 4, 5, 6) == dt_replace(dt, -1, 2)  # type: ignore
     assert datetime.datetime(2021, 2, 2, 3, 4, 5, 6) == dt_replace(dt, -1, 2, -1)  # type: ignore
     assert datetime.datetime(2021, 1, 1, 3, 4, 5, 6) == dt_replace(dt, -1, -1, 1)  # type: ignore
-    assert datetime.datetime(2022, 2, 28, 2, 2, 2, 2, tz1) == dt_replace(dt, 2022, 2, 28, 2, 2, 2, 2, tz1)  # type: ignore
-    assert datetime.datetime(2022, 2, 28, 2, 2, 2, 2, tz1) == dt_replace(dt, 2022, 2, 31, 2, 2, 2, 2, tz1)  # type: ignore
-    assert datetime.datetime(2022, 2, 28, 2, 2, 2, 2) == dt_replace(dt, 2022, 2, 31, 2, 2, 2, 2, None)  # type: ignore
+    assert datetime.datetime(2022, 2, 28, 2, 2, 2, 2, tz1) == dt_replace(dt, 2022, 2, 28, 2, 2, 2, -1, 2, tz1)  # type: ignore
+    assert datetime.datetime(2022, 2, 28, 2, 2, 2, 2, tz1) == dt_replace(dt, 2022, 2, 31, 2, 2, 2, -1, 2, tz1)  # type: ignore
+    assert datetime.datetime(2022, 2, 28, 2, 2, 2, 2) == dt_replace(dt, 2022, 2, 31, 2, 2, 2, -1, 2, None)  # type: ignore
     for tz in (None, tz1, tz2, tz3, tz4):
         assert dt.replace(tzinfo=tz) == dt_replace_tz(dt, tz)  # type: ignore
     assert 1 == dt_replace_fold(dt.replace(tzinfo=tz1, fold=0), 1).fold  # type: ignore
@@ -823,10 +832,6 @@ def _test_dt_mainipulate() -> None:
     assert dt is date_chg_weekday(dt, 5)  # type: ignore
     assert datetime.datetime(2021, 1, 3) == dt_chg_weekday(dt, 6)  # type: ignore
     assert datetime.datetime(2021, 1, 3) == dt_chg_weekday(dt, 7)  # type: ignore
-
-    for tz in (None, tz1, tz2, tz3, tz4):
-        for t in (dt, dt.replace(tzinfo=tz1)):
-            assert t.astimezone(tz) == dt_astimezone(t, tz)  # type: ignore
 
     print("Passed: dt_manipulate")
 
@@ -946,21 +951,30 @@ def _test_time_conversion() -> None:
     dt = datetime.datetime(1970, 1, 1, 3, 4, 5, 6)
     dt_tz1 = datetime.datetime(1970, 1, 1, 3, 4, 5, 6, tz1)
 
-    cmp = {
-        "tm_sec": 5,
-        "tm_min": 4,
-        "tm_hour": 3,
-        "tm_mday": 1,
-        "tm_mon": 1,
-        "tm_year": 1970,
-        "tm_wday": 4,
-        "tm_yday": 1,
-        "tm_isdst": -1,
-    }
-    assert cmp == time_to_tm(t1)  # type: ignore
-    cmp["tm_min"] -= 1
-    cmp["tm_hour"] -= 1
-    assert cmp == time_to_tm(t_tz1, True)  # type: ignore
+    _tm = time_to_tm(t1, False)  # type: ignore
+    assert tuple(dt.timetuple()) == (
+        _tm.tm_year,
+        _tm.tm_mon,
+        _tm.tm_mday,
+        _tm.tm_hour,
+        _tm.tm_min,
+        _tm.tm_sec,
+        _tm.tm_wday,
+        _tm.tm_yday,
+        _tm.tm_isdst,
+    )
+    _tm = time_to_tm(t_tz1, True)  # type: ignore
+    assert tuple(dt_tz1.utctimetuple()) == (
+        _tm.tm_year,
+        _tm.tm_mon,
+        _tm.tm_mday,
+        _tm.tm_hour,
+        _tm.tm_min,
+        _tm.tm_sec,
+        _tm.tm_wday,
+        _tm.tm_yday,
+        _tm.tm_isdst,
+    )
     assert "000006.05:04:03" == time_to_strformat(t1, "%f.%S:%M:%H")  # type: ignore
     assert "000006.05:04:03+01:01" == time_to_strformat(t_tz1, "%f.%S:%M:%H%z")  # type: ignore
     assert "000006.05:04:03UTC+01:01" == time_to_strformat(t_tz1, "%f.%S:%M:%H%Z")  # type: ignore
@@ -1246,7 +1260,7 @@ def _test_datetime64_conversion() -> None:
         "tm_mday": 1,
         "tm_mon": 1,
         "tm_year": 1970,
-        "tm_wday": 4,
+        "tm_wday": 3,
         "tm_yday": 1,
         "tm_isdst": -1,
     }
@@ -1445,7 +1459,7 @@ def _test_datetime64_conversion() -> None:
         "tm_mday": 31,
         "tm_mon": 12,
         "tm_year": 1969,
-        "tm_wday": 3,
+        "tm_wday": 2,
         "tm_yday": 365,
         "tm_isdst": -1,
     }

@@ -549,7 +549,7 @@ cdef inline tm tm_fr_seconds(double seconds) except *:
     return tm(
         _hms.second, _hms.minute, _hms.hour,  # SS, MM, HH
         _ymd.day, _ymd.month, _ymd.year,  # DD, MM, YY
-        ymd_isoweekday(_ymd.year, _ymd.month, _ymd.day),  # wday
+        ymd_weekday(_ymd.year, _ymd.month, _ymd.day),  # wday
         days_of_year(_ymd.year, _ymd.month, _ymd.day),  # yday
         -1,  # isdst
     )
@@ -572,7 +572,7 @@ cdef inline tm tm_fr_us(long long us) except *:
     return tm(
         _hms.second, _hms.minute, _hms.hour,  # SS, MM, HH
         _ymd.day, _ymd.month, _ymd.year,  # DD, MM, YY
-        ymd_isoweekday(_ymd.year, _ymd.month, _ymd.day),  # wday
+        ymd_weekday(_ymd.year, _ymd.month, _ymd.day),  # wday
         days_of_year(_ymd.year, _ymd.month, _ymd.day),  # yday
         -1,  # isdst
     )
@@ -621,6 +621,12 @@ cdef inline bint is_leap_year(int year) except -1:
     if year <= 0:
         return False
     return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+
+cdef inline bint is_long_year(int year) except -1:
+    """Whether the given 'year' is a long year 
+    (maximum ISO week number is 53) `<'bool'>`.
+    """
+    return ymd_isoweek(year, 12, 28) == 53
 
 cdef inline int leap_bt_years(int year1, int year2) except -1:
     """Calculate total leap years between 'year1' and 'year2' `<'int'>`."""
@@ -912,7 +918,7 @@ cdef inline datetime.date date_new(int year=1, int month=1, int day=1):
     day = min(max(day, 1), days_in_month(year, month))
     return datetime.date_new(year, month, day)
 
-cdef inline datetime.date date_now(datetime.tzinfo tz=None):
+cdef inline datetime.date date_now(object tz=None):
     """Get the current date `<'datetime.date'>`.
     
     Equivalent to:
@@ -955,7 +961,7 @@ cdef inline tm date_to_tm(datetime.date date) except *:
         int dd = date.day
     return tm(
         0, 0, 0, dd, mm, yy,  # SS, MM, HH, DD, MM, YY
-        ymd_isoweekday(yy, mm, dd), # wday
+        ymd_weekday(yy, mm, dd), # wday
         days_bf_month(yy, mm) + dd, # yday 
         -1 # isdst
     )
@@ -1062,7 +1068,7 @@ cdef inline datetime.date date_fr_ts(double ts):
 cdef inline datetime.date date_replace(datetime.date date, int year=-1, int month=-1, int day=-1):
     """Replace datetime.date values `<'datetime.date'>`.
 
-    #### Default '-1' mean keep the current value.
+    #### Default '-1' mean keep the original value.
 
     Equivalent to:
     >>> date.replace(year, month, day)
@@ -1122,7 +1128,7 @@ cdef inline datetime.date date_add(
 cdef inline datetime.datetime dt_new(
     int year=1, int month=1, int day=1,
     int hour=0, int minute=0, int second=0,
-    int microsecond=0, datetime.tzinfo tz=None, int fold=0,
+    int microsecond=0, object tz=None, int fold=0,
 ):
     """Create a new `<'datetime.datetime'>`.
     
@@ -1141,7 +1147,7 @@ cdef inline datetime.datetime dt_new(
         microsecond, tz, 1 if fold == 1 else 0,
     )
 
-cdef inline datetime.datetime dt_now(datetime.tzinfo tz=None):
+cdef inline datetime.datetime dt_now(object tz=None):
     """Get the current datetime `<'datetime.datetime'>`.
     
     Equivalent to:
@@ -1204,50 +1210,145 @@ cdef inline datetime.timedelta dt_utcoffset(datetime.datetime dt):
     """
     return tz_utcoffset(dt.tzinfo, dt)
 
+cdef inline int dt_utcoffset_seconds(datetime.datetime dt) except -200_000:
+    """Get the tzinfo 'utcoffset' of the datetime in total seconds `<'int'>`.
+    
+    #### Returns `-100_000` if utcoffset is None.
+
+    Equivalent to:
+    >>> dt.utcoffset().total_seconds()
+    """
+    return tz_utcoffset_seconds(dt.tzinfo, dt)
+
 cdef inline str dt_utcformat(datetime.datetime dt):
     """Get the tzinfo of the datetime as UTC format '+/-HH:MM' `<'str/None'>`."""
     return tz_utcformat(dt.tzinfo, dt)
 
+# . value check
+cdef inline bint dt_is_1st_of_year(datetime.datetime dt) except -1:
+    """Check if datetime is the 1st day of the year `<'bool'>`
+    
+    First day of the year: XXXX-01-01
+    """
+    return datetime.datetime_month(dt) == 1 and datetime.datetime_day(dt) == 1
+
+cdef inline bint dt_is_lst_of_year(datetime.datetime dt) except -1:
+    """Check if datetime is the last day of the year `<'bool'>`
+    
+    Last day of the year: XXXX-12-31
+    """
+    return datetime.datetime_month(dt) == 12 and datetime.datetime_day(dt) == 31
+
+cdef inline bint dt_is_1st_of_quarter(datetime.datetime dt) except -1:
+    """Check if datetime is the 1st day of the quarter `<'bool'>`.
+    
+    First day of the quarter: XXXX-(1, 4, 7, 10)-01
+    """
+    if datetime.datetime_day(dt) != 1:
+        return False
+    cdef int mm = datetime.datetime_month(dt)
+    return mm == quarter_1st_month(mm)
+
+cdef inline bint dt_is_lst_of_quarter(datetime.datetime dt) except -1:
+    """Check if datetime is the 1st day of the quarter `<'bool'>`.
+    
+    Last day of the quarter: XXXX-(3, 6, 9, 12)-(30, 31)
+    """
+    cdef int mm = datetime.datetime_month(dt)
+    if mm != quarter_lst_month(mm):
+        return False
+    cdef int yy = datetime.datetime_year(dt)
+    cdef int dd = datetime.datetime_day(dt)
+    return dd == days_in_month(yy, mm)
+
+cdef inline bint dt_is_1st_of_month(datetime.datetime dt) except -1:
+    """Check if datetime is the 1st day of the month `<'bool'>`.
+    
+    First day of the month: XXXX-XX-01
+    """
+    return datetime.datetime_day(dt) == 1
+
+cdef inline bint dt_is_lst_of_month(datetime.datetime dt) except -1:
+    """Check if datetime is the last day of the month `<'bool'>`.
+    
+    Last day of the month: XXXX-XX-(28, 29, 30, 31)
+    """
+    cdef:
+        int yy = datetime.datetime_year(dt)
+        int mm = datetime.datetime_month(dt)
+        int dd = datetime.datetime_day(dt)
+    return dd == days_in_month(yy, mm)
+
+cdef inline bint dt_is_start_of_time(datetime.datetime dt) except -1:
+    """Check if datetime is at start of the time `<'bool'>`.
+    
+    Start of time: 00:00:00.000000
+    """
+    return (
+        datetime.datetime_hour(dt) == 0
+        and datetime.datetime_minute(dt) == 0
+        and datetime.datetime_second(dt) == 0
+        and datetime.datetime_microsecond(dt) == 0
+    )
+
+cdef inline bint dt_is_end_of_time(datetime.datetime dt) except -1:
+    """Check if datetime is at end of the time `<'bool'>`.
+    
+    End of time: 23:59:59.999999
+    """
+    return (
+        datetime.datetime_hour(dt) == 23
+        and datetime.datetime_minute(dt) == 59
+        and datetime.datetime_second(dt) == 59
+        and datetime.datetime_microsecond(dt) == 999_999
+    )
+
 # . conversion
 cdef inline tm dt_to_tm(datetime.datetime dt, bint utc=False) except *:
-    """Convert datetime.datetime to `<'struct:tm'>`.
-    
-    If 'dt' is timezone-aware, setting 'utc=True', checks 'isdst'
-    and substracts 'utcoffset' from the datetime before conversion.
-    """
+    """Convert datetime.datetime to `<'struct:tm'>`."""
     cdef:
         object tz = dt.tzinfo
         int yy, mm, dd, isdst
     
-    # Without Timezone
-    if not utc or tz is None:
-        yy, mm, dd, isdst = dt.year, dt.month, dt.day, -1
+    # No timezone
+    if tz is None:
+        isdst = 0 if utc else -1
+        yy, mm, dd = dt.year, dt.month, dt.day
 
-    # With Timezone
+    # With timezone
     else:
-        # . utcoffset
-        utc_off = tz_utcoffset(tz, dt)
-        if utc_off is not None:
-            dt -= utc_off
-        # . 'dst'
-        dst_off = tz_dst(tz, dt)
-        if dst_off is not None:
-            isdst = 1 if dst_off else 0
+        if utc:
+            utc_off = tz_utcoffset(tz, dt)
+            if utc_off is not None:
+                dt = dt_add(
+                    dt,
+                    -datetime.timedelta_days(utc_off),
+                    -datetime.timedelta_seconds(utc_off),
+                    -datetime.timedelta_microseconds(utc_off),
+                    0, 0, 0, 0
+                )
+            isdst = 0
         else:
-            isdst = -1
+            dst_off = tz_dst(tz, dt)
+            if dst_off is None:
+                isdst = -1
+            elif dst_off:
+                isdst = 1
+            else:
+                isdst = 0
         yy, mm, dd = dt.year, dt.month, dt.day
 
     # Create 'struct:tm'
     return tm(
         dt.second, dt.minute, dt.hour,  # SS, MM, HH
         dd, mm, yy,  # DD, MM, YY
-        ymd_isoweekday(yy, mm, dd),  # wday
+        ymd_weekday(yy, mm, dd),  # wday
         days_bf_month(yy, mm) + dd,  # yday 
         isdst,  # isdst
     )
     
 cdef inline str dt_to_strformat(datetime.datetime dt, str fmt):
-    """Convert datetime.datetime to str with the specified 'fmt' `<'str'>`.
+    """Convert datetime.datetime to string with the specified 'fmt' `<'str'>`.
     
     Equivalent to:
     >>> dt.strftime(fmt)
@@ -1299,7 +1400,7 @@ cdef inline str dt_to_strformat(datetime.datetime dt, str fmt):
     # Format to string
     return tm_strftime(dt_to_tm(dt, False), "".join(fmt_l))
 
-cdef inline str dt_to_isoformat(datetime.datetime dt, str sep=" ", bint utc=False):
+cdef inline str dt_to_isoformat(datetime.datetime dt, str sep="T", bint utc=False):
     """Convert datetime.datetime to ISO format `<'str'>`.
 
     If 'dt' is timezone-aware, setting 'utc=True' 
@@ -1455,11 +1556,11 @@ cdef inline double dt_to_ts(datetime.datetime dt):
     cdef double us = dt.microsecond
     return ts + us / 1_000_000
 
-cdef inline datetime.datetime dt_combine(datetime.date date=None, datetime.time time=None):
+cdef inline datetime.datetime dt_combine(datetime.date date=None, datetime.time time=None, tz: object = None):
     """Combine datetime.date & datetime.time to `<'datetime.datetime'>`.
     
     - If 'date' is None, use current local date.
-    - If 'time' is None, all time fields are set to 0.
+    - If 'time' is None, all time fields set to 0.
     """
     # Date
     cdef int yy, mm, dd
@@ -1472,15 +1573,16 @@ cdef inline datetime.datetime dt_combine(datetime.date date=None, datetime.time 
     # Time
     cdef int hh, mi, ss, us, fold
     if time is None:
-        hh, mi, ss, us, tz, fold = 0, 0, 0, 0, None, 0
+        hh, mi, ss, us, fold = 0, 0, 0, 0, 0
     else:
-        hh, mi, ss, us = time.hour, time.minute, time.second, time.microsecond
-        tz, fold = time.tzinfo, time.fold
+        hh, mi, ss, us, fold = time.hour, time.minute, time.second, time.microsecond, time.fold
+        if tz is None:
+            tz = time.tzinfo
 
     # Combine
     return datetime.datetime_new(yy, mm, dd, hh, mi, ss, us, tz, fold)
 
-cdef inline datetime.datetime dt_fr_date(datetime.date date, datetime.tzinfo tz=None):
+cdef inline datetime.datetime dt_fr_date(datetime.date date, object tz=None):
     """Convert datetime.date to `<'datetime.datetime'>`.
     
     #### All time values sets to 0.
@@ -1506,17 +1608,17 @@ cdef inline datetime.datetime dt_fr_time(datetime.time time):
         time.microsecond, time.tzinfo, time.fold
     )
 
-cdef inline datetime.datetime dt_fr_ordinal(int ordinal, datetime.tzinfo tz=None):
+cdef inline datetime.datetime dt_fr_ordinal(int ordinal, object tz=None):
     """Convert ordinal days to `<'datetime.datetime'>`."""
     _ymd = ymd_fr_ordinal(ordinal)
     return datetime.datetime_new(_ymd.year, _ymd.month, _ymd.day, 0, 0, 0, 0, tz, 0)
 
-cdef inline datetime.datetime dt_fr_seconds(double seconds, datetime.tzinfo tz=None):
+cdef inline datetime.datetime dt_fr_seconds(double seconds, object tz=None):
     """Convert total seconds since Unix Epoch to `<'datetime.datetime'>`."""
     cdef long long us = int(seconds * 1_000_000)
     return dt_fr_us(us, tz)
     
-cdef inline datetime.datetime dt_fr_us(long long us, datetime.tzinfo tz=None):
+cdef inline datetime.datetime dt_fr_us(long long us, object tz=None):
     """Convert total microseconds since Unix Epoch to `<'datetime.datetime'>`."""
     # Add back Epoch
     cdef unsigned long long _us = min(max(us + EPOCH_US, DT_US_MIN), DT_US_MAX)
@@ -1537,49 +1639,147 @@ cdef inline datetime.datetime dt_fr_us(long long us, datetime.tzinfo tz=None):
         _hms.microsecond, tz, 0
     )
 
-cdef inline datetime.datetime dt_fr_ts(double ts, datetime.tzinfo tz=None):
+cdef inline datetime.datetime dt_fr_ts(double ts, object tz=None):
     """Convert timestamp to `<'datetime.datetime'>`."""
     return datetime.datetime_from_timestamp(ts, tz)
 
 # . manipulation
 cdef inline datetime.datetime dt_replace(
-    datetime.datetime dt, 
+    datetime.datetime dt,
     int year=-1, int month=-1, int day=-1,
-    int hour=-1, int minute=-1, int second=-1, 
-    int microsecond=-1, object tz=-1, int fold=-1,
+    int hour=-1, int minute=-1, int second=-1,
+    int millisecond=-1, int microsecond=-1,
+    object tz=-1, int fold=-1,
 ):
     """Replace the datetime.datetime values `<'datetime.datetime'>`.
 
-    #### Default '-1' mean keep the current value.
+    #### Default '-1' mean keep the original value.
     
     Equivalent to:
     >>> dt.replace(year, month, day, hour, minute, second, microsecond, tz, fold)
     """
-    if not 1 <= year <= 9_999:
-        year = dt.year
-    if not 1 <= month <= 12:
-        month = dt.month
-    day = min(day if day > 0 else dt.day, days_in_month(year, month))
-    if not 0 <= hour <= 23:
-        hour = dt.hour
-    if not 0 <= minute <= 59:
-        minute = dt.minute
-    if not 0 <= second <= 59:
-        second = dt.second
-    if not 0 <= microsecond <= 999_999:
-        microsecond = dt.microsecond
-    if not is_tz(tz) and tz is not None:
-        tz = dt.tzinfo
-    if not fold in (0, 1):
-        fold = dt.fold
-    return datetime.datetime_new(year, month, day, hour, minute, second, microsecond, tz, fold)
+    # Current values
+    yy: cython.int = datetime.datetime_year(dt)
+    mm: cython.int = datetime.datetime_month(dt)
+    dd: cython.int = datetime.datetime_day(dt)
+    hh: cython.int = datetime.datetime_hour(dt)
+    mi: cython.int = datetime.datetime_minute(dt)
+    ss: cython.int = datetime.datetime_second(dt)
+    us: cython.int = datetime.datetime_microsecond(dt)
+    tz_ = datetime.datetime_tzinfo(dt)
+    fd_: cython.int = datetime.datetime_fold(dt)
 
-cdef inline datetime.datetime dt_replace_tz(datetime.datetime dt, datetime.tzinfo tz):
+    # New values
+    new_yy: cython.int = yy if year < 1 else min(year, 9_999)
+    new_mm: cython.int = mm if month < 1 else min(month, 12)
+    new_dd: cython.int = dd if day < 1 else min(day, days_in_month(new_yy, new_mm))
+    new_hh: cython.int = hh if hour < 0 else min(hour, 23)
+    new_mi: cython.int = mi if minute < 0 else min(minute, 59)
+    new_ss: cython.int = ss if second < 0 else min(second, 59)
+    new_us: cython.int = us if microsecond < 0 else microsecond
+    new_us = combine_abs_ms_us(millisecond, new_us)
+    new_tz = tz_ if not (tz is None or is_tz(tz)) else tz
+    new_fd: cython.int = fd_ if not fold in (0, 1) else fold
+
+    # Same values
+    if (
+        new_yy == yy and new_mm == mm and new_dd == dd and
+        new_hh == hh and new_mi == mi and new_ss == ss and
+        new_us == us and new_tz is tz_ and new_fd == fd_
+    ):
+        return dt  # exit
+
+    # Create new datetime
+    return datetime.datetime_new(
+        new_yy, new_mm, new_dd, 
+        new_hh, new_mi, new_ss, 
+        new_us, new_tz, new_fd
+    )
+
+cdef inline datetime.datetime dt_replace_date(
+    datetime.datetime dt,
+    int year=-1, int month=-1, int day=-1,
+):
+    """Replace datetime.datetime date component values `<'datetime.datetime'>`.
+
+    #### Default '-1' mean keep the original value.
+    
+    Equivalent to:
+    >>> dt.replace(year, month, day)
+    """
+    # Current values
+    yy: cython.int = datetime.datetime_year(dt)
+    mm: cython.int = datetime.datetime_month(dt)
+    dd: cython.int = datetime.datetime_day(dt)
+
+    # New values
+    new_yy: cython.int = yy if year < 1 else min(year, 9_999)
+    new_mm: cython.int = mm if month < 1 else min(month, 12)
+    new_dd: cython.int = dd if day < 1 else min(day, days_in_month(new_yy, new_mm))
+
+    # Same values
+    if new_yy == yy and new_mm == mm and new_dd == dd:
+        return dt  # exit
+
+    # Create new datetime
+    return datetime.datetime_new(
+        new_yy, new_mm, new_dd, 
+        datetime.datetime_hour(dt), datetime.datetime_minute(dt), 
+        datetime.datetime_second(dt), datetime.datetime_microsecond(dt),
+        datetime.datetime_tzinfo(dt), datetime.datetime_fold(dt),
+    )
+
+
+cdef inline datetime.datetime dt_replace_time(
+    datetime.datetime dt,
+    int hour=-1, int minute=-1, int second=-1,
+    int millisecond=-1, int microsecond=-1,
+):
+    """Replace datetime.datetime time component values `<'datetime.datetime'>`.
+
+    #### Default '-1' mean keep the original value.
+    
+    Equivalent to:
+    >>> dt.replace(hour, minute, second, microsecond)
+    """
+    # Current values
+    hh: cython.int = datetime.datetime_hour(dt)
+    mi: cython.int = datetime.datetime_minute(dt)
+    ss: cython.int = datetime.datetime_second(dt)
+    us: cython.int = datetime.datetime_microsecond(dt)
+
+    # New values
+    new_hh: cython.int = hh if hour < 0 else min(hour, 23)
+    new_mi: cython.int = mi if minute < 0 else min(minute, 59)
+    new_ss: cython.int = ss if second < 0 else min(second, 59)
+    new_us: cython.int = us if microsecond < 0 else microsecond
+    new_us = combine_abs_ms_us(millisecond, new_us)
+
+    # Same values
+    if new_hh == hh and new_mi == mi and new_ss == ss and new_us == us:
+        return dt  # exit
+
+    # Create new datetime
+    return datetime.datetime_new(
+        datetime.datetime_year(dt),
+        datetime.datetime_month(dt),
+        datetime.datetime_day(dt),
+        new_hh, new_mi, new_ss, new_us,
+        datetime.datetime_tzinfo(dt),
+        datetime.datetime_fold(dt),
+    )
+
+cdef inline datetime.datetime dt_replace_tz(datetime.datetime dt, object tz):
     """Replace the datetime.datetime timezone `<'datetime.datetime'>`.
 
     Equivalent to:
     >>> dt.replace(tzinfo=tz)
     """
+    # Same tzinfo
+    if tz is datetime.datetime_tzinfo(dt):
+        return dt
+
+    # Create new datetime
     return datetime.datetime_new(
         dt.year, dt.month, dt.day, 
         dt.hour, dt.minute, dt.second, 
@@ -1592,10 +1792,15 @@ cdef inline datetime.datetime dt_replace_fold(datetime.datetime dt, int fold):
     Equivalent to:
     >>> dt.replace(fold=fold)
     """
+    # Same fold
+    if fold not in (0, 1) or fold == dt.fold:
+        return dt
+
+    # Create new datetime
     return datetime.datetime_new(
         dt.year, dt.month, dt.day, 
         dt.hour, dt.minute, dt.second, 
-        dt.microsecond, dt.tzinfo, 1 if fold == 1 else 0,
+        dt.microsecond, dt.tzinfo, fold,
     )
 
 cdef inline datetime.datetime dt_chg_weekday(datetime.datetime dt, int weekday):
@@ -1618,54 +1823,44 @@ cdef inline datetime.datetime dt_chg_weekday(datetime.datetime dt, int weekday):
         dt.microsecond, dt.tzinfo, dt.fold,
     )
 
-cdef inline datetime.datetime dt_astimezone(datetime.datetime dt, datetime.tzinfo tz=None):
+cdef inline datetime.datetime dt_astimezone(datetime.datetime dt, object tz=None):
     """Change the timezone for `<'datetime.datetime'>`.
     
     Equivalent to:
     >>> dt.astimezone(tz)
     """
-    # Target timezone
-    b_tz = dt.tzinfo
     if tz is None:
-        t_tz = tz_local(dt)
-        if b_tz is None:
-            # since 'dt' is naive, we simply
+        tz = tz_local(dt)
+        mytz = datetime.datetime_tzinfo(dt)
+        if mytz is None:
+            # since 'self' is naive, we simply
             # localize to the local timezone.
-            return dt_replace_tz(dt, t_tz)  # exit
+            return dt_replace_tz(dt, tz)  # exit
     else:
-        t_tz = tz
+        mytz = datetime.datetime_tzinfo(dt)
 
-    # Base timezone offset
-    if b_tz is None:
-        # since 'dt' is naive, we use the local timezone
-        # as the base timezone to calculate offset.
-        b_tz = tz_local(dt)
-        b_offset = tz_utcoffset(b_tz, dt)
-    else:
-        b_offset = tz_utcoffset(b_tz, dt)
-        if b_offset is None:
-            # in the case we are not able to get offset from 'b_tz',
-            # use the local timezone as the base timezone instead.
-            b_tz = tz_local(dt_replace_tz(dt, None))
-            b_offset = tz_utcoffset(b_tz, dt)
-
-    # Same timezone
-    if b_tz is t_tz:
+    if mytz is None:
+        mytz = tz_local(dt)
+        if tz is mytz:
+            return dt  # exit
+        myoffset = tz_utcoffset(mytz, dt)
+    elif tz is mytz:
         return dt  # exit
+    else:
+        myoffset = tz_utcoffset(mytz, dt)
+        if myoffset is None:
+            mytz = tz_local(dt_replace_tz(dt, None))
+            if tz is mytz:
+                return dt  # exit
+            myoffset = tz_utcoffset(mytz, dt)
 
     # Convert to UTC time
-    cdef long long us = dt_to_us(dt)
-    us -= td_to_us(b_offset)
-    dt = dt_fr_us(us, t_tz)
+    cdef long long us = dt_to_us(dt, False)
+    us -= td_to_us(myoffset)
+    dt = dt_fr_us(us, tz)
 
-    # Convert from UTC to target 'tz' time
-    utc_off = tz_utcoffset(t_tz, dt)
-    if utc_off is not None:
-        us += td_to_us(utc_off)
-    dst_off = tz_dst(t_tz, dt)
-    if dst_off is not None:
-        us -= td_to_us(dst_off)
-    return dt_fr_us(us, t_tz)
+    # Convert from UTC to tz's local time
+    return tz.fromutc(dt)
 
 # . arithmetic
 cdef inline datetime.datetime dt_add(
@@ -1700,7 +1895,7 @@ cdef inline datetime.datetime dt_add(
 # . generate
 cdef inline datetime.time time_new(
     int hour=0, int minute=0, int second=0,
-    int microsecond=0, datetime.tzinfo tz=None, int fold=0,
+    int microsecond=0, object tz=None, int fold=0,
 ):
     """Create a new `<'datetime.time'>`.
     
@@ -1716,7 +1911,7 @@ cdef inline datetime.time time_new(
         tz, 1 if fold == 1 else 0,
     )
 
-cdef inline datetime.time time_now(datetime.tzinfo tz=None):
+cdef inline datetime.time time_now(object tz=None):
     """Get the current time `<'datetime.time'>`.
     
     Equivalent to:
@@ -1792,15 +1987,15 @@ cdef inline tm time_to_tm(datetime.time time, bint utc=False) except *:
     and substracts 'utcoffset' from the time before conversion.
     """
     # Without Timezone
-    if not utc or time.tzinfo is None:
+    if time.tzinfo is None:
         return tm(
             time.second, time.minute, time.hour,  # SS, MM, HH
             1, 1, 1970,  # DD, MM, YY
-            4, 1, -1, # wday, yday, isdst
+            3, 1, -1, # wday, yday, isdst
         )
 
     # With Timezone
-    return dt_to_tm(dt_fr_time(time), True)
+    return dt_to_tm(dt_fr_time(time), utc)
 
 cdef inline str time_to_strformat(datetime.time time, str fmt):
     """Convert datetime.time to str with the specified 'fmt' `<'str'>`.
@@ -1929,12 +2124,12 @@ cdef inline datetime.time time_fr_time(datetime.time time):
         time.microsecond, time.tzinfo, time.fold
     )
 
-cdef inline datetime.time time_fr_seconds(double seconds, datetime.tzinfo tz=None):
+cdef inline datetime.time time_fr_seconds(double seconds, object tz=None):
     """Convert total seconds to `<'datetime.time'>`."""
     cdef long long us = int(seconds * 1_000_000)
     return time_fr_us(us, tz)
 
-cdef inline datetime.time time_fr_us(long long us, datetime.tzinfo tz=None):
+cdef inline datetime.time time_fr_us(long long us, object tz=None):
     """Convert total microseconds to `<'datetime.time'>`."""
     _hms = hms_fr_us(us)
     return datetime.time_new(
@@ -1949,7 +2144,7 @@ cdef inline datetime.time time_replace(
 ):
     """Replace the datetime.time values `<'datetime.time'>`.
 
-    #### Default '-1' mean keep the current value.
+    #### Default '-1' mean keep the original value.
 
     Equivalent to:
     >>> time.replace(hour, minute, second, microsecond, tz, fold)  
@@ -1962,18 +2157,23 @@ cdef inline datetime.time time_replace(
         second = time.second
     if not 0 <= microsecond <= 999_999:
         microsecond = time.microsecond
-    if not is_tz(tz) and tz is not None:
+    if not (is_tz(tz) or tz is None):
         tz = time.tzinfo
     if not fold in (0, 1):
         fold = time.fold
     return datetime.time_new(hour, minute, second, microsecond, tz, fold)
 
-cdef inline datetime.time time_replace_tz(datetime.time time, datetime.tzinfo tz):
+cdef inline datetime.time time_replace_tz(datetime.time time, object tz):
     """Replace the datetime.time timezone `<'datetime.time'>`.
 
     Equivalent to:
     >>> time.replace(tzinfo=tz)
     """
+    # Same tzinfo
+    if tz is time.tzinfo:
+        return time
+
+    # Create new time
     return datetime.time_new(
         time.hour, time.minute, time.second, 
         time.microsecond, tz, time.fold
@@ -1985,6 +2185,11 @@ cdef inline datetime.time time_replace_fold(datetime.time time, int fold):
     Equivalent to:
     >>> time.replace(fold=fold)
     """
+    # Same fold
+    if fold == time.fold:
+        return time
+
+    # Create new time
     return datetime.time_new(
         time.hour, time.minute, time.second, 
         time.microsecond, time.tzinfo, 1 if fold == 1 else 0
@@ -2126,7 +2331,7 @@ cdef inline datetime.timedelta td_fr_us(long long us):
 
 # datetime.tzinfo --------------------------------------------------------------------------------------
 # . generate
-cdef inline datetime.tzinfo tz_new(int hours=0, int minites=0, int seconds=0):
+cdef inline object tz_new(int hours=0, int minites=0, int seconds=0):
     """Create a new `<'datetime.tzinfo'>`.
     
     Equivalent to:
@@ -2140,8 +2345,13 @@ cdef inline datetime.tzinfo tz_new(int hours=0, int minites=0, int seconds=0):
         )
     return datetime.timezone_new(datetime.timedelta_new(0, offset, 0), None)
 
-cdef inline datetime.tzinfo tz_local(datetime.datetime dt=None):
+cdef inline object tz_local(datetime.datetime dt=None):
     """Get the local `<'datetime.tzinfo'>`."""
+    cdef int gmtoff = tz_local_seconds(dt)
+    return datetime.timezone_new(datetime.timedelta_new(0, gmtoff, 0), None)
+
+cdef inline int tz_local_seconds(datetime.datetime dt=None) except -200_000:
+    """Get the local timezone offset in total seconds `<'int'>`."""
     # Convert to timestamp
     cdef:
         double ts
@@ -2162,15 +2372,14 @@ cdef inline datetime.tzinfo tz_local(datetime.datetime dt=None):
 
     # Calculate offset
     loc, gmt = tm_localtime(ts), tm_gmtime(ts)
-    cdef int gmtoff = (
+    return (
         (loc.tm_mday - gmt.tm_mday) * 86_400
         + (loc.tm_hour - gmt.tm_hour) * 3_600 
         + (loc.tm_min - gmt.tm_min) * 60
         + (loc.tm_sec - gmt.tm_sec)
     )
 
-    # Create timezone
-    return datetime.timezone_new(datetime.timedelta_new(0, gmtoff, 0), None)
+cdef object tz_parse(object tz)
 
 # . type check
 cdef inline bint is_tz(object obj) except -1:
@@ -2234,6 +2443,25 @@ cdef inline datetime.timedelta tz_utcoffset(object tz, datetime.datetime dt=None
         if not datetime.PyTZInfo_Check(tz):
             raise TypeError("expects <'datetime.tzinfo'>, got %s." % type(tz)) from err
         raise err
+
+cdef inline int tz_utcoffset_seconds(object tz, datetime.datetime dt=None) except -200_000:
+    """Get the 'utcoffset' of the tzinfo in total seconds `<'int'>`.
+
+    #### Returns `-100_000` if utcoffset is None.
+
+    Equivalent to:
+    >>> tz.utcoffset(dt).total_seconds()
+    """
+    offset = tz_utcoffset(tz, dt)
+    # No offset
+    if offset is None:
+        return -100_000
+    
+    # Convert to seconds
+    return (
+        datetime.timedelta_days(offset) * 86_400 
+        + datetime.timedelta_seconds(offset)
+    )
 
 cdef inline str tz_utcformat(object tz, datetime.datetime dt=None):
     """Access datetime.tzinfo as UTC format '+/-HH:MM' `<'str/None'>`."""
@@ -2918,13 +3146,13 @@ cdef inline datetime.date dt64_to_date(object dt64):
     """
     return date_fr_ordinal(dt64_to_days(dt64) + EPOCH_DAY)
 
-cdef inline datetime.datetime dt64_to_dt(object dt64):
+cdef inline datetime.datetime dt64_to_dt(object dt64, tz: object=None):
     """Convert np.datetime64 to `<'datetime.datetime'>`.
 
     If 'dt64' resolution is higher than 'us',
     returns datetime.datetime discards the resolution above microseconds.
     """
-    return dt_fr_us(dt64_to_us(dt64), None)
+    return dt_fr_us(dt64_to_us(dt64), tz)
 
 cdef inline datetime.time dt64_to_time(object dt64):
     """Convert np.datetime64 to `<'datetime.time'>`.
