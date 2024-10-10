@@ -52,71 +52,123 @@ def is_ascii_alpha_lower(ch: cython.Py_UCS4) -> bool:
 def is_ascii_alpha(ch: cython.Py_UCS4) -> bool:
     """Check if 'ch' is an ASCII alpha [a-zA-Z] `<'bool'>`."""
 
-def parse_isoyear(data: str, pos: int) -> int:
-    """Parse ISO format year (YYYY) from 'data' at 'pos' `<'int'>`.
+def parse_isoyear(data: str, pos: int, size: int) -> int:
+    """(cfunc) Parse ISO format year (YYYY) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format year value.
+    :param data `<'str'>`: The string to parse ISO year (YYYY) from.
+    :param pos `<'int'>`: The starting position of the ISO year.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format year value.
     """
 
-def parse_isomonth(data: str, pos: int) -> int:
-    """Parse ISO format month (MM) from 'data' at 'pos' `<'int'>`.
+def parse_isomonth(data: str, pos: int, size: int) -> int:
+    """(cfunc) Parse ISO format month (MM) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format month value.
+    :param data `<'str'>`: The string to parse ISO month (MM) from.
+    :param pos `<'int'>`: The starting position of the ISO month.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format month value.
     """
 
-def parse_isoday(data: str, pos: int) -> int:
-    """Parse ISO format day (DD) from 'data' at 'pos' `<'int'>`.
+def parse_isoday(data: str, pos: int, size: int) -> int:
+    """(cfunc) Parse ISO format day (DD) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format day value.
+    :param data `<'str'>`: The string to parse ISO day (DD) from.
+    :param pos `<'int'>`: The starting position of the ISO day.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format day value.
     """
 
-def parse_isoweek(data: str, pos: int) -> int:
-    """Parse ISO format week (WW) from 'data' at 'pos' `<'int'>`.
+def parse_isoweek(data: str, pos: int, size: int) -> int:
+    """(cfunc) Parse ISO format week number (WW) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format week value.
+    :param data `<'str'>`: The string to parse ISO week number (WW) from.
+    :param pos `<'int'>`: The starting position of the ISO week number.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format week number value.
     """
 
-def parse_isoweekday(data: str, pos: int) -> int:
-    """Parse ISO format weekday (D) from 'data' at 'pos' `<'int'>`.
+def parse_isoweekday(data: str, pos: int, size: int) -> int:
+    """(cfunc) Parse ISO format weekday (D) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format weekday value.
+    :param data `<'str'>`: The string to parse ISO weekday (D) from.
+    :param pos `<'int'>`: The starting position of the ISO weekday.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format weekday value.
     """
 
-def parse_isoyearday(data: str, pos: int) -> int:
-    """Parse ISO format day of the year (DDD) from 'data' at 'pos' `<'int'>`.
+def parse_isoyearday(data: str, pos: int, size: int) -> int:
+    """(cfunc) Parse ISO format day of year (DDD) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format day of the year value.
+    :param data `<'str'>`: The string to parse ISO day of year (DDD) from.
+    :param pos `<'int'>`: The starting position of the ISO day of year.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format day of year value.
     """
 
-def parse_isohour(data: str, pos: int) -> int:
-    """Parse ISO format hour (HH) from 'data' at 'pos' `<'int'>`.
+def parse_isohour(data: str, pos: int, size: int) -> int:
+    """(cfunc) Parse ISO format hour (HH) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format hour value.
+    :param data `<'str'>`: The string to parse ISO hour (HH) from.
+    :param pos `<'int'>`: The starting position of the ISO hour.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format hour value.
     """
 
-def parse_isominute(data: str, pos: int) -> int:
-    """Parse ISO format minute (MM) from 'data' at 'pos' `<'int'>`.
+def parse_isominute(data: str, pos: int, size: int) -> int:
+    """(cfunc) Parse ISO format minute (MM) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format minute value.
+    :param data `<'str'>`: The string to parse ISO minute (MM) from.
+    :param pos `<'int'>`: The starting position of the ISO minute.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format minute value.
     """
 
-def parse_isosecond(data: str, pos: int) -> int:
-    """Parse ISO format second (SS) from 'data' at 'pos' `<'int'>`.
+def parse_isosecond(data: str, pos: int, size: int) -> int:
+    """(cfunc) Parse ISO format second (SS) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format second value.
+    :param data `<'str'>`: The string to parse ISO second (SS) from.
+    :param pos `<'int'>`: The starting position of the ISO second.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format second value.
     """
 
-def parse_isofraction(data: str, pos: int) -> int:
-    """Parse ISO format fraction (f/us) from 'data' at 'pos' `<'int'>`.
+def parse_isofraction(data: str, pos: int, size: int) -> int:
+    """(cfunc) Parse ISO format fraction (f/us) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format fraction value.
+    :param data `<'str'>`: The string to parse ISO fraction (f/us) from.
+    :param pos `<'int'>`: The starting position of the ISO fraction.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format fraction value.
     """
 
 def slice_to_uint(s: str, start: int, size: int) -> int:
-    """Slice & convert 'data' from 'start' with the
-    given 'size' to an unsigned `<'int'>`.
+    """(cfunc) Slice & convert 'data' to an integer `<'int'>`.
 
-    :raises `ValueError`: If cannot convert characters into an integer.
+    :param data `<'str'>`: The string to slice to an integer.
+    :param start `<'int'>`: The starting position of the integer slice.
+    :param size `<'int'>`: Total characters to slice from the starting position.
+    :raise `ValueError`: If cannot convert slice of 'data' to an integer.
     """
 
 # Time ----------------------------------------------------------------------------------------------

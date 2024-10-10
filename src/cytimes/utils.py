@@ -6,6 +6,7 @@
 import cython
 from cython.cimports import numpy as np  # type: ignore
 from cython.cimports.cpython import datetime  # type: ignore
+from cython.cimports.cytimes import typeref  # type: ignore
 
 np.import_array()
 np.import_umath()
@@ -14,7 +15,7 @@ datetime.import_datetime()
 # Python imports
 import datetime, numpy as np
 from zoneinfo import ZoneInfo
-from cytimes import errors
+from cytimes import typeref, errors
 
 # Constants --------------------------------------------------------------------------------------------
 # . calendar
@@ -61,16 +62,37 @@ def tz_parse(tz: datetime.tzinfo | str) -> object:
         - If 'tz' is an instance of `<'datetime.tzinfo'>`, return 'tz' directly.
         - If 'tz' is a string, use Python 'Zoneinfo' to create the timezone object.
     """
-    if is_tz(tz):  # type: ignore
+    # . <'NoneType'>
+    if tz is None:
         return tz
-    try:
-        return ZoneInfo(tz)
-    except Exception as err:
-        if tz is None:
-            return None
-        raise errors.InvalidTimezoneError(
-            "invalid timezone '%s': %s." % (tz, err)
-        ) from err
+
+    # . <'ZoneInfo'> or <'datetime.timezone'>
+    dtype = type(tz)
+    if dtype is typeref.ZONEINFO or dtype is typeref.TIMEZONE:
+        return tz
+
+    # . <'str'> timezone name
+    if dtype is str:
+        try:
+            return ZoneInfo(tz)
+        except Exception as err:
+            # . local
+            if tz.lower() == "local":
+                return tz_local(None)  # type: ignore
+            # . invalid
+            raise errors.InvalidTimezoneError(
+                "invalid timezone '%s': %s." % (tz, err)
+            ) from err
+
+    # . pytz
+    if hasattr(tz, "localize"):
+        try:
+            return ZoneInfo(tz.zone)  # type: ignore
+        except Exception:
+            pass
+
+    # . unsupported
+    raise errors.InvalidTimezoneError("unsupported timezone: %s %r." % (type(tz), tz))
 
 
 ########## The REST utility functions are in the utils.pxd file ##########
@@ -181,30 +203,30 @@ def _test_parser() -> None:
 
     # Parse
     t: str = "2021-01-02T03:04:05.006007"
-    assert parse_isoyear(t, 0) == 2021  # type: ignore
-    assert parse_isoyear(t, 1) == -1  # type: ignore
-    assert parse_isomonth(t, 5) == 1  # type: ignore
-    assert parse_isomonth(t, 6) == -1  # type: ignore
-    assert parse_isoday(t, 8) == 2  # type: ignore
-    assert parse_isoday(t, 9) == -1  # type: ignore
+    assert parse_isoyear(t, 0, 0) == 2021  # type: ignore
+    assert parse_isoyear(t, 1, 0) == -1  # type: ignore
+    assert parse_isomonth(t, 5, 0) == 1  # type: ignore
+    assert parse_isomonth(t, 6, 0) == -1  # type: ignore
+    assert parse_isoday(t, 8, 0) == 2  # type: ignore
+    assert parse_isoday(t, 9, 0) == -1  # type: ignore
 
     t = "2021-W52-6"
-    assert parse_isoweek(t, 6) == 52  # type: ignore
-    assert parse_isoweek(t, 7) == -1  # type: ignore
-    assert parse_isoweekday(t, 9) == 6  # type: ignore
-    assert parse_isoweekday(t, 8) == -1  # type: ignore
-    assert parse_isoweekday(t, 10) == -1  # type: ignore
-    assert parse_isoweekday(t, 1) == -1  # type: ignore
-    assert parse_isoweekday(t, 0) == 2  # type: ignore
+    assert parse_isoweek(t, 6, 0) == 52  # type: ignore
+    assert parse_isoweek(t, 7, 0) == -1  # type: ignore
+    assert parse_isoweekday(t, 9, 0) == 6  # type: ignore
+    assert parse_isoweekday(t, 8, 0) == -1  # type: ignore
+    assert parse_isoweekday(t, 10, 0) == -1  # type: ignore
+    assert parse_isoweekday(t, 1, 0) == -1  # type: ignore
+    assert parse_isoweekday(t, 0, 0) == 2  # type: ignore
 
     t = "2021-365"
-    assert parse_isoyearday(t, 5) == 365  # type: ignore
-    assert parse_isoyearday(t, 6) == -1  # type: ignore
-    assert parse_isoyearday(t, 4) == -1  # type: ignore
+    assert parse_isoyearday(t, 5, 0) == 365  # type: ignore
+    assert parse_isoyearday(t, 6, 0) == -1  # type: ignore
+    assert parse_isoyearday(t, 4, 0) == -1  # type: ignore
     t = "2021-367"
-    assert parse_isoyearday(t, 5) == -1  # type: ignore
+    assert parse_isoyearday(t, 5, 0) == -1  # type: ignore
     t = "2021-000"
-    assert parse_isoyearday(t, 5) == -1  # type: ignore
+    assert parse_isoyearday(t, 5, 0) == -1  # type: ignore
 
     print("Passed: parser")
 

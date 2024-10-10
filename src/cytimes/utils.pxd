@@ -154,23 +154,30 @@ cdef inline bint is_ascii_alpha(Py_UCS4 ch) except -1:
     """Check if 'ch' is an ASCII alpha [a-zA-Z] `<'bool'>`."""
     return is_ascii_alpha_lower(ch) or is_ascii_alpha_upper(ch)
 
-cdef inline int parse_isoyear(str data, Py_ssize_t pos) except -2:
-    """Parse ISO format year (YYYY) from 'data' at 'pos' `<'int'>`.
+cdef inline int parse_isoyear(str data, Py_ssize_t pos, Py_ssize_t size) except -2:
+    """Parse ISO format year (YYYY) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format year value.
+    :param data `<'str'>`: The string to parse ISO year (YYYY) from.
+    :param pos `<'int'>`: The starting position of the ISO year.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format year value.
     """
-    cdef: 
+    # Validate size
+    if size <= 0:
+        size = str_len(data)
+    if size - pos < 4:
+        return -1
+
+    # Parse values
+    cdef:
         char buffer[5]
         Py_UCS4 ch
         Py_ssize_t i
         int year
-
-    # Parse values
     for i in range(4):
-        try:
-            ch = str_read(data, pos + i)
-        except IndexError:
-            return -1
+        ch = str_read(data, pos + i)
         if not is_ascii_digit(ch):
             return -1
         buffer[i] = ch
@@ -180,24 +187,27 @@ cdef inline int parse_isoyear(str data, Py_ssize_t pos) except -2:
     year = strtoll(buffer, NULL, 10)
     return year if year != 0 else -1
 
-cdef inline int parse_isomonth(str data, Py_ssize_t pos)  except -2:
-    """Parse ISO format month (MM) from 'data' at 'pos' `<'int'>`.
+cdef inline int parse_isomonth(str data, Py_ssize_t pos, Py_ssize_t size)  except -2:
+    """Parse ISO format month (MM) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format month value.
+    :param data `<'str'>`: The string to parse ISO month (MM) from.
+    :param pos `<'int'>`: The starting position of the ISO month.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format month value.
     """
+    # Validate size
+    if size <= 0:
+        size = str_len(data)
+    if size - pos < 2:
+        return -1
+
+    # Parse values
     cdef:
         char buffer[3]
-        Py_UCS4 ch1, ch2
-    
-    # Parse values
-    try:
-        ch1 = str_read(data, pos)
-    except IndexError:
-        return -1
-    try:
-        ch2 = str_read(data, pos + 1)
-    except IndexError:
-        return -1
+        Py_UCS4 ch1 = str_read(data, pos)
+        Py_UCS4 ch2 = str_read(data, pos + 1)
     if ch1 == "0":
         if not "1" <= ch2 <= "9":
             return -1
@@ -213,24 +223,27 @@ cdef inline int parse_isomonth(str data, Py_ssize_t pos)  except -2:
     buffer[2] = 0  # null-term
     return strtoll(buffer, NULL, 10)
 
-cdef inline int parse_isoday(str data, Py_ssize_t pos) except -2:
-    """Parse ISO format day (DD) from 'data' at 'pos' `<'int'>`.
+cdef inline int parse_isoday(str data, Py_ssize_t pos, Py_ssize_t size) except -2:
+    """Parse ISO format day (DD) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format day value.
+    :param data `<'str'>`: The string to parse ISO day (DD) from.
+    :param pos `<'int'>`: The starting position of the ISO day.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format day value.
     """
+    # Validate size
+    if size <= 0:
+        size = str_len(data)
+    if size - pos < 2:
+        return -1
+
+    # Parse values
     cdef:
         char buffer[3]
-        Py_UCS4 ch1, ch2
-    
-    # Parse values
-    try:
-        ch1 = str_read(data, pos)
-    except IndexError:
-        return -1
-    try:
-        ch2 = str_read(data, pos + 1)
-    except IndexError:
-        return -1
+        Py_UCS4 ch1 = str_read(data, pos)
+        Py_UCS4 ch2 = str_read(data, pos + 1)
     if ch1 in ("1", "2"):
         if not is_ascii_digit(ch2):
             return -1
@@ -249,24 +262,27 @@ cdef inline int parse_isoday(str data, Py_ssize_t pos) except -2:
     buffer[2] = 0  # null-term
     return strtoll(buffer, NULL, 10)
 
-cdef inline int parse_isoweek(str data, Py_ssize_t pos) except -2:
-    """Parse ISO format week (WW) from 'data' at 'pos' `<'int'>`.
-    
-    Returns -1 for invalid ISO format week value.
+cdef inline int parse_isoweek(str data, Py_ssize_t pos, Py_ssize_t size) except -2:
+    """Parse ISO format week number (WW) from 'data' string `<'int'>`.
+
+    :param data `<'str'>`: The string to parse ISO week number (WW) from.
+    :param pos `<'int'>`: The starting position of the ISO week number.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format week number value.
     """
-    cdef:
-        char buffer[3]
-        Py_UCS4 ch1, ch2
+    # Validate size
+    if size <= 0:
+        size = str_len(data)
+    if size - pos < 2:
+        return -1
 
     # Parse values
-    try:
-        ch1 = str_read(data, pos)
-    except IndexError:
-        return -1
-    try:
-        ch2 = str_read(data, pos + 1)
-    except IndexError:
-        return -1
+    cdef:
+        char buffer[3]
+        Py_UCS4 ch1 = str_read(data, pos)
+        Py_UCS4 ch2 = str_read(data, pos + 1)
     if "1" <= ch1 <= "4":
         if not is_ascii_digit(ch2):
             return -1
@@ -285,36 +301,51 @@ cdef inline int parse_isoweek(str data, Py_ssize_t pos) except -2:
     buffer[2] = 0  # null-term
     return strtoll(buffer, NULL, 10)
 
-cdef inline int parse_isoweekday(str data, Py_ssize_t pos) except -2:
-    """Parse ISO format weekday (D) from 'data' at 'pos' `<'int'>`.
+cdef inline int parse_isoweekday(str data, Py_ssize_t pos, Py_ssize_t size) except -2:
+    """Parse ISO format weekday (D) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format weekday value.
+    :param data `<'str'>`: The string to parse ISO weekday (D) from.
+    :param pos `<'int'>`: The starting position of the ISO weekday.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format weekday value.
     """
-    cdef Py_UCS4 ch
-    try:
-        ch = str_read(data, pos)
-    except IndexError:
+    # Validate size
+    if size <= 0:
+        size = str_len(data)
+    if size - pos < 1:
         return -1
+
+    # Parse values
+    cdef Py_UCS4 ch = str_read(data, pos)
     if not "1" <= ch <= "7":
         return -1
     return ord(ch) - 48
 
-cdef inline int parse_isoyearday(str data, Py_ssize_t pos) except -2:
-    """Parse ISO format day of the year (DDD) from 'data' at 'pos' `<'int'>`.
-    
-    Returns -1 for invalid ISO format day of the year value.
+cdef inline int parse_isoyearday(str data, Py_ssize_t pos, Py_ssize_t size) except -2:
+    """Parse ISO format day of year (DDD) from 'data' string `<'int'>`.
+
+    :param data `<'str'>`: The string to parse ISO day of year (DDD) from.
+    :param pos `<'int'>`: The starting position of the ISO day of year.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format day of year value.
     """
+    # Validate size
+    if size <= 0:
+        size = str_len(data)
+    if size - pos < 3:
+        return -1
+
+    # Parse values
     cdef:
         char buffer[4]
-        Py_UCS4 ch1, ch2, ch3
+        Py_UCS4 ch
         Py_ssize_t i
-        
-    # Parse values
     for i in range(3):
-        try:
-            ch = str_read(data, pos + i)
-        except IndexError:
-            return -1
+        ch = str_read(data, pos + i)
         if not is_ascii_digit(ch):
             return -1
         buffer[i] = ch
@@ -324,24 +355,27 @@ cdef inline int parse_isoyearday(str data, Py_ssize_t pos) except -2:
     days = strtoll(buffer, NULL, 10)
     return days if 1 <= days <= 366 else -1
 
-cdef inline int parse_isohour(str data, Py_ssize_t pos) except -2:
-    """Parse ISO format hour (HH) from 'data' at 'pos' `<'int'>`.
-    
-    Returns -1 for invalid ISO format hour value.
+cdef inline int parse_isohour(str data, Py_ssize_t pos, Py_ssize_t size) except -2:
+    """Parse ISO format hour (HH) from 'data' string `<'int'>`.
+
+    :param data `<'str'>`: The string to parse ISO hour (HH) from.
+    :param pos `<'int'>`: The starting position of the ISO hour.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format hour value.
     """
-    cdef:
-        char buffer[3]
-        Py_UCS4 ch1, ch2
+    # Validate size
+    if size <= 0:
+        size = str_len(data)
+    if size - pos < 2:
+        return -1
 
     # Parse values
-    try:
-        ch1 = str_read(data, pos)
-    except IndexError:
-        return -1
-    try:
-        ch2 = str_read(data, pos + 1)
-    except IndexError:
-        return -1
+    cdef:
+        char buffer[3]
+        Py_UCS4 ch1 = str_read(data, pos)
+        Py_UCS4 ch2 = str_read(data, pos + 1)
     if ch1 in ("0", "1"):
         if not is_ascii_digit(ch2):
             return -1
@@ -357,24 +391,27 @@ cdef inline int parse_isohour(str data, Py_ssize_t pos) except -2:
     buffer[2] = 0  # null-term
     return strtoll(buffer, NULL, 10)
 
-cdef inline int parse_isominute(str data, Py_ssize_t pos) except -2:
-    """Parse ISO format minute (MM) from 'data' at 'pos' `<'int'>`.
+cdef inline int parse_isominute(str data, Py_ssize_t pos, Py_ssize_t size) except -2:
+    """Parse ISO format minute (MM) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format minute value.
+    :param data `<'str'>`: The string to parse ISO minute (MM) from.
+    :param pos `<'int'>`: The starting position of the ISO minute.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format minute value.
     """
-    cdef:
-        char buffer[3]
-        Py_UCS4 ch1, ch2
+    # Validate size
+    if size <= 0:
+        size = str_len(data)
+    if size - pos < 2:
+        return -1
 
     # Parse values
-    try:
-        ch1 = str_read(data, pos)
-    except IndexError:
-        return -1
-    try:
-        ch2 = str_read(data, pos + 1)
-    except IndexError:
-        return -1
+    cdef:
+        char buffer[3]
+        Py_UCS4 ch1 = str_read(data, pos)
+        Py_UCS4 ch2 = str_read(data, pos + 1)
     if not "0" <= ch1 <= "5":
         return -1
     if not is_ascii_digit(ch2):
@@ -386,32 +423,43 @@ cdef inline int parse_isominute(str data, Py_ssize_t pos) except -2:
     buffer[2] = 0  # null-term
     return strtoll(buffer, NULL, 10)
 
-cdef inline int parse_isosecond(str data, Py_ssize_t pos) except -2:
-    """Parse ISO format second (SS) from 'data' at 'pos' `<'int'>`.
+cdef inline int parse_isosecond(str data, Py_ssize_t pos, Py_ssize_t size) except -2:
+    """Parse ISO format second (SS) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format second value.
+    :param data `<'str'>`: The string to parse ISO second (SS) from.
+    :param pos `<'int'>`: The starting position of the ISO second.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format second value.
     """
-    return parse_isominute(data, pos)
+    return parse_isominute(data, pos, size)
 
-cdef inline int parse_isofraction(str data, Py_ssize_t pos) except -2:
-    """Parse ISO format fraction (f/us) from 'data' at 'pos' `<'int'>`.
+cdef inline int parse_isofraction(str data, Py_ssize_t pos, Py_ssize_t size) except -2:
+    """Parse ISO format fraction (f/us) from 'data' string `<'int'>`.
 
-    Returns -1 for invalid ISO format fraction value.
+    :param data `<'str'>`: The string to parse ISO fraction (f/us) from.
+    :param pos `<'int'>`: The starting position of the ISO fraction.
+    :param size `<'int'>`: The length of the 'data' string.
+        - If 'size <= 0', the function measure the size of the 'data' string internal.
+
+    :return `<'int'>`: `-1` for invalid ISO format fraction value.
     """
+    # Validate size
+    if size <= 0:
+        size = str_len(data)
+
+    # Parse values
     cdef:
         char buffer[7]
         Py_UCS4 ch
         Py_ssize_t digits = 0
-
-    # Parse fraction values
-    for _ in range(6):
-        try:
-            ch = str_read(data, pos + digits)
-        except IndexError:
-            break
+    while pos < size and digits < 6:
+        ch = str_read(data, pos)
         if not is_ascii_digit(ch):
             break
         buffer[digits] = ch
+        pos += 1
         digits += 1
 
     # Compensate missing digits
@@ -427,10 +475,12 @@ cdef inline int parse_isofraction(str data, Py_ssize_t pos) except -2:
     return strtoll(buffer, NULL, 10)
 
 cdef inline long long slice_to_uint(str data, Py_ssize_t start, Py_ssize_t size) except -2:
-    """Slice & convert 'data' from 'start' with the 
-    given 'size' to an unsigned `<'int'>`.
-    
-    :raises `ValueError`: If cannot convert characters into an integer.
+    """Slice & convert 'data' to an integer `<'int'>`.
+
+    :param data `<'str'>`: The string to slice to an integer.
+    :param start `<'int'>`: The starting position of the integer slice.
+    :param size `<'int'>`: Total characters to slice from the starting position.
+    :raise `ValueError`: If cannot convert slice of 'data' to an integer.
     """
     # Allocate memory
     cdef char* buffer = <char*>malloc(size + 1)
@@ -2466,10 +2516,7 @@ cdef inline int tz_utcoffset_seconds(object tz, datetime.datetime dt=None) excep
 cdef inline str tz_utcformat(object tz, datetime.datetime dt=None):
     """Access datetime.tzinfo as UTC format '+/-HH:MM' `<'str/None'>`."""
     utc_off = tz_utcoffset(tz, dt)
-    if utc_off is not None:
-        return td_to_utcformat(utc_off)
-    else:
-        return None
+    return None if utc_off is None else td_to_utcformat(utc_off)
 
 # NumPy: share -----------------------------------------------------------------------------------------
 # . time unit
