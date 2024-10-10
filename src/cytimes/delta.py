@@ -349,7 +349,7 @@ class Delta:
             return self._add_float(o)
         # . uncommon
         if utils.is_dt64(o):
-            return self._add_datetime(utils.dt64_to_dt(o))
+            return self._add_datetime(utils.dt64_to_dt(o, None))
         if utils.is_td64(o):
             return self._add_timedelta(utils.td64_to_td(o))
         # . unsupported
@@ -650,7 +650,7 @@ class Delta:
         # . uncommon
         # TODO: Below does nothing since numpy does not return NotImplemented
         if utils.is_dt64(o):
-            return self._add_datetime(utils.dt64_to_dt(o))
+            return self._add_datetime(utils.dt64_to_dt(o, None))
         if utils.is_td64(o):
             return self._add_timedelta(utils.td64_to_td(o))
         # . unsupported
@@ -974,7 +974,7 @@ class Delta:
         # . uncommon
         # TODO: Below does nothing since numpy does not return NotImplemented
         if utils.is_dt64(o):
-            return self._rsub_datetime(utils.dt64_to_dt(o))
+            return self._rsub_datetime(utils.dt64_to_dt(o, None))
         if utils.is_td64(o):
             return self._rsub_timedelta(utils.td64_to_td(o))
         # . unsupported
