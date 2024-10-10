@@ -153,3 +153,9 @@ cpdef datetime.datetime parse(
     object year1st=?, object day1st=?, 
     bint ignoretz=?, bint isoformat=?, 
     Configs cfg=?)
+
+cpdef datetime.datetime parse_dtobj(
+    object dtobj, object default=?, 
+    object year1st=?, object day1st=?, 
+    bint ignoretz=?, bint isoformat=?, 
+    Configs cfg=?)

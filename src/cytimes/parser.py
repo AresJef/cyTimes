@@ -11,7 +11,6 @@ from cython.cimports.libc.stdlib import strtoll  # type: ignore
 from cython.cimports import numpy as np  # type: ignore
 from cython.cimports.cpython import datetime  # type: ignore
 from cython.cimports.cpython.time import localtime  # type: ignore
-from cython.cimports.cpython.unicode import PyUnicode_FindChar as str_find  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_READ_CHAR as str_read  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_GET_LENGTH as str_len  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_FromOrdinal as str_chr  # type: ignore
@@ -370,7 +369,7 @@ class Configs:
         # Validate perserinfo
         if not isinstance(info, typeref.PARSERINFO):
             raise errors.InvalidParserInfo(
-                "<'%s'>\nOnly support import from <'dateutil.parser.parserinfo'>, "
+                "<'%s'> Support import from <'dateutil.parser.parserinfo'>, "
                 "instead got %s." % (cls.__name__, type(info))
             )
 
@@ -874,7 +873,7 @@ class Configs:
         # Validate type
         if type(word) is not str:
             raise errors.InvalidConfigsValue(
-                "<'%s'>\nThe word for 'Configs.%s' must be a string, instead got %s."
+                "<'%s'> The word for 'Configs.%s' must be a string, instead got %s."
                 % (self.__class__.__name__, setting, type(word))
             )
         w: str = word
@@ -918,7 +917,7 @@ class Configs:
             # . raise error
             if conflict is not None:
                 raise errors.InvalidConfigsValue(
-                    "<'%s'>\nThe word '%s' for 'Configs.%s' conflicts "
+                    "<'%s'> The word '%s' for 'Configs.%s' conflicts "
                     "with exsiting words in 'Configs.%s'."
                     % (self.__class__.__name__, w, setting, conflict)
                 )
@@ -941,13 +940,13 @@ class Configs:
         the valid range (min...max) `<'int'>`."""
         if type(value) is not int:
             raise errors.InvalidConfigsValue(
-                "<'%s'>\nThe value for 'Configs.%s' must be an integer, instead got %s."
+                "<'%s'> The value for 'Configs.%s' must be an integer, instead got %s."
                 % (self.__class__.__name__, setting, type(value))
             )
         v: cython.longlong = value
         if not min <= v <= max:
             raise errors.InvalidConfigsValue(
-                "<'%s'>\nThe value for 'Configs.%s' must between %d...%d, instead got %d."
+                "<'%s'> The value for 'Configs.%s' must between %d...%d, instead got %d."
                 % (self.__class__.__name__, setting, min, max, v)
             )
         return value
@@ -1053,13 +1052,13 @@ class Result:
 
         # Validate Y/M/D 'value'
         if value > 9_999:
-            raise ValueError("Invalid Y/M/D value '%d'." % value)
+            raise ValueError("invalid Y/M/D value '%d'." % value)
         elif value > 31:
             label = 1
             if value > 99:
                 self.century_specified = True
         elif value < 0:
-            raise ValueError("Invalid Y/M/D value '%d'." % value)
+            raise ValueError("invalid Y/M/D value '%d'." % value)
 
         # Set Y/M/D value & index
         return self._set_ymd(value, label)
@@ -1086,15 +1085,15 @@ class Result:
         try:
             num: cython.longlong = int(value)
         except Exception as err:
-            raise ValueError("Invalid Y/M/D value '%s'." % value) from err
+            raise ValueError("invalid Y/M/D value '%s'." % value) from err
         if num > 9_999:
-            raise ValueError("Invalid Y/M/D value '%s'." % value)
+            raise ValueError("invalid Y/M/D value '%s'." % value)
         elif num > 31:
             label = 1
             if num > 99:
                 self.century_specified = True
         elif num < 0:
-            raise ValueError("Invalid Y/M/D value '%s'." % value)
+            raise ValueError("invalid Y/M/D value '%s'." % value)
         elif str_len(value) > 2:
             self.century_specified = True
             label = 1
@@ -1356,8 +1355,8 @@ class Result:
         self.second = -1
         self.microsecond = -1
         self.ampm = -1
-        # tzoffset must between -86340...86340,
-        # -100_000 represents no tzoffset.
+        #: tzoffset must between -86340...86340,
+        #: -100_000 represents no tzoffset.
         self.tzoffset = -100_000
         self.century_specified = False
 
@@ -1542,8 +1541,8 @@ class Parser:
             self._day1st if day1st is None else bool(day1st),
         ):
             raise errors.ParserFailedError(
-                "<'%s'>\nFailed to parse: '%s'.\n"
-                "Error: Cannot recognize any tokens as datetime components."
+                "<'%s'> Failed to parse: '%s'.\n"
+                "Error: cannot recognize any tokens as datetime components."
                 % (self.__class__.__name__, dtstr)
             )
 
@@ -1572,7 +1571,7 @@ class Parser:
             raise
         except Exception as err:
             raise errors.ParserFailedError(
-                "<'%s'>\nFailed to parse: '%s'.\nError: %s"
+                "<'%s'> Failed to parse: '%s'.\nError: %s"
                 % (self.__class__.__name__, dtstr, err)
             ) from err
 
@@ -1600,8 +1599,7 @@ class Parser:
                 return self._generate_dt(default, tz)
         except Exception as err:
             raise errors.ParserBuildError(
-                "<'%s'>\nFailed to build datetime from: '%s'.\n"
-                "Parse: %s\nError: %s"
+                "<'%s'> Failed to build datetime from: '%s'.\nResult: %s\nErrors: %s"
                 % (self.__class__.__name__, dtstr, self._res, err)
             ) from err
 
@@ -1644,9 +1642,11 @@ class Parser:
         if self._res.day != -1:
             dd = self._res.day
         elif mode != 0:
-            dd = min(datetime.datetime_day(default), utils.days_in_month(yy, mm))
+            dd = datetime.datetime_day(default)
         else:
             raise ValueError("lack of 'day' value.")
+        if dd > 28:
+            dd = min(dd, utils.days_in_month(yy, mm))
 
         # . hour
         if self._res.hour != -1:
@@ -1733,7 +1733,7 @@ class Parser:
             return False  # exit: invalid
 
         # ISO format always starts with year (YYYY)
-        year = utils.parse_isoyear(dtstr, 0)
+        year = utils.parse_isoyear(dtstr, 0, size)
         if year == -1:
             return False  # exit: invalid
 
@@ -1751,11 +1751,11 @@ class Parser:
             ch7: cython.Py_ssize_t = str_read(dtstr, 7)
             if utils.is_isodate_sep(ch7):
                 # . parse month: YYYY-[MM]
-                month = utils.parse_isomonth(dtstr, 5)
+                month = utils.parse_isomonth(dtstr, 5, size)
                 if month == -1:
                     return False  # exit: invalid
                 # . parse day: YYYY-MM-[DD]
-                day = utils.parse_isoday(dtstr, 8)
+                day = utils.parse_isoday(dtstr, 8, size)
                 if day == -1:
                     return False  # exit: invalid
                 idx = 10
@@ -1763,12 +1763,12 @@ class Parser:
             # YYYY-[W]
             elif utils.is_isoweek_sep(str_read(dtstr, 5)):
                 # . parse week: YYYY-W[ww]
-                week = utils.parse_isoweek(dtstr, 6)
+                week = utils.parse_isoweek(dtstr, 6, size)
                 if week == -1:
                     return False  # exit: invalid
                 # . parse weekday: YYYY-Www-[D]
                 if size > 9 and utils.is_isodate_sep(str_read(dtstr, 8)):
-                    weekday = utils.parse_isoweekday(dtstr, 9)
+                    weekday = utils.parse_isoweekday(dtstr, 9, size)
                     if weekday == -1:
                         return False  # exit: invalid
                     idx = 10
@@ -1781,7 +1781,7 @@ class Parser:
             # . YYYY-DD[D]
             elif utils.is_ascii_digit(ch7):
                 # . parse days of the year: YYYY-[DDD]
-                days = utils.parse_isoyearday(dtstr, 5)
+                days = utils.parse_isoyearday(dtstr, 5, size)
                 if days == -1:
                     return False  # exit: invalid
                 # Calculate MM/DD
@@ -1796,21 +1796,21 @@ class Parser:
         # . YYYY[W]
         elif utils.is_isoweek_sep(ch4):
             # . parse week: YYYYW[ww]
-            week = utils.parse_isoweek(dtstr, 5)
+            week = utils.parse_isoweek(dtstr, 5, size)
             if week == -1:
                 return False  # exit: invalid
             # . parse weekday
             if size > 7:
                 # . YYYYWww-[D]
                 if size > 8 and utils.is_isodate_sep(str_read(dtstr, 7)):
-                    weekday = utils.parse_isoweekday(dtstr, 8)
+                    weekday = utils.parse_isoweekday(dtstr, 8, size)
                     if weekday == -1:
                         idx, weekday = 7, 1
                     else:
                         idx = 9
                 # . YYYYWww[D]
                 else:
-                    weekday = utils.parse_isoweekday(dtstr, 7)
+                    weekday = utils.parse_isoweekday(dtstr, 7, size)
                     if weekday == -1:
                         idx, weekday = 7, 1
                     else:
@@ -1826,18 +1826,18 @@ class Parser:
             # . YYYYMMD[D]
             if size > 7 and utils.is_ascii_digit(str_read(dtstr, 7)):
                 # . parse month: YYYY[MM]
-                month = utils.parse_isomonth(dtstr, 4)
+                month = utils.parse_isomonth(dtstr, 4, size)
                 if month == -1:
                     return False  # exit: invalid
                 # . parse day: YYYYMM[DD]
-                day = utils.parse_isoday(dtstr, 6)
+                day = utils.parse_isoday(dtstr, 6, size)
                 if day == -1:
                     return False  # exit: invalid
                 idx = 8
             # . YYYYDDD
             else:
                 # . parse days of the year: YYYY[DDD]
-                days = utils.parse_isoyearday(dtstr, 4)
+                days = utils.parse_isoyearday(dtstr, 4, size)
                 if days == -1:
                     return False  # exit: invalid
                 # Calculate MM/DD
@@ -1892,7 +1892,7 @@ class Parser:
 
         # Parse HH:MM:SS / HHMMSS
         # . hour: ...T[HH]
-        hour = utils.parse_isohour(dtstr, idx + 1)
+        hour = utils.parse_isohour(dtstr, idx + 1, size)
         if hour == -1:
             return False  # fallback
         # . with seperator: ...THH[:]
@@ -1901,11 +1901,11 @@ class Parser:
             if size - idx < 9:
                 return False  # fallback
             # . minute: ...THH:[MM]
-            minute = utils.parse_isominute(dtstr, idx + 4)
+            minute = utils.parse_isominute(dtstr, idx + 4, size)
             if minute == -1:
                 return False  # fallback
             # . second: ...THH:MM:[SS]
-            second = utils.parse_isosecond(dtstr, idx + 7)
+            second = utils.parse_isosecond(dtstr, idx + 7, size)
             if second == -1:
                 return False  # fallback
             # . set H/M/S & index
@@ -1919,11 +1919,11 @@ class Parser:
         # . without seperator: ...THH[]
         else:
             # . minute: ...THH[MM]
-            minute = utils.parse_isominute(dtstr, idx + 3)
+            minute = utils.parse_isominute(dtstr, idx + 3, size)
             if minute == -1:
                 return False  # fallback
             # . second: ...THHMM[SS]
-            second = utils.parse_isosecond(dtstr, idx + 5)
+            second = utils.parse_isosecond(dtstr, idx + 5, size)
             if second == -1:
                 return False  # fallback
             # . set H/M/S & index
@@ -1939,15 +1939,16 @@ class Parser:
         if size - idx > 1 and str_read(dtstr, idx) in (".", ","):
             idx += 1  # skip: [.]
             buffer: cython.char[7]
-            digits: cython.Py_ssize_t = 0
             ch: cython.Py_UCS4
+            digits: cython.Py_ssize_t = 0
             # . parse fraction values
             while idx < size and digits < 6:
                 ch = str_read(dtstr, idx)
                 if not utils.is_ascii_digit(ch):
                     break
                 buffer[digits] = ch
-                idx, digits = idx + 1, digits + 1
+                idx += 1
+                digits += 1
             # . compensate missing digits
             if digits < 6:
                 if digits == 0:
@@ -1988,7 +1989,7 @@ class Parser:
                 self._idx = idx  # update index
                 return self._parse_iso_extra(dtstr)  # fallback
             # . offset hour
-            hh: cython.int = utils.parse_isohour(dtstr, idx + 1)
+            hh: cython.int = utils.parse_isohour(dtstr, idx + 1, size)
             if hh == -1:
                 self._idx = idx  # update index
                 return self._parse_iso_extra(dtstr)  # fallback
@@ -1996,14 +1997,14 @@ class Parser:
             ch: cython.Py_UCS4 = str_read(dtstr, idx + 3)
             if utils.is_isotime_sep(ch):
                 # . +/-HH:[MM]
-                mm: cython.int = utils.parse_isominute(dtstr, idx + 4)
+                mm: cython.int = utils.parse_isominute(dtstr, idx + 4, size)
                 if mm == -1:
                     self._idx = idx  # update index
                     return self._parse_iso_extra(dtstr)  # fallback
                 idx += 6  # skip: [+/-HH:MM]
             else:
                 # . +/-HH[MM]
-                mm: cython.int = utils.parse_isominute(dtstr, idx + 3)
+                mm: cython.int = utils.parse_isominute(dtstr, idx + 3, size)
                 if mm == -1:
                     self._idx = idx  # update index
                     return self._parse_iso_extra(dtstr)  # fallback
@@ -2151,10 +2152,10 @@ class Parser:
             )
         ):
             # . (Y/M/D)[HH]
-            self._res.hour = utils.parse_isohour(token, 0)
+            self._res.hour = utils.parse_isohour(token, 0, t_len)
             if t_len == 4:
                 # . (Y/M/D)HH[MM]
-                self._res.minute = utils.parse_isominute(token, 2)
+                self._res.minute = utils.parse_isominute(token, 2, t_len)
             return True  # exit
 
         # . YYMMDD / HHMMSS
@@ -2166,35 +2167,35 @@ class Parser:
                 self._res.set_ymd_int(utils.slice_to_uint(token, 4, 2), 0)
             # . [HHMMSS]
             else:
-                self._res.hour = utils.parse_isohour(token, 0)
-                self._res.minute = utils.parse_isominute(token, 2)
-                self._res.second = utils.parse_isosecond(token, 4)
+                self._res.hour = utils.parse_isohour(token, 0, t_len)
+                self._res.minute = utils.parse_isominute(token, 2, t_len)
+                self._res.second = utils.parse_isosecond(token, 4, t_len)
             return True  # exit
 
         # . HHMMSS.[us]
         if t_len > 6 and str_read(token, 6) == ".":
             # . [HHMMSS]
-            self._res.hour = utils.parse_isohour(token, 0)
-            self._res.minute = utils.parse_isominute(token, 2)
-            self._res.second = utils.parse_isosecond(token, 4)
+            self._res.hour = utils.parse_isohour(token, 0, t_len)
+            self._res.minute = utils.parse_isominute(token, 2, t_len)
+            self._res.second = utils.parse_isosecond(token, 4, t_len)
             # . [us]
             if t_len > 7:
-                self._res.microsecond = utils.parse_isofraction(token, 7)
+                self._res.microsecond = utils.parse_isofraction(token, 7, t_len)
             return True  # exit
 
         # . YYYYMMDD[HHMM[SS]]
         if t_len in (8, 12, 14):
             # . [YYYYMMDD]
-            self._res.set_ymd_int(utils.parse_isoyear(token, 0), 1)
+            self._res.set_ymd_int(utils.parse_isoyear(token, 0, t_len), 1)
             self._res.set_ymd_int(utils.slice_to_uint(token, 4, 2), 0)
             self._res.set_ymd_int(utils.slice_to_uint(token, 6, 2), 0)
             # . YYYYMMDD[HHMM]
             if t_len > 8:
-                self._res.hour = utils.parse_isohour(token, 8)
-                self._res.minute = utils.parse_isominute(token, 10)
+                self._res.hour = utils.parse_isohour(token, 8, t_len)
+                self._res.minute = utils.parse_isominute(token, 10, t_len)
                 # . YYYYMMDDHHMM[SS]
                 if t_len > 12:
-                    self._res.second = utils.parse_isosecond(token, 12)
+                    self._res.second = utils.parse_isosecond(token, 12, t_len)
             return True  # exit
 
         # . HH[ ]h or MM[ ]m or SS[.ss][ ]s
@@ -2487,8 +2488,8 @@ class Parser:
         t_len: cython.Py_ssize_t = str_len(tk1)
         if t_len == 4:
             # . +/-[0300]
-            hh: cython.int = utils.parse_isohour(tk1, 0)
-            mm: cython.int = utils.parse_isominute(tk1, 2)
+            hh: cython.int = utils.parse_isohour(tk1, 0, t_len)
+            mm: cython.int = utils.parse_isominute(tk1, 2, t_len)
             offset = sign * (hh * 3_600 + mm * 60)
         elif (tk3 := self._token3()) is not None and self._token2() == ":":
             try:
@@ -2814,3 +2815,98 @@ def parse(
         )
     else:
         return Parser(cfg).parse(dtstr, default, year1st, day1st, ignoretz, isoformat)
+
+
+@cython.ccall
+def parse_dtobj(
+    dtobj: object,
+    default: datetime.date | datetime.datetime | None = None,
+    year1st: bool | None = None,
+    day1st: bool | None = None,
+    ignoretz: cython.bint = True,
+    isoformat: cython.bint = True,
+    cfg: Configs = None,
+) -> datetime.datetime:
+    """Parse datetime object into `<'datetime.datetime'>.
+
+    :param dtobj `<'object'>`: The supported datetime related object:
+        1. `<'str'>` datetime string that contains datetime information.
+        2. `<'datetime.datetime'>` instance or subclass of datetime.datetime, return directly.
+        3. `<'datetime.date'>` instance or subclass of datetime.date, converts to datetime and time values set to 0.
+        4. `<'int/float'>` numeric values, treated as total seconds since Unix Epoch.
+        5. `<'np.datetime64'>` converts to datetime, resolution above 'us' will be discarded.
+        6. `<'NoneType'>` passing 'None' returns current local datetime.
+
+    ## The following arguments only effects when 'dtobj' is a datetime string.
+
+    :param default `<'datetime/date'>`: The default to fill-in missing datetime values. Defaults to `None`.
+        - `<'date'>`: If parser failed to extract Y/M/D values from the string,
+          the give 'date' will be used to fill-in the missing Y/M/D values.
+        - `<'datetime'>`: If parser failed to extract datetime elements from
+          the string, the given 'datetime' will be used to fill-in the
+          missing Y/M/D & H/M/S.f values.
+        - `None`: raise `PaserBuildError` if any Y/M/D values are missing.
+
+    :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
+        - When 'year1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
+
+    :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
+        - When 'day1st=None', use `çfg.day1st` if 'cfg' is specified, else `False` as default.
+
+    :param ignoretz `<'bool'>`: Whether to ignore timezone information. Defaults to `True`.
+        - `True`: Parser ignores any timezone information and only returns
+          timezone-naive datetime. Setting to `True` can increase parser
+          performance.
+        - `False`: Parser will try to process the timzone information in
+          the string, and generate a timezone-aware datetime if timezone
+          has been matched by 'cfg.utc' & 'cfg.tz'.
+
+    :param isoformat `<'bool'>`: Whether to parse 'dtstr' as ISO format. Defaults to `True`.
+        - `True`: Parser will first try to process the 'dtstr' as ISO format.
+          If failed, fallback to process the 'dtstr' through timelex tokens.
+          For most datetime strings, this approach yields the best performance.
+        - `False`: Parser will only process the 'dtstr' through timelex tokens.
+          If the 'dtstr' is confirmed not an ISO format, setting to `False`
+          can increase parser performance.
+
+    :param cfg `<'Configs/None'>`: The custom Parser configurations. Defaults to `None`.
+
+    ### Ambiguous Y/M/D
+    Both the 'year1st' & 'day1st' arguments works together to determine how
+    to interpret ambiguous Y/M/D values. The 'year1st' argument has higher
+    priority than the 'day1st' argument.
+
+    #### In case when all three values are ambiguous (e.g. `01/05/09`):
+    - If 'year1st=False' & 'day1st=False', interprets as: `2009-01-05` (M/D/Y).
+    - If 'year1st=False' & 'day1st=True', interprets as: `2009-05-01` (D/M/Y).
+    - If 'year1st=True' & 'day1st=False', interprets as: `2001-05-09` (Y/M/D).
+    - If 'year1st=True' & 'day1st=True', interprets as: `2001-09-05` (Y/D/M).
+
+    #### In case when the 'year' value is known (e.g. `32/01/05`):
+    - If 'day1st=False', interpretes as: `2032-01-05` (Y/M/D).
+    - If 'day1st=True', interpretes as: `2032-05-01` (Y/D/M).
+
+    #### In case when only one value is ambiguous (e.g. `32/01/20`):
+    - The Parser should automatically figure out the correct Y/M/D order,
+      and both 'year1st' & 'day1st' arguments are ignored.
+    """
+    # . datetime string
+    if isinstance(dtobj, str):
+        return parse(dtobj, default, year1st, day1st, ignoretz, isoformat, cfg)
+    # . datetime.datetime
+    if utils.is_dt(dtobj):
+        return dtobj
+    # . datetime.date
+    if utils.is_date(dtobj):
+        return utils.dt_fr_date(dtobj, None)
+    # . numeric
+    if isinstance(dtobj, (int, float)):
+        return utils.dt_fr_seconds(dtobj, None)
+    # . np.datetime64
+    if utils.is_dt64(dtobj):
+        return utils.dt64_to_dt(dtobj, None)
+    # . None
+    if dtobj is None:
+        return utils.dt_now(None)
+    # . invalid
+    raise errors.ParserFailedError("unsupported 'dtobj' type %s." % type(dtobj))

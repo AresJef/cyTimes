@@ -91,3 +91,12 @@ def parse(
     isoformat: bool = True,
     cfg: Configs | None = None,
 ) -> datetime.datetime: ...
+def parse_dtobj(
+    dtobj: object,
+    default: datetime.date | datetime.datetime | None = None,
+    year1st: bool | None = None,
+    day1st: bool | None = None,
+    ignoretz: bool = True,
+    isoformat: bool = True,
+    cfg: Configs | None = None,
+) -> datetime.datetime: ...
