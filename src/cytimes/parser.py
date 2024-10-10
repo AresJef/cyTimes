@@ -1481,11 +1481,8 @@ class Parser:
         :param dtstr `<'str'>`: The string that contains datetime information.
 
         :param default `<'datetime/date'>`: The default to fill-in missing datetime values. Defaults to `None`.
-            - `<'date'>`: If parser failed to extract Y/M/D values from the string,
-              the give 'date' will be used to fill-in the missing Y/M/D values.
-            - `<'datetime'>`: If parser failed to extract datetime elements from
-              the string, the given 'datetime' will be used to fill-in the
-              missing Y/M/D & H/M/S.f values.
+            - `<'date/datetime'>`: If parser failed to extract Y/M/D values from the string,
+              the give 'default' will be used to fill-in the missing Y/M/D values.
             - `None`: raise `PaserBuildError` if any Y/M/D values are missing.
 
         :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
@@ -1607,79 +1604,40 @@ class Parser:
     @cython.inline(True)
     def _generate_dt(self, default: object, tz: object) -> datetime.datetime:
         """(cfunc) Generate datetime from the processed result `<'datetime.datetime'>`."""
-        # Set build mode
-        mode: cython.int
-        if not utils.is_date(default):
-            # Raise error if any Y/M/D values is missing.
-            mode = 0
-        else:
-            # Use the <'datetime.date'> to fill-in
-            # the missing Y/M/D values.
-            if not utils.is_dt(default):
-                mode = 1
-            # Use the <'datetime.datetime'> to fill-in
-            # the missing Y/M/D & H:M:S.f values.
-            else:
-                mode = 2
+        # Check default
+        has_default: cython.bint = utils.is_date(default)
 
         # . year
         if self._res.year != -1:
             yy = self._res.year
-        elif mode != 0:
+        elif has_default:
             yy = datetime.datetime_year(default)
         else:
             raise ValueError("lack of 'year' value.")
-
         # . month
         if self._res.month != -1:
             mm = self._res.month
-        elif mode != 0:
+        elif has_default:
             mm = datetime.datetime_month(default)
         else:
             raise ValueError("lack of 'month' value.")
-
         # . day
         if self._res.day != -1:
             dd = self._res.day
-        elif mode != 0:
+        elif has_default:
             dd = datetime.datetime_day(default)
         else:
             raise ValueError("lack of 'day' value.")
         if dd > 28:
             dd = min(dd, utils.days_in_month(yy, mm))
-
         # . hour
-        if self._res.hour != -1:
-            hh = self._res.hour
-        elif mode == 2:
-            hh = datetime.datetime_hour(default)
-        else:
-            hh = 0
-
+        hh = self._res.hour if self._res.hour != -1 else 0
         # . minute
-        if self._res.minute != -1:
-            mi = self._res.minute
-        elif mode == 2:
-            mi = datetime.datetime_minute(default)
-        else:
-            mi = 0
-
+        mi = self._res.minute if self._res.minute != -1 else 0
         # . second
-        if self._res.second != -1:
-            ss = self._res.second
-        elif mode == 2:
-            ss = datetime.datetime_second(default)
-        else:
-            ss = 0
-
+        ss = self._res.second if self._res.second != -1 else 0
         # . microsecond
-        if self._res.microsecond != -1:
-            us = self._res.microsecond
-        elif mode == 2:
-            us = datetime.datetime_microsecond(default)
-        else:
-            us = 0
-
+        us = self._res.microsecond if self._res.microsecond != -1 else 0
         # Generate datetime
         dt = datetime.datetime_new(yy, mm, dd, hh, mi, ss, us, tz, 0)
 
@@ -2759,11 +2717,8 @@ def parse(
     :param dtstr `<'str'>`: The string that contains datetime information.
 
     :param default `<'datetime/date'>`: The default to fill-in missing datetime values. Defaults to `None`.
-        - `<'date'>`: If parser failed to extract Y/M/D values from the string,
-          the give 'date' will be used to fill-in the missing Y/M/D values.
-        - `<'datetime'>`: If parser failed to extract datetime elements from
-          the string, the given 'datetime' will be used to fill-in the
-          missing Y/M/D & H/M/S.f values.
+        - `<'date/datetime'>`: If parser failed to extract Y/M/D values from the string,
+          the give 'default' will be used to fill-in the missing Y/M/D values.
         - `None`: raise `PaserBuildError` if any Y/M/D values are missing.
 
     :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
@@ -2840,11 +2795,8 @@ def parse_dtobj(
     ## The following arguments only effects when 'dtobj' is a datetime string.
 
     :param default `<'datetime/date'>`: The default to fill-in missing datetime values. Defaults to `None`.
-        - `<'date'>`: If parser failed to extract Y/M/D values from the string,
-          the give 'date' will be used to fill-in the missing Y/M/D values.
-        - `<'datetime'>`: If parser failed to extract datetime elements from
-          the string, the given 'datetime' will be used to fill-in the
-          missing Y/M/D & H/M/S.f values.
+        - `<'date/datetime'>`: If parser failed to extract Y/M/D values from the string,
+          the give 'default' will be used to fill-in the missing Y/M/D values.
         - `None`: raise `PaserBuildError` if any Y/M/D values are missing.
 
     :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
