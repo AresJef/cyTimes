@@ -489,6 +489,9 @@ def dt_utcoffset_seconds(dt: datetime.datetime) -> int:
 def dt_utcformat(dt: datetime.datetime) -> str | None:
     """(cfunc) Get the tzinfo of the datetime as UTC format '+/-HH:MM' `<'str/None'>`."""
 
+def dt_normalize_tz(dt: datetime.datetime) -> datetime.datetime:
+    """(cfunc) Normalize the datetime to its tzinfo `<'datetime.datetime'>`."""
+
 # . value check
 def dt_is_1st_of_year(dt: datetime.datetime) -> bool:
     """(cfunc) Check if datetime is the 1st day of the year `<'bool'>`

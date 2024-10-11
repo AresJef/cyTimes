@@ -1274,6 +1274,28 @@ cdef inline str dt_utcformat(datetime.datetime dt):
     """Get the tzinfo of the datetime as UTC format '+/-HH:MM' `<'str/None'>`."""
     return tz_utcformat(dt.tzinfo, dt)
 
+cdef inline datetime.datetime dt_normalize_tz(datetime.datetime dt):
+    """Normalize the datetime to its tzinfo `<'datetime.datetime'>`."""
+    tz = dt.tzinfo
+    if tz is None:
+        return dt
+
+    cdef int off0, off1
+    if dt.fold == 1:
+        off0 = tz_utcoffset_seconds(tz, dt_replace_fold(dt, 0))
+        off1 = tz_utcoffset_seconds(tz, dt)
+    else:
+        off0 = tz_utcoffset_seconds(tz, dt)
+        off1 = tz_utcoffset_seconds(tz, dt_replace_fold(dt, 1))
+
+    if off0 == off1:
+        return dt
+
+    if off1 > off0:
+        return dt_add(dt, 0, off1 - off0, 0)
+
+    raise ValueError("datetime '%s' is ambiguous." % dt)
+
 # . value check
 cdef inline bint dt_is_1st_of_year(datetime.datetime dt) except -1:
     """Check if datetime is the 1st day of the year `<'bool'>`
