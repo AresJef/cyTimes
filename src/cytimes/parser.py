@@ -125,7 +125,7 @@ def _timelex(
     :param dtstr `<'str'>`: The datetime string to be broken into lexical tokens.
     :param start `<'int'>`: The starting index for the 'dtstr' string. Defaults to `0`.
     :param size `<'int'>`: The size of the 'dtstr' string. Defaults to `0`.
-        - If 'size <= 0', the function measure the size of the 'dtstr' string internal.
+        If 'size <= 0', the function measure the size of the 'dtstr' string internal.
     """
     # Validate index & size
     if size <= 0:
@@ -1040,10 +1040,10 @@ class Result:
 
         :param value `<'int'>`: One of the Y/M/D value.
         :param label `<'int'>`: The label for the value:
-            - label=0: unknown
-            - label=1: year
-            - label=2: month
-            - label=3: day
+            1. label=0: unknown
+            2. label=1: year
+            3. label=2: month
+            4. label=3: day
         :returns `<'bool'`>: `False` if all slots (max 3) are fully populated.
         """
         # Y/M/D slots already fully populated
@@ -1071,10 +1071,10 @@ class Result:
 
         :param value `<'str'>`: One of the Y/M/D value.
         :param label `<'int'>`: The label for the value:
-            - label=0: unknown
-            - label=1: year
-            - label=2: month
-            - label=3: day
+            1. label=0: unknown
+            2. label=1: year
+            3. label=2: month
+            4. label=3: day
         :returns `<'bool'`>: `False` if all slots (max 3) are fully populated.
         """
         # Y/M/D slots already fully populated
@@ -1111,10 +1111,10 @@ class Result:
 
         :param value `<'int'>`: One of the Y/M/D value.
         :param label `<'int'>`: The label for the value:
-            - label=0: unknown
-            - label=1: year
-            - label=2: month
-            - label=3: day
+            1. label=0: unknown
+            2. label=1: year
+            3. label=2: month
+            4. label=3: day
         """
         # Set Y/M/D value
         self._idx += 1
@@ -1481,29 +1481,29 @@ class Parser:
         :param dtstr `<'str'>`: The string that contains datetime information.
 
         :param default `<'datetime/date'>`: The default to fill-in missing datetime values. Defaults to `None`.
-            - `<'date/datetime'>`: If parser failed to extract Y/M/D values from the string,
+            1. `<'date/datetime'>`: If parser failed to extract Y/M/D values from the string,
               the give 'default' will be used to fill-in the missing Y/M/D values.
-            - `None`: raise `PaserBuildError` if any Y/M/D values are missing.
+            2. `None`: raise `PaserBuildError` if any Y/M/D values are missing.
 
         :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
-            - When 'year1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
+            When 'year1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
 
         :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
-            - When 'day1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
+            When 'day1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
 
         :param ignoretz `<'bool'>`: Whether to ignore timezone information. Defaults to `True`.
-            - `True`: Parser ignores any timezone information and only returns
+            1. `True`: Parser ignores any timezone information and only returns
               timezone-naive datetime. Setting to `True` can increase parser
               performance.
-            - `False`: Parser will try to process the timzone information in
+            2. `False`: Parser will try to process the timzone information in
               the string, and generate a timezone-aware datetime if timezone
               has been matched by 'cfg.utc' & 'cfg.tz'.
 
         :param isoformat `<'bool'>`: Whether to parser 'dtstr' as ISO format. Defaults to `True`.
-            - `True`: Parser will first try to process the 'dtstr' as ISO format.
+            1. `True`: Parser will first try to process the 'dtstr' as ISO format.
               If failed, fallback to process the 'dtstr' through timelex tokens.
               For most datetime strings, this approach yields the best performance.
-            - `False`: Parser will only process the 'dtstr' through timelex tokens.
+            2. `False`: Parser will only process the 'dtstr' through timelex tokens.
               If the 'dtstr' is confirmed not an ISO format, setting to `False`
               can increase parser performance.
 
@@ -2717,29 +2717,29 @@ def parse(
     :param dtstr `<'str'>`: The string that contains datetime information.
 
     :param default `<'datetime/date'>`: The default to fill-in missing datetime values. Defaults to `None`.
-        - `<'date/datetime'>`: If parser failed to extract Y/M/D values from the string,
+        1. `<'date/datetime'>`: If parser failed to extract Y/M/D values from the string,
           the give 'default' will be used to fill-in the missing Y/M/D values.
-        - `None`: raise `PaserBuildError` if any Y/M/D values are missing.
+        2. `None`: raise `PaserBuildError` if any Y/M/D values are missing.
 
     :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
-        - When 'year1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
+        When 'year1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
 
     :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
-        - When 'day1st=None', use `çfg.day1st` if 'cfg' is specified, else `False` as default.
+        When 'day1st=None', use `çfg.day1st` if 'cfg' is specified, else `False` as default.
 
     :param ignoretz `<'bool'>`: Whether to ignore timezone information. Defaults to `True`.
-        - `True`: Parser ignores any timezone information and only returns
+        1. `True`: Parser ignores any timezone information and only returns
           timezone-naive datetime. Setting to `True` can increase parser
           performance.
-        - `False`: Parser will try to process the timzone information in
+        2. `False`: Parser will try to process the timzone information in
           the string, and generate a timezone-aware datetime if timezone
           has been matched by 'cfg.utc' & 'cfg.tz'.
 
     :param isoformat `<'bool'>`: Whether to parse 'dtstr' as ISO format. Defaults to `True`.
-        - `True`: Parser will first try to process the 'dtstr' as ISO format.
+        1. `True`: Parser will first try to process the 'dtstr' as ISO format.
           If failed, fallback to process the 'dtstr' through timelex tokens.
           For most datetime strings, this approach yields the best performance.
-        - `False`: Parser will only process the 'dtstr' through timelex tokens.
+        2. `False`: Parser will only process the 'dtstr' through timelex tokens.
           If the 'dtstr' is confirmed not an ISO format, setting to `False`
           can increase parser performance.
 
@@ -2784,7 +2784,7 @@ def parse_dtobj(
 ) -> datetime.datetime:
     """Parse datetime object into `<'datetime.datetime'>.
 
-    :param dtobj `<'object'>`: The supported datetime related object:
+    :param dtobj `<'object'>`: Supported datetime related objects:
         1. `<'str'>` datetime string that contains datetime information.
         2. `<'datetime.datetime'>` instance or subclass of datetime.datetime, return directly.
         3. `<'datetime.date'>` instance or subclass of datetime.date, converts to datetime and time values set to 0.
@@ -2795,29 +2795,29 @@ def parse_dtobj(
     ## The following arguments only effects when 'dtobj' is a datetime string.
 
     :param default `<'datetime/date'>`: The default to fill-in missing datetime values. Defaults to `None`.
-        - `<'date/datetime'>`: If parser failed to extract Y/M/D values from the string,
+        1. `<'date/datetime'>`: If parser failed to extract Y/M/D values from the string,
           the give 'default' will be used to fill-in the missing Y/M/D values.
-        - `None`: raise `PaserBuildError` if any Y/M/D values are missing.
+        2. `None`: raise `PaserBuildError` if any Y/M/D values are missing.
 
     :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
-        - When 'year1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
+        When 'year1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
 
     :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
-        - When 'day1st=None', use `çfg.day1st` if 'cfg' is specified, else `False` as default.
+        When 'day1st=None', use `çfg.day1st` if 'cfg' is specified, else `False` as default.
 
     :param ignoretz `<'bool'>`: Whether to ignore timezone information. Defaults to `True`.
-        - `True`: Parser ignores any timezone information and only returns
+        1. `True`: Parser ignores any timezone information and only returns
           timezone-naive datetime. Setting to `True` can increase parser
           performance.
-        - `False`: Parser will try to process the timzone information in
+        2. `False`: Parser will try to process the timzone information in
           the string, and generate a timezone-aware datetime if timezone
           has been matched by 'cfg.utc' & 'cfg.tz'.
 
     :param isoformat `<'bool'>`: Whether to parse 'dtstr' as ISO format. Defaults to `True`.
-        - `True`: Parser will first try to process the 'dtstr' as ISO format.
+        1. `True`: Parser will first try to process the 'dtstr' as ISO format.
           If failed, fallback to process the 'dtstr' through timelex tokens.
           For most datetime strings, this approach yields the best performance.
-        - `False`: Parser will only process the 'dtstr' through timelex tokens.
+        2. `False`: Parser will only process the 'dtstr' through timelex tokens.
           If the 'dtstr' is confirmed not an ISO format, setting to `False`
           can increase parser performance.
 
