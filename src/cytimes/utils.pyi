@@ -58,7 +58,7 @@ def parse_isoyear(data: str, pos: int, size: int) -> int:
     :param data `<'str'>`: The string to parse ISO year (YYYY) from.
     :param pos `<'int'>`: The starting position of the ISO year.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format year value.
     """
@@ -69,7 +69,7 @@ def parse_isomonth(data: str, pos: int, size: int) -> int:
     :param data `<'str'>`: The string to parse ISO month (MM) from.
     :param pos `<'int'>`: The starting position of the ISO month.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format month value.
     """
@@ -80,7 +80,7 @@ def parse_isoday(data: str, pos: int, size: int) -> int:
     :param data `<'str'>`: The string to parse ISO day (DD) from.
     :param pos `<'int'>`: The starting position of the ISO day.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format day value.
     """
@@ -91,7 +91,7 @@ def parse_isoweek(data: str, pos: int, size: int) -> int:
     :param data `<'str'>`: The string to parse ISO week number (WW) from.
     :param pos `<'int'>`: The starting position of the ISO week number.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format week number value.
     """
@@ -102,7 +102,7 @@ def parse_isoweekday(data: str, pos: int, size: int) -> int:
     :param data `<'str'>`: The string to parse ISO weekday (D) from.
     :param pos `<'int'>`: The starting position of the ISO weekday.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format weekday value.
     """
@@ -113,7 +113,7 @@ def parse_isoyearday(data: str, pos: int, size: int) -> int:
     :param data `<'str'>`: The string to parse ISO day of year (DDD) from.
     :param pos `<'int'>`: The starting position of the ISO day of year.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format day of year value.
     """
@@ -124,7 +124,7 @@ def parse_isohour(data: str, pos: int, size: int) -> int:
     :param data `<'str'>`: The string to parse ISO hour (HH) from.
     :param pos `<'int'>`: The starting position of the ISO hour.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format hour value.
     """
@@ -135,7 +135,7 @@ def parse_isominute(data: str, pos: int, size: int) -> int:
     :param data `<'str'>`: The string to parse ISO minute (MM) from.
     :param pos `<'int'>`: The starting position of the ISO minute.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format minute value.
     """
@@ -146,7 +146,7 @@ def parse_isosecond(data: str, pos: int, size: int) -> int:
     :param data `<'str'>`: The string to parse ISO second (SS) from.
     :param pos `<'int'>`: The starting position of the ISO second.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format second value.
     """
@@ -157,7 +157,7 @@ def parse_isofraction(data: str, pos: int, size: int) -> int:
     :param data `<'str'>`: The string to parse ISO fraction (f/us) from.
     :param pos `<'int'>`: The starting position of the ISO fraction.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format fraction value.
     """
@@ -964,8 +964,8 @@ def tz_parse(tz: datetime.tzinfo | str) -> datetime.tzinfo | None:
     """(cfunc) Parse 'tz' object into `<'datetime.tzinfo'>`.
 
     :param tz `<'datetime.tzinfo/str/None'>`: The timezone object.
-        - If 'tz' is an instance of `<'datetime.tzinfo'>`, return 'tz' directly.
-        - If 'tz' is a string, use Python 'Zoneinfo' to create the timezone object.
+        1. If 'tz' is an instance of `<'datetime.tzinfo'>`, return 'tz' directly.
+        2. If 'tz' is a string, use Python 'Zoneinfo' to create the timezone object.
     """
 
 # . type check

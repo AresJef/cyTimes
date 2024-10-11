@@ -59,8 +59,8 @@ def tz_parse(tz: datetime.tzinfo | str) -> object:
     """(cfunc) Parse 'tz' object into `<'datetime.tzinfo/None'>`.
 
     :param tz `<'datetime.tzinfo/str'>`: The timezone object.
-        - If 'tz' is an instance of `<'datetime.tzinfo'>`, return 'tz' directly.
-        - If 'tz' is a string, use Python 'Zoneinfo' to create the timezone object.
+        1. If 'tz' is an instance of `<'datetime.tzinfo'>`, return 'tz' directly.
+        2. If 'tz' is a string, use Python 'Zoneinfo' to create the timezone object.
     """
     # . <'NoneType'>
     if tz is None:

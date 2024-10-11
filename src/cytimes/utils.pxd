@@ -160,7 +160,7 @@ cdef inline int parse_isoyear(str data, Py_ssize_t pos, Py_ssize_t size) except 
     :param data `<'str'>`: The string to parse ISO year (YYYY) from.
     :param pos `<'int'>`: The starting position of the ISO year.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format year value.
     """
@@ -193,7 +193,7 @@ cdef inline int parse_isomonth(str data, Py_ssize_t pos, Py_ssize_t size)  excep
     :param data `<'str'>`: The string to parse ISO month (MM) from.
     :param pos `<'int'>`: The starting position of the ISO month.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format month value.
     """
@@ -229,7 +229,7 @@ cdef inline int parse_isoday(str data, Py_ssize_t pos, Py_ssize_t size) except -
     :param data `<'str'>`: The string to parse ISO day (DD) from.
     :param pos `<'int'>`: The starting position of the ISO day.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format day value.
     """
@@ -268,7 +268,7 @@ cdef inline int parse_isoweek(str data, Py_ssize_t pos, Py_ssize_t size) except 
     :param data `<'str'>`: The string to parse ISO week number (WW) from.
     :param pos `<'int'>`: The starting position of the ISO week number.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format week number value.
     """
@@ -307,7 +307,7 @@ cdef inline int parse_isoweekday(str data, Py_ssize_t pos, Py_ssize_t size) exce
     :param data `<'str'>`: The string to parse ISO weekday (D) from.
     :param pos `<'int'>`: The starting position of the ISO weekday.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format weekday value.
     """
@@ -329,7 +329,7 @@ cdef inline int parse_isoyearday(str data, Py_ssize_t pos, Py_ssize_t size) exce
     :param data `<'str'>`: The string to parse ISO day of year (DDD) from.
     :param pos `<'int'>`: The starting position of the ISO day of year.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format day of year value.
     """
@@ -361,7 +361,7 @@ cdef inline int parse_isohour(str data, Py_ssize_t pos, Py_ssize_t size) except 
     :param data `<'str'>`: The string to parse ISO hour (HH) from.
     :param pos `<'int'>`: The starting position of the ISO hour.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format hour value.
     """
@@ -397,7 +397,7 @@ cdef inline int parse_isominute(str data, Py_ssize_t pos, Py_ssize_t size) excep
     :param data `<'str'>`: The string to parse ISO minute (MM) from.
     :param pos `<'int'>`: The starting position of the ISO minute.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format minute value.
     """
@@ -429,7 +429,7 @@ cdef inline int parse_isosecond(str data, Py_ssize_t pos, Py_ssize_t size) excep
     :param data `<'str'>`: The string to parse ISO second (SS) from.
     :param pos `<'int'>`: The starting position of the ISO second.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format second value.
     """
@@ -441,7 +441,7 @@ cdef inline int parse_isofraction(str data, Py_ssize_t pos, Py_ssize_t size) exc
     :param data `<'str'>`: The string to parse ISO fraction (f/us) from.
     :param pos `<'int'>`: The starting position of the ISO fraction.
     :param size `<'int'>`: The length of the 'data' string.
-        - If 'size <= 0', the function measure the size of the 'data' string internal.
+        If 'size <= 0', the function measure the size of the 'data' string internal.
 
     :return `<'int'>`: `-1` for invalid ISO format fraction value.
     """
