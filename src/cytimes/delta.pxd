@@ -27,8 +27,8 @@ cdef class Delta:
         int _microsecond
         long long _hashcode
     # Arithmetic: addition
-    cdef inline datetime.datetime _add_date(self, object o)
-    cdef inline datetime.datetime _add_datetime(self, object o)
+    cdef inline object _add_date(self, object o)
+    cdef inline object _add_datetime(self, object o)
     cdef inline Delta _add_delta(self, Delta o)
     cdef inline Delta _add_timedelta(self, object o)
     cdef inline Delta _add_relativedelta(self, object o)
@@ -36,15 +36,15 @@ cdef class Delta:
     cdef inline Delta _add_float(self, double o)
     # Arithmetic: right addition
     cdef inline Delta _radd_relativedelta(self, object o)
-    # Arithmetic: substraction
+    # Arithmetic: subtraction
     cdef inline Delta _sub_delta(self, Delta o)
     cdef inline Delta _sub_timedelta(self, object o)
     cdef inline Delta _sub_relativedelta(self, object o)
     cdef inline Delta _sub_int(self, int o)
     cdef inline Delta _sub_float(self, double o)
-    # Arithmetic: right substraction
-    cdef inline datetime.datetime _rsub_date(self, object o)
-    cdef inline datetime.datetime _rsub_datetime(self, object o)
+    # Arithmetic: right subtraction
+    cdef inline object _rsub_date(self, object o)
+    cdef inline object _rsub_datetime(self, object o)
     cdef inline Delta _rsub_timedelta(self, object o)
     cdef inline Delta _rsub_relativedelta(self, object o)
     cdef inline Delta _rsub_int(self, int o)
