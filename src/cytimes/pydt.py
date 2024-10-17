@@ -21,7 +21,6 @@ np.import_umath()
 datetime.import_datetime()
 
 # Python imports
-from typing import Any
 import datetime, numpy as np
 from zoneinfo import available_timezones as _available_timezones
 from cytimes.parser import Configs, parse_dtobj as _parse
