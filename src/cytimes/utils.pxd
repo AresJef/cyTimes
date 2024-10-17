@@ -591,8 +591,7 @@ cdef inline tm tm_fr_seconds(double seconds) except *:
     ss = min(max(ss + EPOCH_SEC, DT_SEC_MIN), DT_SEC_MAX)
 
     # Calculate ymd & hms
-    cdef int ordinal = ss // 86_400
-    _ymd = ymd_fr_ordinal(ordinal)
+    _ymd = ymd_fr_ordinal(ss // 86_400)
     _hms = hms_fr_seconds(ss)
 
     # Create struct_time
@@ -610,12 +609,7 @@ cdef inline tm tm_fr_us(long long us) except *:
     cdef unsigned long long _us = min(max(us + EPOCH_US, DT_US_MIN), DT_US_MAX)
 
     # Calculate ymd & hms
-    # since '_us' is positive, we can safely divide
-    # without checking for negative values.
-    cdef int ordinal
-    with cython.cdivision(True):
-        ordinal = _us // US_DAY
-    _ymd = ymd_fr_ordinal(ordinal)
+    _ymd = ymd_fr_ordinal(_us // US_DAY)
     _hms = hms_fr_us(_us)
 
     # Create struct_time
@@ -654,10 +648,9 @@ cdef inline hms hms_fr_us(long long us) except *:
     cdef int hh, mi, ss
     # Since 'us' must be positive, we can safely divide
     # without checking for negative values.
-    with cython.cdivision(True):
-        us = us % US_DAY
-        hh = us // US_HOUR
-        us = us % US_HOUR
+    us = us % US_DAY
+    hh = us // US_HOUR
+    us = us % US_HOUR
     mi = us // 60_000_000
     us %= 60_000_000
     ss = us // 1_000_000
@@ -709,10 +702,11 @@ cdef inline int days_bf_year(int year) except -1:
 cdef inline int days_of_year(int year, int month, int day) except -1:
     """Get the days between the 1st day of the 'year' 
     and the given 'Y/M/D' `<'int'>`."""
-    return (
-        days_bf_month(year, month) 
-        + min((max(day, 1)), days_in_month(year, month))
-    )
+    if day < 1:
+        day = 1
+    elif day > 28:
+        day = min(day, days_in_month(year, month))
+    return days_bf_month(year, month) + day
 
 # . quarter
 cdef inline int quarter_of_month(int month) except -1:
@@ -758,7 +752,7 @@ cdef inline int quarter_lst_month(int month) except -1:
 # . month
 cdef inline int days_in_month(int year, int month) except -1:
     """Get total days of the 'month' in the given 'year' `<'int'>`."""
-    if month <= 1 or month >= 12:
+    if not 1 < month < 12:
         return 31
 
     cdef int days = DAYS_IN_MONTH[month]
@@ -840,11 +834,11 @@ cdef inline iso ymd_isocalendar(int year, int month, int day) except *:
 
 cdef inline int ymd_to_ordinal(int year, int month, int day) except -1:
     """Convert 'Y/M/D' to ordinal days `<'int'>`."""
-    return (
-        days_bf_year(year) 
-        + days_bf_month(year, month) 
-        + min(max(day, 1), days_in_month(year, month))
-    )
+    if day < 1:
+        day = 1
+    elif day > 28:
+        day = min(day, days_in_month(year, month))
+    return days_bf_year(year) + days_bf_month(year, month) + day
 
 cdef inline ymd ymd_fr_ordinal(int ordinal) except *:
     """Convert ordinal days to 'Y/M/D' `<'stuct:ymd'>`."""
@@ -907,7 +901,7 @@ cdef inline ymd ymd_fr_isocalendar(int year, int week, int weekday) except *:
         # Thursday or leap years starting on a Wednesday. So for
         # invalid weeks, we shift to the 1st week of the next year.
         day_1st = ymd_to_ordinal(year, 1, 1) % 7
-        if not (day_1st == 4 or (day_1st == 3 and is_leap_year(year))):
+        if day_1st != 4 and not (day_1st == 3 and is_leap_year(year)):
             week = 1
             year += 1
     # Clip week
@@ -965,7 +959,10 @@ cdef inline datetime.date date_new(int year=1, int month=1, int day=1):
     """
     year = min(max(year, 1), 9_999)
     month = min(max(month, 1), 12)
-    day = min(max(day, 1), days_in_month(year, month))
+    if day < 1:
+        day = 1
+    elif day > 28:
+        day = min(day, days_in_month(year, month))
     return datetime.date_new(year, month, day)
 
 cdef inline datetime.date date_now(object tz=None):
@@ -1099,16 +1096,8 @@ cdef inline datetime.date date_fr_us(long long us):
     """Convert total microseconds since Unix Epoch to `<'datetime.date'>`."""
     # Add back Epoch
     cdef unsigned long long _us = min(max(us + EPOCH_US, DT_US_MIN), DT_US_MAX)
-
-    # Calcuate ordinal days
-    # since '_us' is positive, we can safely divide
-    # without checking for negative values.
-    cdef int ordinal
-    with cython.cdivision(True):
-        ordinal = _us // US_DAY
-    
     # Create date
-    return date_fr_ordinal(ordinal)
+    return date_fr_ordinal(_us // US_DAY)
 
 cdef inline datetime.date date_fr_ts(double ts):
     """Convert timestamp to `<'datetime.date'>`."""
@@ -1127,7 +1116,10 @@ cdef inline datetime.date date_replace(datetime.date date, int year=-1, int mont
         year = date.year
     if not 1 <= month <= 12:
         month = date.month
-    day = min(day if day > 0 else date.day, days_in_month(year, month))
+    if day < 1:
+        day = date.day
+    elif day > 28:
+        day = min(day, days_in_month(year, month))
     return datetime.date_new(year, month, day)
 
 cdef inline datetime.date date_chg_weekday(datetime.date date, int weekday):
@@ -1141,9 +1133,7 @@ cdef inline datetime.date date_chg_weekday(datetime.date date, int weekday):
     weekday = min(max(weekday, 0), 6)
     if curr_wday == weekday:
         return date
-
-    cdef int ordinal = date_to_ordinal(date)
-    return date_fr_ordinal(ordinal + weekday - curr_wday)
+    return date_fr_ordinal(date_to_ordinal(date) + weekday - curr_wday)
 
 # . arithmetic
 cdef inline datetime.date date_add(
@@ -1151,7 +1141,7 @@ cdef inline datetime.date date_add(
     int days=0, int seconds=0, int microseconds=0,
     int milliseconds=0, int minutes=0, int hours=0, int weeks=0,
 ):
-    """Add timedelta to datetime.date `<'datetime.date'>`.
+    """Add delta to datetime.date `<'datetime.date'>`.
     
     Equivalent to:
     >>> date + datetime.timedelta(
@@ -1159,19 +1149,18 @@ cdef inline datetime.date date_add(
             milliseconds, minutes, hours, weeks
         )
     """
-    # No change
-    if days == seconds == microseconds == milliseconds == minutes == hours == weeks == 0:
-        return date
+    # Calculate delta
+    cdef:
+        long long dd = days + weeks * 7
+        long long ss = seconds + minutes * 60 + hours * 3_600
+        long long us = microseconds + milliseconds * 1_000
+    us += (dd * 86_400 + ss) * 1_000_000
+    dd = us // US_DAY
+    if dd == 0:
+        return date  # exit: no change
 
-    # Add timedelta
-    cdef: 
-        long long ordinal = date_to_ordinal(date)
-        long long hh = hours
-        long long mi = minutes
-        long long ss = seconds
-        long long us = milliseconds * 1_000 + microseconds
-    us += ((ordinal + days + weeks * 7 - EPOCH_DAY) * 86_400 + hh * 3_600 + mi * 60 + ss) * 1_000_000
-    return date_fr_us(us)
+    # Add delta
+    return date_fr_ordinal(date_to_ordinal(date) + dd)
 
 # datetime.datetime ------------------------------------------------------------------------------------
 # . generate
@@ -1187,7 +1176,10 @@ cdef inline datetime.datetime dt_new(
     """
     year = min(max(year, 1), 9_999)
     month = min(max(month, 1), 12)
-    day = min(max(day, 1), days_in_month(year, month))
+    if day < 1:
+        day = 1
+    elif day > 28:
+        day = min(day, days_in_month(year, month))
     hour = min(max(hour, 0), 23)
     minute = min(max(minute, 0), 59)
     second = min(max(second, 0), 59)
@@ -1698,10 +1690,7 @@ cdef inline datetime.datetime dt_fr_us(long long us, object tz=None):
     # Calculate ymd & hms
     # since '_us' is positive, we can safely divide
     # without checking for negative values.
-    cdef int ordinal
-    with cython.cdivision(True):
-        ordinal = _us // US_DAY
-    _ymd = ymd_fr_ordinal(ordinal)
+    _ymd = ymd_fr_ordinal(_us // US_DAY)
     _hms = hms_fr_us(_us)
 
     # Create datetime
@@ -1731,27 +1720,35 @@ cdef inline datetime.datetime dt_replace(
     >>> dt.replace(year, month, day, hour, minute, second, microsecond, tz, fold)
     """
     # Current values
-    yy: cython.int = datetime.datetime_year(dt)
-    mm: cython.int = datetime.datetime_month(dt)
-    dd: cython.int = datetime.datetime_day(dt)
-    hh: cython.int = datetime.datetime_hour(dt)
-    mi: cython.int = datetime.datetime_minute(dt)
-    ss: cython.int = datetime.datetime_second(dt)
-    us: cython.int = datetime.datetime_microsecond(dt)
-    tz_ = datetime.datetime_tzinfo(dt)
-    fd_: cython.int = datetime.datetime_fold(dt)
+    cdef:
+        int yy = dt.year
+        int mm = dt.month
+        int dd = dt.day
+        int hh = dt.hour
+        int mi = dt.minute
+        int ss = dt.second
+        int us = dt.microsecond
+        object tz_ = dt.tzinfo
+        int fd_ = dt.fold
 
     # New values
-    new_yy: cython.int = yy if year < 1 else min(year, 9_999)
-    new_mm: cython.int = mm if month < 1 else min(month, 12)
-    new_dd: cython.int = dd if day < 1 else min(day, days_in_month(new_yy, new_mm))
-    new_hh: cython.int = hh if hour < 0 else min(hour, 23)
-    new_mi: cython.int = mi if minute < 0 else min(minute, 59)
-    new_ss: cython.int = ss if second < 0 else min(second, 59)
-    new_us: cython.int = us if microsecond < 0 else microsecond
+    cdef:
+        int new_yy = yy if year < 1 else min(year, 9_999)
+        int new_mm = mm if month < 1 else min(month, 12)
+        int new_dd
+        int new_hh = hh if hour < 0 else min(hour, 23)
+        int new_mi = mi if minute < 0 else min(minute, 59)
+        int new_ss = ss if second < 0 else min(second, 59)
+        int new_us = us if microsecond < 0 else microsecond
+        object new_tz = tz_ if tz is not None and not is_tz(tz) else tz
+        int new_fd = fd_ if not fold in (0, 1) else fold
+    if day < 1:
+        new_dd = dd
+    elif day > 28:
+        new_dd = min(day, days_in_month(new_yy, new_mm))
+    else:
+        new_dd = day
     new_us = combine_abs_ms_us(millisecond, new_us)
-    new_tz = tz_ if not (tz is None or is_tz(tz)) else tz
-    new_fd: cython.int = fd_ if not fold in (0, 1) else fold
 
     # Same values
     if (
@@ -1780,14 +1777,22 @@ cdef inline datetime.datetime dt_replace_date(
     >>> dt.replace(year, month, day)
     """
     # Current values
-    yy: cython.int = datetime.datetime_year(dt)
-    mm: cython.int = datetime.datetime_month(dt)
-    dd: cython.int = datetime.datetime_day(dt)
+    cdef:
+        int yy = dt.year
+        int mm = dt.month
+        int dd = dt.day
 
     # New values
-    new_yy: cython.int = yy if year < 1 else min(year, 9_999)
-    new_mm: cython.int = mm if month < 1 else min(month, 12)
-    new_dd: cython.int = dd if day < 1 else min(day, days_in_month(new_yy, new_mm))
+    cdef:
+        int new_yy = yy if year < 1 else min(year, 9_999)
+        int new_mm = mm if month < 1 else min(month, 12)
+        int new_dd
+    if day < 1:
+        new_dd = dd
+    elif day > 28:
+        new_dd = min(day, days_in_month(new_yy, new_mm))
+    else:
+        new_dd = day
 
     # Same values
     if new_yy == yy and new_mm == mm and new_dd == dd:
@@ -1796,9 +1801,8 @@ cdef inline datetime.datetime dt_replace_date(
     # Create new datetime
     return datetime.datetime_new(
         new_yy, new_mm, new_dd, 
-        datetime.datetime_hour(dt), datetime.datetime_minute(dt), 
-        datetime.datetime_second(dt), datetime.datetime_microsecond(dt),
-        datetime.datetime_tzinfo(dt), datetime.datetime_fold(dt),
+        dt.hour, dt.minute, dt.second, 
+        dt.microsecond, dt.tzinfo, dt.fold,
     )
 
 
@@ -1815,16 +1819,18 @@ cdef inline datetime.datetime dt_replace_time(
     >>> dt.replace(hour, minute, second, microsecond)
     """
     # Current values
-    hh: cython.int = datetime.datetime_hour(dt)
-    mi: cython.int = datetime.datetime_minute(dt)
-    ss: cython.int = datetime.datetime_second(dt)
-    us: cython.int = datetime.datetime_microsecond(dt)
+    cdef:
+        int hh = dt.hour
+        int mi = dt.minute
+        int ss = dt.second
+        int us = dt.microsecond
 
     # New values
-    new_hh: cython.int = hh if hour < 0 else min(hour, 23)
-    new_mi: cython.int = mi if minute < 0 else min(minute, 59)
-    new_ss: cython.int = ss if second < 0 else min(second, 59)
-    new_us: cython.int = us if microsecond < 0 else microsecond
+    cdef:
+        int new_hh = hh if hour < 0 else min(hour, 23)
+        int new_mi = mi if minute < 0 else min(minute, 59)
+        int new_ss = ss if second < 0 else min(second, 59)
+        int new_us = us if microsecond < 0 else microsecond
     new_us = combine_abs_ms_us(millisecond, new_us)
 
     # Same values
@@ -1833,12 +1839,9 @@ cdef inline datetime.datetime dt_replace_time(
 
     # Create new datetime
     return datetime.datetime_new(
-        datetime.datetime_year(dt),
-        datetime.datetime_month(dt),
-        datetime.datetime_day(dt),
+        dt.year, dt.month, dt.day,
         new_hh, new_mi, new_ss, new_us,
-        datetime.datetime_tzinfo(dt),
-        datetime.datetime_fold(dt),
+        dt.tzinfo, dt.fold,
     )
 
 cdef inline datetime.datetime dt_replace_tz(datetime.datetime dt, object tz):
@@ -1887,8 +1890,7 @@ cdef inline datetime.datetime dt_chg_weekday(datetime.datetime dt, int weekday):
     if curr_wday == weekday:
         return dt
 
-    cdef int ordinal = dt_to_ordinal(dt, False)
-    _ymd = ymd_fr_ordinal(ordinal + weekday - curr_wday)
+    _ymd = ymd_fr_ordinal(dt_to_ordinal(dt, False) + weekday - curr_wday)
     return datetime.datetime_new(
         _ymd.year, _ymd.month, _ymd.day, 
         dt.hour, dt.minute, dt.second, 
@@ -1940,7 +1942,7 @@ cdef inline datetime.datetime dt_add(
     int days=0, int seconds=0, int microseconds=0,
     int milliseconds=0, int minutes=0, int hours=0, int weeks=0,
 ):
-    """Add timedelta to datetime.datetime `<'datetime.datetime'>`.
+    """Add delta to datetime.datetime `<'datetime.datetime'>`.
     
     Equivalent to:
     >>> dt + datetime.timedelta(
@@ -1948,21 +1950,28 @@ cdef inline datetime.datetime dt_add(
             milliseconds, minutes, hours, weeks
         )
     """
-    # No change
-    if days == seconds == microseconds == milliseconds == minutes == hours == weeks == 0:
-        return dt
+    # Calculate delta
+    cdef:
+        long long dd = days + weeks * 7
+        long long ss = seconds + minutes * 60 + hours * 3_600
+        long long us = microseconds + milliseconds * 1_000
+    us += (dd * 86_400 + ss) * 1_000_000
+    if us == 0:
+        return dt  # exit: no change
 
-    # Add timedelta
-    cdef: 
-        long long ordinal = dt_to_ordinal(dt, False)
-        long long hh = dt.hour + hours
-        long long mi = dt.minute + minutes
-        long long ss = dt.second + seconds
-        long long us = milliseconds * 1_000 + dt.microsecond + microseconds
-    us += ((ordinal + days + weeks * 7 - EPOCH_DAY) * 86_400 + hh * 3_600 + mi * 60 + ss) * 1_000_000
-    return dt_fr_us(us, dt.tzinfo)
-    
-    
+    # Add delta
+    us += dt_to_us(dt, False)
+    cdef unsigned long long _us = min(max(us + EPOCH_US, DT_US_MIN), DT_US_MAX)
+    _ymd = ymd_fr_ordinal(_us // US_DAY)
+    _hms = hms_fr_us(_us)
+
+    # Create datetime
+    return datetime.datetime_new(
+        _ymd.year, _ymd.month, _ymd.day, 
+        _hms.hour, _hms.minute, _hms.second, 
+        _hms.microsecond, dt.tzinfo, dt.fold,
+    )
+
 # datetime.time ----------------------------------------------------------------------------------------
 # . generate
 cdef inline datetime.time time_new(
@@ -2229,7 +2238,7 @@ cdef inline datetime.time time_replace(
         second = time.second
     if not 0 <= microsecond <= 999_999:
         microsecond = time.microsecond
-    if not (is_tz(tz) or tz is None):
+    if tz is not None and not is_tz(tz):
         tz = time.tzinfo
     if not fold in (0, 1):
         fold = time.fold
@@ -2298,7 +2307,8 @@ cdef inline bint is_td_exact(object obj) except -1:
 cdef inline str td_to_isoformat(datetime.timedelta td):
     """Convert datetime.timedelta to ISO format `<'str'>`."""
     cdef:
-        long long seconds = td.day * 86_400 + td.second
+        long long days = td.day
+        long long seconds = days * 86_400 + td.second
         long long us = td.microsecond
     
     # Positive timedelta
@@ -2332,9 +2342,8 @@ cdef inline str td_to_isoformat(datetime.timedelta td):
     else:
         us = -(seconds * 1_000_000 + us)
         if us >= US_HOUR:
-            with cython.cdivision(True):
-                hours = us // US_HOUR
-                us = us % US_HOUR
+            hours = us // US_HOUR
+            us = us % US_HOUR
             minutes = us // 60_000_000
             us %= 60_000_000
             seconds = us // 1_000_000
@@ -2355,7 +2364,9 @@ cdef inline str td_to_isoformat(datetime.timedelta td):
 
 cdef inline str td_to_utcformat(datetime.timedelta td):
     """Convert datetime.timedelta to UTC format '+/-HH:MM' `<'str'>`."""
-    cdef long long seconds = td.day * 86_400 + td.second
+    cdef:
+        long long days = td.day
+        long long seconds = days * 86_400 + td.second
     # Positive timedelta
     if seconds >= 0:
         hours = min(seconds // 3_600, 23)
@@ -2395,8 +2406,8 @@ cdef inline datetime.timedelta td_fr_seconds(double seconds):
 
 cdef inline datetime.timedelta td_fr_us(long long us):
     """Convert total microseconds to `<'datetime.timedelta'>`."""
-    cdef long long days = us // 86_400_000 // 1_000
-    us -= days * 86_400_000 * 1_000
+    cdef long long days = us // US_DAY
+    us -= days * US_DAY
     cdef long long seconds = us // 1_000_000
     us %= 1_000_000
     return datetime.timedelta_new(days, seconds, us)
@@ -2933,9 +2944,9 @@ cdef inline long long dt64_to_days(object dt64):
 
     # Conversion: common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-        return value // 86_400_000 // 1_000_000
+        return value // NS_DAY
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
-        return value // 86_400_000 // 1_000
+        return value // US_DAY
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
         return value // 86_400_000
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_s:
@@ -2951,9 +2962,9 @@ cdef inline long long dt64_to_days(object dt64):
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ps:
         return value // 86_400_000 // 1_000_000_000
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_fs:
-        return value // 86_400_000 // 1_000_000_000 // 1_000
+        return value // US_DAY // 1_000_000_000
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_as:
-        return value // 86_400_000 // 1_000_000_000 // 1_000_000
+        return value // NS_DAY // 1_000_000_000
 
     # Unsupported unit
     raise ValueError(
@@ -2974,9 +2985,9 @@ cdef inline long long dt64_to_hours(object dt64):
 
     # Conversion: common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-        return value // 3_600_000 // 1_000_000
+        return value // NS_HOUR
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
-        return value // 3_600_000 // 1_000
+        return value // US_HOUR
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
         return value // 3_600_000
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_s:
@@ -2992,9 +3003,9 @@ cdef inline long long dt64_to_hours(object dt64):
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ps:
         return value // 3_600_000 // 1_000_000_000
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_fs:
-        return value // 3_600_000 // 1_000_000_000 // 1_000
+        return value // US_HOUR // 1_000_000_000
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_as:
-        return value // 3_600_000 // 1_000_000_000 // 1_000_000
+        return value // NS_HOUR // 1_000_000_000
 
     # Unsupported unit
     raise ValueError(
@@ -3015,7 +3026,7 @@ cdef inline long long dt64_to_minutes(object dt64):
 
     # Conversion: common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-        return value // 60_000_000 // 1_000
+        return value // NS_MINUTE
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
         return value // 60_000_000
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
@@ -3035,7 +3046,7 @@ cdef inline long long dt64_to_minutes(object dt64):
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_fs:
         return value // 60_000_000 // 1_000_000_000
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_as:
-        return value // 60_000_000 // 1_000_000_000 // 1_000
+        return value // NS_MINUTE // 1_000_000_000
 
     # Unsupported unit
     raise ValueError(
@@ -3299,9 +3310,9 @@ cdef inline long long td64_to_days(object td64):
 
     # Conversion: common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-        return math.llroundl(value / 86_400_000 / 1_000_000)
+        return math.llroundl(value / NS_DAY)
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
-        return math.llroundl(value / 86_400_000 / 1_000)
+        return math.llroundl(value / US_DAY)
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
         return math.llroundl(value / 86_400_000)
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_s:
@@ -3317,9 +3328,9 @@ cdef inline long long td64_to_days(object td64):
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ps:
         return math.llroundl(value / 86_400_000 / 1_000_000_000)
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_fs:
-        return math.llroundl(value / 86_400_000 / 1_000_000_000 / 1_000)
+        return math.llroundl(value / US_DAY / 1_000_000_000)
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_as:
-        return math.llroundl(value / 86_400_000 / 1_000_000_000 / 1_000_000)
+        return math.llroundl(value / NS_DAY / 1_000_000_000)
 
     # Unsupported unit
     raise ValueError(
@@ -3340,9 +3351,9 @@ cdef inline long long td64_to_hours(object td64):
 
     # Conversion: common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-        return math.llroundl(value / 3_600_000 / 1_000_000)
+        return math.llroundl(value / NS_HOUR)
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
-        return math.llroundl(value / 3_600_000 / 1_000)
+        return math.llroundl(value / US_HOUR)
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
         return math.llroundl(value / 3_600_000)
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_s:
@@ -3358,9 +3369,9 @@ cdef inline long long td64_to_hours(object td64):
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ps:
         return math.llroundl(value / 3_600_000 / 1_000_000_000)
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_fs:
-        return math.llroundl(value / 3_600_000 / 1_000_000_000 / 1_000)
+        return math.llroundl(value / US_HOUR / 1_000_000_000)
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_as:
-        return math.llroundl(value / 3_600_000 / 1_000_000_000 / 1_000_000)
+        return math.llroundl(value / NS_HOUR / 1_000_000_000)
 
     # Unsupported unit
     raise ValueError(
@@ -3381,7 +3392,7 @@ cdef inline long long td64_to_minutes(object td64):
 
     # Conversion: common
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-        return math.llroundl(value / 60_000_000 / 1_000)
+        return math.llroundl(value / NS_MINUTE)
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
         return math.llroundl(value / 60_000_000)
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
@@ -3401,7 +3412,7 @@ cdef inline long long td64_to_minutes(object td64):
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_fs:
         return math.llroundl(value / 60_000_000 / 1_000_000_000)
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_as:
-        return math.llroundl(value / 60_000_000 / 1_000_000_000 / 1_000)
+        return math.llroundl(value / NS_MINUTE / 1_000_000_000)
 
     # Unsupported unit
     raise ValueError(

@@ -31,8 +31,8 @@ DAYS_BR_QUARTER_NDARRAY: np.ndarray = np.array([0, 90, 181, 273, 365])
 US_DAY: cython.longlong = 86_400_000_000
 US_HOUR: cython.longlong = 3_600_000_000
 # . nanoseconds
-NS_DAY: cython.longlong = 864_00_000_000_000
-NS_HOUR: cython.longlong = 36_00_000_000_000
+NS_DAY: cython.longlong = 86_400_000_000_000
+NS_HOUR: cython.longlong = 3_600_000_000_000
 NS_MINUTE: cython.longlong = 60_000_000_000
 # . date
 ORDINAL_MAX: cython.int = 3_652_059
@@ -625,6 +625,12 @@ def _test_date_arithmetic() -> None:
     td6 = datetime.timedelta(-1, -86399, -1)
     assert date_add(date, -1, -86399, -1) == date + td6  # type: ignore
 
+    td7 = datetime.timedelta(1, 60, 100000, 0, 60, 24, 0)
+    assert date_add(date, 1, 60, 100000, 0, 60, 24, 0) == date + td7  # type: ignore
+
+    td8 = datetime.timedelta(-1, -60, -100000, 0, -60, -24, 0)
+    assert date_add(date, -1, -60, -100000, 0, -60, -24, 0) == date + td8  # type: ignore
+
     print("Passed: date_arithmetic")
 
     del datetime
@@ -881,6 +887,12 @@ def _test_dt_arithmetic() -> None:
 
     td6 = datetime.timedelta(-1, -86399, -1)
     assert dt_add(dt, -1, -86399, -1) == dt + td6  # type: ignore
+
+    td7 = datetime.timedelta(1, 60, 100000, 0, 60, 24, 0)
+    assert dt_add(dt, 1, 60, 100000, 0, 60, 24, 0) == dt + td7  # type: ignore
+
+    td8 = datetime.timedelta(-1, -60, -100000, 0, -60, -24, 0)
+    assert dt_add(dt, -1, -60, -100000, 0, -60, -24, 0) == dt + td8  # type: ignore
 
     print("Passed: date_arithmetic")
 

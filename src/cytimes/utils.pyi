@@ -3,6 +3,30 @@ import datetime
 import numpy as np
 from typing import Literal
 
+# Constants -----------------------------------------------------------------------------------------
+# . microseconds
+US_DAY: int
+US_HOUR: int
+# . nanoseconds
+NS_DAY: int
+NS_HOUR: int
+NS_MINUTE: int
+# . date
+ORDINAL_MAX: int
+# . datetime
+UTC: datetime.timezone
+EPOCH_DT: datetime.datetime
+EPOCH_US: int
+EPOCH_SEC: int
+EPOCH_DAY: int
+DT_US_MAX: int
+DT_US_MIN: int
+DT_SEC_MAX: int
+DT_SEC_MIN: int
+# . time
+TIME_MIN: datetime.time
+TIME_MAX: datetime.time
+
 # Delta ---------------------------------------------------------------------------------------------
 def combine_abs_ms_us(ms: int, us: int) -> int:
     """(cfunc) Combine absolute millisecond and microsecond to microsecond `<'int'>`.
@@ -405,7 +429,7 @@ def date_add(
     hours: int = 0,
     weeks: int = 0,
 ) -> datetime.date:
-    """Add timedelta to datetime.date `<'datetime.date'>`.
+    """Add delta to datetime.date `<'datetime.date'>`.
 
     Equivalent to:
     >>> date + datetime.timedelta(
@@ -738,7 +762,7 @@ def dt_add(
     hours: int = 0,
     weeks: int = 0,
 ) -> datetime.datetime:
-    """Add timedelta to datetime.datetime `<'datetime.datetime'>`.
+    """Add delta to datetime.datetime `<'datetime.datetime'>`.
 
     Equivalent to:
     >>> dt + datetime.timedelta(
