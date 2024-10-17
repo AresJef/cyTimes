@@ -20,7 +20,7 @@ import datetime
 from dateutil.relativedelta import relativedelta
 from cytimes import typeref, utils
 
-__all__ = ["Delta"]
+__all__ = ["is_delta", "Delta"]
 
 
 # Contants ------------------------------------------------------------------------------------
@@ -29,6 +29,14 @@ WEEKDAY_REPRS: tuple[str, ...] = ("MO", "TU", "WE", "TH", "FR", "SA", "SU")
 
 
 # Utils ---------------------------------------------------------------------------------------
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(-1, check=False)
+def is_delta(o: object) -> cython.bint:
+    """(cfunc) Check if an object is an instance of 'Delta' `<'bool'>`."""
+    return isinstance(o, Delta)
+
+
 @cython.cfunc
 @cython.inline(True)
 def _date_add_delta(
@@ -598,7 +606,7 @@ class Delta:
             return self._add_datetime(o)
         if utils.is_date(o):
             return self._add_date(o)
-        if isinstance(o, Delta):
+        if is_delta(o):
             return self._add_delta(o)
         if utils.is_td(o):
             return self._add_timedelta(o)
@@ -994,7 +1002,7 @@ class Delta:
             - Returns `<'cytimes.Delta'>`.
         """
         # . common
-        if isinstance(o, Delta):
+        if is_delta(o):
             return self._sub_delta(o)
         if utils.is_td(o):
             return self._sub_timedelta(o)
@@ -1672,7 +1680,7 @@ class Delta:
           or subtracted to a datetime object.
         """
         # . common
-        if isinstance(o, Delta):
+        if is_delta(o):
             return self._eq_delta(o)
         if utils.is_td(o):
             return self._eq_timedelta(o)

@@ -2,14 +2,13 @@ import datetime, numpy as np
 from dateutil.relativedelta import relativedelta
 from typing_extensions import overload, Self, TypeVar
 
-# Date&Time Types
+# Types
 _DateT = TypeVar("_DateT", bound=datetime.date)
 _DatetimeT = TypeVar("_DatetimeT", bound=datetime.datetime)
-# Delta Types
 _DeltaT = TypeVar("_DeltaT", bound=datetime.timedelta | Delta | relativedelta)
-# Numeric Types
 _NumericT = TypeVar("_NumericT", bound=int | float)
 
+# Delta
 class Delta:
     def __init__(
         self,

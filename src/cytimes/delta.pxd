@@ -3,9 +3,10 @@
 from cpython cimport datetime
 
 # Constants
-cdef:
-    # . weekday
-    tuple WEEKDAY_REPRS
+cdef tuple WEEKDAY_REPRS
+
+# Utils
+cdef bint is_delta(object o) except -1
 
 # Delta
 cdef class Delta:
