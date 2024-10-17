@@ -123,8 +123,8 @@ def _timelex(
     one unit `<'list[str]'>`.
 
     :param dtstr `<'str'>`: The datetime string to be broken into lexical tokens.
-    :param start `<'int'>`: The starting index for the 'dtstr' string. Defaults to `0`.
-    :param size `<'int'>`: The size of the 'dtstr' string. Defaults to `0`.
+    :param start `<'int'>`: The starting index for the 'dtstr' string, defaults to `0`.
+    :param size `<'int'>`: The size of the 'dtstr' string, defaults to `0`.
         If 'size <= 0', the function measure the size of the 'dtstr' string internal.
     """
     # Validate index & size
@@ -309,8 +309,8 @@ class Configs:
     ) -> None:
         """The configuration for the Parser.
 
-        :param year1st `<'bool'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `False`.
-        :param day1st `<'bool'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `False`.
+        :param year1st `<'bool'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `False`.
+        :param day1st `<'bool'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `False`.
 
         ### Ambiguous Y/M/D
         Both the 'year1st' & 'day1st' arguments works together to determine how
@@ -1434,7 +1434,7 @@ class Parser:
     def __init__(self, cfg: Configs = None) -> None:
         """The datetime Parser.
 
-        :param cfg `<'Configs/None'>`: The configuration for the Parser. Defaults to `None`.
+        :param cfg `<'Configs/None'>`: The configuration for the Parser, defaults to `None`.
 
         For more information about `<'Configs'>`, please refer to the Configs class.
         """
@@ -1473,25 +1473,25 @@ class Parser:
         default: datetime.date | datetime.datetime | None = None,
         year1st: bool | None = None,
         day1st: bool | None = None,
-        ignoretz: cython.bint = True,
+        ignoretz: cython.bint = False,
         isoformat: cython.bint = True,
     ) -> datetime.datetime:
         """Parse the datetime string into `<'datetime.datetime'>`.
 
         :param dtstr `<'str'>`: The string that contains datetime information.
 
-        :param default `<'datetime/date'>`: The default to fill-in missing datetime values. Defaults to `None`.
+        :param default `<'datetime/date'>`: The default to fill-in missing datetime values, defaults to `None`.
             1. `<'date/datetime'>`: If parser failed to extract Y/M/D values from the string,
               the give 'default' will be used to fill-in the missing Y/M/D values.
             2. `None`: raise `PaserBuildError` if any Y/M/D values are missing.
 
-        :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
+        :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
             When 'year1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
 
-        :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
+        :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `None`.
             When 'day1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
 
-        :param ignoretz `<'bool'>`: Whether to ignore timezone information. Defaults to `True`.
+        :param ignoretz `<'bool'>`: Whether to ignore timezone information, defaults to `False`.
             1. `True`: Parser ignores any timezone information and only returns
               timezone-naive datetime. Setting to `True` can increase parser
               performance.
@@ -1499,7 +1499,7 @@ class Parser:
               the string, and generate a timezone-aware datetime if timezone
               has been matched by 'cfg.utc' & 'cfg.tz'.
 
-        :param isoformat `<'bool'>`: Whether to parser 'dtstr' as ISO format. Defaults to `True`.
+        :param isoformat `<'bool'>`: Whether to parser 'dtstr' as ISO format, defaults to `True`.
             1. `True`: Parser will first try to process the 'dtstr' as ISO format.
               If failed, fallback to process the 'dtstr' through timelex tokens.
               For most datetime strings, this approach yields the best performance.
@@ -2708,7 +2708,7 @@ def parse(
     default: datetime.date | datetime.datetime | None = None,
     year1st: bool | None = None,
     day1st: bool | None = None,
-    ignoretz: cython.bint = True,
+    ignoretz: cython.bint = False,
     isoformat: cython.bint = True,
     cfg: Configs = None,
 ) -> datetime.datetime:
@@ -2716,18 +2716,18 @@ def parse(
 
     :param dtstr `<'str'>`: The string that contains datetime information.
 
-    :param default `<'datetime/date'>`: The default to fill-in missing datetime values. Defaults to `None`.
+    :param default `<'datetime/date'>`: The default to fill-in missing datetime values, defaults to `None`.
         1. `<'date/datetime'>`: If parser failed to extract Y/M/D values from the string,
           the give 'default' will be used to fill-in the missing Y/M/D values.
         2. `None`: raise `PaserBuildError` if any Y/M/D values are missing.
 
-    :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
+    :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
         When 'year1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
 
-    :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
+    :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `None`.
         When 'day1st=None', use `çfg.day1st` if 'cfg' is specified, else `False` as default.
 
-    :param ignoretz `<'bool'>`: Whether to ignore timezone information. Defaults to `True`.
+    :param ignoretz `<'bool'>`: Whether to ignore timezone information, defaults to `False`.
         1. `True`: Parser ignores any timezone information and only returns
           timezone-naive datetime. Setting to `True` can increase parser
           performance.
@@ -2735,7 +2735,7 @@ def parse(
           the string, and generate a timezone-aware datetime if timezone
           has been matched by 'cfg.utc' & 'cfg.tz'.
 
-    :param isoformat `<'bool'>`: Whether to parse 'dtstr' as ISO format. Defaults to `True`.
+    :param isoformat `<'bool'>`: Whether to parse 'dtstr' as ISO format, defaults to `True`.
         1. `True`: Parser will first try to process the 'dtstr' as ISO format.
           If failed, fallback to process the 'dtstr' through timelex tokens.
           For most datetime strings, this approach yields the best performance.
@@ -2743,7 +2743,7 @@ def parse(
           If the 'dtstr' is confirmed not an ISO format, setting to `False`
           can increase parser performance.
 
-    :param cfg `<'Configs/None'>`: The custom Parser configurations. Defaults to `None`.
+    :param cfg `<'Configs/None'>`: The custom Parser configurations, defaults to `None`.
 
     ### Ambiguous Y/M/D
     Both the 'year1st' & 'day1st' arguments works together to determine how
@@ -2778,7 +2778,7 @@ def parse_dtobj(
     default: datetime.date | datetime.datetime | None = None,
     year1st: bool | None = None,
     day1st: bool | None = None,
-    ignoretz: cython.bint = True,
+    ignoretz: cython.bint = False,
     isoformat: cython.bint = True,
     cfg: Configs = None,
 ) -> datetime.datetime:
@@ -2792,20 +2792,20 @@ def parse_dtobj(
         5. `<'np.datetime64'>` converts to datetime, resolution above 'us' will be discarded.
         6. `<'NoneType'>` passing 'None' returns current local datetime.
 
-    ## The following arguments only effects when 'dtobj' is a datetime string.
+    ## Arguments below only take effects when 'dtobj' is type of `<'str'>`.
 
-    :param default `<'datetime/date'>`: The default to fill-in missing datetime values. Defaults to `None`.
+    :param default `<'datetime/date'>`: The default to fill-in missing datetime values, defaults to `None`.
         1. `<'date/datetime'>`: If parser failed to extract Y/M/D values from the string,
           the give 'default' will be used to fill-in the missing Y/M/D values.
         2. `None`: raise `PaserBuildError` if any Y/M/D values are missing.
 
-    :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
+    :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
         When 'year1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
 
-    :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
+    :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `None`.
         When 'day1st=None', use `çfg.day1st` if 'cfg' is specified, else `False` as default.
 
-    :param ignoretz `<'bool'>`: Whether to ignore timezone information. Defaults to `True`.
+    :param ignoretz `<'bool'>`: Whether to ignore timezone information, defaults to `False`.
         1. `True`: Parser ignores any timezone information and only returns
           timezone-naive datetime. Setting to `True` can increase parser
           performance.
@@ -2813,7 +2813,7 @@ def parse_dtobj(
           the string, and generate a timezone-aware datetime if timezone
           has been matched by 'cfg.utc' & 'cfg.tz'.
 
-    :param isoformat `<'bool'>`: Whether to parse 'dtstr' as ISO format. Defaults to `True`.
+    :param isoformat `<'bool'>`: Whether to parse 'dtstr' as ISO format, defaults to `True`.
         1. `True`: Parser will first try to process the 'dtstr' as ISO format.
           If failed, fallback to process the 'dtstr' through timelex tokens.
           For most datetime strings, this approach yields the best performance.
@@ -2821,7 +2821,7 @@ def parse_dtobj(
           If the 'dtstr' is confirmed not an ISO format, setting to `False`
           can increase parser performance.
 
-    :param cfg `<'Configs/None'>`: The custom Parser configurations. Defaults to `None`.
+    :param cfg `<'Configs/None'>`: The custom Parser configurations, defaults to `None`.
 
     ### Ambiguous Y/M/D
     Both the 'year1st' & 'day1st' arguments works together to determine how
