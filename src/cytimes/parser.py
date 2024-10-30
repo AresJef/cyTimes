@@ -1630,6 +1630,14 @@ class Parser:
             raise ValueError("lack of 'day' value.")
         if dd > 28:
             dd = min(dd, utils.days_in_month(yy, mm))
+        # . weekday
+        if self._res.weekday != -1:
+            wkd: cython.int = utils.ymd_weekday(yy, mm, dd)
+            if wkd != self._res.weekday:
+                _ymd = utils.ymd_fr_ordinal(
+                    utils.ymd_to_ordinal(yy, mm, dd) + self._res.weekday - wkd
+                )
+                yy, mm, dd = _ymd.year, _ymd.month, _ymd.day
         # . hour
         hh = self._res.hour if self._res.hour != -1 else 0
         # . minute
@@ -1638,15 +1646,9 @@ class Parser:
         ss = self._res.second if self._res.second != -1 else 0
         # . microsecond
         us = self._res.microsecond if self._res.microsecond != -1 else 0
+
         # Generate datetime
-        dt = datetime.datetime_new(yy, mm, dd, hh, mi, ss, us, tz, 0)
-
-        # Change weekday
-        if self._res.weekday != -1:
-            dt = utils.dt_chg_weekday(dt, self._res.weekday)
-
-        # Return
-        return dt
+        return datetime.datetime_new(yy, mm, dd, hh, mi, ss, us, tz, 0)
 
     # ISO format ---------------------------------------------------------------------------
     @cython.cfunc
