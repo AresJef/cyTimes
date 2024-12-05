@@ -1,4 +1,5 @@
-from pandas.errors import OutOfBoundsDatetime
+from pandas import errors as pd_err
+from pytz import exceptions as pytz_err
 
 
 # Base Exceptions ---------------------------------------------------------------------------------
@@ -14,51 +15,30 @@ class cyTimesValueError(cyTimesError, ValueError):
     """The base ValueError for the cyTimes package."""
 
 
-# CyParser Exceptions -----------------------------------------------------------------------------
-class cyParserError(cyTimesError):
-    """The base error for the cyParser module."""
+# Parser Exceptions -------------------------------------------------------------------------------
+class ParserError(cyTimesError):
+    """The base error for the Parser module."""
 
 
-class cyParserValueError(cyParserError, cyTimesValueError):
-    """The base ValueError for cyParser module."""
-
-
-class cyParserFailedError(cyParserValueError):
+class ParserFailedError(ParserError, cyTimesValueError):
     """Error for failed parsing"""
 
 
-class cyParserBuildError(cyParserFailedError):
-    """Error for failed parsing"""
+class ParserBuildError(ParserFailedError):
+    """Error for failed building from result"""
 
 
-class InvalidDatetimeStrError(cyParserValueError):
-    """Error for invalid 'timestr' to parse."""
+# . configs
+class ParserConfigsError(ParserError):
+    """Error for the 'parser.Configs' when the settings are invalid."""
 
 
-class InvalidTokenError(cyParserValueError):
-    """Error for invalid token"""
+class InvalidConfigsValue(ParserConfigsError, cyTimesValueError):
+    """Error for the 'parser.Configs' when the value is invalid."""
 
 
-class InvalidNumericToken(InvalidTokenError):
-    """Error for token that cannot be converted to numeric value."""
-
-
-class InvalidMonthToken(InvalidTokenError):
-    """Error for token that cannot be converted to month value."""
-
-
-class InvalidParserInfo(cyParserValueError):
+class InvalidParserInfo(InvalidConfigsValue, cyTimesTypeError):
     """Error for Configs importing invalid 'dateutil.parser.parserinfo'."""
-
-
-class InvalidConfigWord(cyParserValueError):
-    """Error for the 'cyparser.Configs' when conflicting
-    (duplicated) word exsit in the settings"""
-
-
-class InvalidConfigValue(cyParserValueError):
-    """Error for the 'cyparser.Configs' when the value
-    for a word is invalid"""
 
 
 # Pydt/Pddt Exceptions ----------------------------------------------------------------------------
@@ -70,65 +50,41 @@ class PydtError(DatetimeError):
     """The base error for the pydt module."""
 
 
-class PydtTypeError(PydtError, cyTimesTypeError):
-    """The base TypeError for pydt module."""
-
-
-class PydtValueError(PydtError, cyTimesValueError):
-    """The base ValueError for pydt module."""
-
-
 class PddtError(DatetimeError):
     """The base error for the pddt module."""
 
 
-class PddtTypeError(PddtError, cyTimesTypeError):
-    """The base TypeError for pddt module."""
+class InvalidArgumentError(PydtError, PddtError, cyTimesValueError):
+    """Error for invalid arguments."""
 
 
-class PddtValueError(PddtError, cyTimesValueError):
-    """The base ValueError for pddt module."""
+class InvalidTypeError(InvalidArgumentError, cyTimesTypeError):
+    """Error for invalid type."""
 
 
-class InvalidDatetimeObjectError(PydtValueError, PddtValueError):
-    """Error for invalid 'dtobj' to create a pydt object."""
-
-
-class DatetimeOutOfBoundsError(InvalidDatetimeObjectError, OutOfBoundsDatetime):
-    """Error for 'dtsobj' that has datetimes out of bounds."""
-
-
-class InvalidTimeUnitError(DatetimeOutOfBoundsError):
-    """Error for invalid time unit value."""
-
-
-class InvalidMonthError(PydtValueError, PddtValueError):
-    """Error for invalid month value."""
-
-
-class InvalidWeekdayError(PydtValueError, PddtValueError):
-    """Error for invalid weekday value."""
-
-
-class InvalidTimezoneError(PydtValueError, PddtValueError):
+class InvalidTimezoneError(InvalidArgumentError):
     """Error for invalid timezone value."""
 
 
-class InvalidFrequencyError(PydtValueError, PddtValueError):
-    """Error for invalid frequency value."""
+class AmbiguousTimeError(InvalidArgumentError, pytz_err.AmbiguousTimeError):
+    """Error for ambiguous time."""
 
 
-class InvalidDeltaUnitError(PydtValueError, PddtValueError):
-    """Error for invalid delta unit value."""
+class IncomparableError(InvalidTimezoneError, InvalidTypeError):
+    """Error for incomparable datetime objects."""
 
 
-class InvalidDeltaInclusiveError(PydtValueError, PddtValueError):
-    """Error for invalid delta inclusive value."""
+class InvalidTimeUnitError(InvalidArgumentError):
+    """Error for invalid time unit value."""
 
 
-class InvalidIsoCalendarError(PydtValueError, PddtValueError):
-    """Error for invalid ISO calendar value."""
+class InvalidMonthError(InvalidArgumentError):
+    """Error for invalid month value."""
 
 
-class InvalidTimzoneNameError(PydtTypeError, PddtTypeError):
-    """Error for invalid timezone name."""
+class InvalidWeekdayError(InvalidArgumentError):
+    """Error for invalid weekday value."""
+
+
+class OutOfBoundsDatetimeError(InvalidArgumentError, pd_err.OutOfBoundsDatetime):
+    """Error for 'dtsobj' that has datetimes out of bounds."""
