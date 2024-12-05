@@ -3,4 +3,5 @@ include README.md
 
 include src/cytimes/*.pxd
 include src/cytimes/*.py
+include src/cytimes/*.pyi
 include src/cytimes/*.pyx
