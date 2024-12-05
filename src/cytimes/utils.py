@@ -24,82 +24,175 @@ DAYS_BR_MONTH: cython.int[13] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 30
 DAYS_IN_MONTH: cython.int[13] = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 DAYS_BR_QUARTER: cython.int[5] = [0, 90, 181, 273, 365]
 DAYS_IN_QUARTER: cython.int[5] = [0, 90, 91, 92, 92]
-MONTH_TO_QUARTER: cython.int[13] = [0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4]
-DAYS_BR_QUARTER_NDARRAY: np.ndarray = np.array([0, 90, 181, 273, 365])
 # fmt: on
-# . microseconds
-US_DAY: cython.longlong = 86_400_000_000
-US_HOUR: cython.longlong = 3_600_000_000
-# . nanoseconds
-NS_DAY: cython.longlong = 86_400_000_000_000
-NS_HOUR: cython.longlong = 3_600_000_000_000
-NS_MINUTE: cython.longlong = 60_000_000_000
 # . date
 ORDINAL_MAX: cython.int = 3_652_059
 # . datetime
+#: EPOCH (1970-01-01)
+EPOCH_DT: datetime.datetime = datetime.datetime_new(
+    1970, 1, 1, 0, 0, 0, 0, datetime.get_utc(), 0
+)
+EPOCH_YEAR: cython.longlong = 1970
+EPOCH_MONTH: cython.longlong = 23_628
+EPOCH_DAY: cython.longlong = 719_163
+EPOCH_HOUR: cython.longlong = EPOCH_DAY * 24
+EPOCH_MINUTE: cython.longlong = EPOCH_HOUR * 60
+EPOCH_SECOND: cython.longlong = EPOCH_MINUTE * 60
+EPOCH_MILLISECOND: cython.longlong = EPOCH_SECOND * 1_000
+EPOCH_MICROSECOND: cython.longlong = EPOCH_MILLISECOND * 1_000
+# . timezone
 UTC: datetime.tzinfo = datetime.get_utc()
-EPOCH_DT: datetime.datetime = datetime.datetime_new(1970, 1, 1, 0, 0, 0, 0, UTC, 0)  # type: ignore
-EPOCH_US: cython.longlong = 62_135_683_200_000_000
-EPOCH_SEC: cython.longlong = 62_135_683_200
-EPOCH_DAY: cython.int = 719_163
-DT_US_MAX: cython.longlong = 315_537_983_999_999_999
-DT_US_MIN: cython.longlong = 86_400_000_000
-DT_SEC_MAX: cython.longlong = 315_537_983_999
-DT_SEC_MIN: cython.longlong = 86_400
-US_FRAC_CORRECTION: cython.int[5] = [100_000, 10_000, 1_000, 100, 10]
-# . time
-TIME_MIN: datetime.time = datetime.time(0, 0, 0, 0)
-TIME_MAX: datetime.time = datetime.time(23, 59, 59, 999999)
+# . conversion for seconds
+SS_MINUTE: cython.longlong = 60
+SS_HOUR: cython.longlong = SS_MINUTE * 60
+SS_DAY: cython.longlong = SS_HOUR * 24
+# . conversion for milliseconds
+MS_SECOND: cython.longlong = 1_000
+MS_MINUTE: cython.longlong = MS_SECOND * 60
+MS_HOUR: cython.longlong = MS_MINUTE * 60
+MS_DAY: cython.longlong = MS_HOUR * 24
+# . conversion for microseconds
+US_MILLISECOND: cython.longlong = 1_000
+US_SECOND: cython.longlong = US_MILLISECOND * 1_000
+US_MINUTE: cython.longlong = US_SECOND * 60
+US_HOUR: cython.longlong = US_MINUTE * 60
+US_DAY: cython.longlong = US_HOUR * 24
+# . conversion for nanoseconds
+NS_MICROSECOND: cython.longlong = 1_000
+NS_MILLISECOND: cython.longlong = NS_MICROSECOND * 1_000
+NS_SECOND: cython.longlong = NS_MILLISECOND * 1_000
+NS_MINUTE: cython.longlong = NS_SECOND * 60
+NS_HOUR: cython.longlong = NS_MINUTE * 60
+NS_DAY: cython.longlong = NS_HOUR * 24
+# . conversion for timedelta64
+TD64_YY_DAY: cython.double = 365.2425  # Exact days in a year for td64
+TD64_YY_SECOND: cython.longlong = int(TD64_YY_DAY * SS_DAY)
+TD64_YY_MILLISECOND: cython.longlong = TD64_YY_SECOND * 1_000
+TD64_YY_MICROSECOND: cython.longlong = TD64_YY_MILLISECOND * 1_000
+TD64_YY_NANOSECOND: cython.longlong = TD64_YY_MICROSECOND * 1_000
+TD64_MM_DAY: cython.double = 30.436875  # Exact days in a month for td64
+TD64_MM_SECOND: cython.longlong = int(TD64_MM_DAY * SS_DAY)
+TD64_MM_MILLISECOND: cython.longlong = TD64_MM_SECOND * 1_000
+TD64_MM_MICROSECOND: cython.longlong = TD64_MM_MILLISECOND * 1_000
+TD64_MM_NANOSECOND: cython.longlong = TD64_MM_MICROSECOND * 1_000
+# . datetime64 range
+#: Minimum datetime64 in nanoseconds (1677-09-21 00:12:43.145224193)
+DT64_NS_YY_MIN: cython.longlong = -293  # >= 1678
+DT64_NS_MM_MIN: cython.longlong = -3_508  # >= 1677-10
+DT64_NS_WW_MIN: cython.longlong = -15_251  # >= 1677-09-30
+DT64_NS_DD_MIN: cython.longlong = -106_751  # >= 1677-09-22
+DT64_NS_HH_MIN: cython.longlong = DT64_NS_DD_MIN * 24
+DT64_NS_MI_MIN: cython.longlong = DT64_NS_HH_MIN * 60
+DT64_NS_SS_MIN: cython.longlong = DT64_NS_MI_MIN * 60
+DT64_NS_MS_MIN: cython.longlong = DT64_NS_SS_MIN * 1_000
+DT64_NS_US_MIN: cython.longlong = DT64_NS_MS_MIN * 1_000
+DT64_NS_NS_MIN: cython.longlong = DT64_NS_US_MIN * 1_000
+#: Maximum datetime64 in nanoseconds (2262-04-11 23:47:16.854775807)
+DT64_NS_YY_MAX: cython.longlong = 292  # <= 2262
+DT64_NS_MM_MAX: cython.longlong = 3_507  # <= 2262-03
+DT64_NS_WW_MAX: cython.longlong = 15_250  # <= 2262-04-03
+DT64_NS_DD_MAX: cython.longlong = 106_750  # <= 2262-04-10
+DT64_NS_HH_MAX: cython.longlong = DT64_NS_DD_MAX * 24
+DT64_NS_MI_MAX: cython.longlong = DT64_NS_HH_MAX * 60
+DT64_NS_SS_MAX: cython.longlong = DT64_NS_MI_MAX * 60
+DT64_NS_MS_MAX: cython.longlong = DT64_NS_SS_MAX * 1_000
+DT64_NS_US_MAX: cython.longlong = DT64_NS_MS_MAX * 1_000
+DT64_NS_NS_MAX: cython.longlong = DT64_NS_US_MAX * 1_000
 
 
 # datetime.tzinfo --------------------------------------------------------------------------------------
 @cython.cfunc
 @cython.inline(True)
+def _get_localtimezone() -> object:
+    """(internal) Get the local timezone `<'ZoneInfo/timezone'>`."""
+    from babel.dates import LOCALTZ
+
+    if isinstance(LOCALTZ, ZoneInfo):
+        return LOCALTZ
+    try:
+        return ZoneInfo(LOCALTZ.zone)
+    except Exception:
+        return datetime.timezone_new(
+            datetime.timedelta_new(0, tz_local_seconds(None), 0), None  # type: ignore
+        )
+
+
+_LOCAL_TZ: object = _get_localtimezone()
+
+
+@cython.cfunc
+@cython.inline(True)
+def _prep_timezone_map() -> dict:
+    """(internal) Prepare the timezone map `<'dict'>`."""
+    from zoneinfo import available_timezones
+
+    # Zoneinfo timezones
+    tz_map = {name: ZoneInfo(name) for name in sorted(available_timezones())}
+    # Local timezone
+    tz_map["local"] = _LOCAL_TZ
+    # UTC timezone aliases
+    for tz in (
+        "UTC",
+        "Universal",
+        "GMT",
+        "GMT+0",
+        "GMT-0",
+        "GMT0",
+        "Greenwich",
+        "Zulu",
+    ):
+        tz_map[tz] = UTC
+    return tz_map
+
+
+_TIMEZONE_MAP: dict = _prep_timezone_map()
+
+
+@cython.cfunc
+@cython.inline(True)
 def tz_parse(tz: datetime.tzinfo | str) -> object:
     """(cfunc) Parse 'tz' object into `<'datetime.tzinfo/None'>`.
 
-    :param tz `<'datetime.tzinfo/str'>`: The timezone object.
-        1. If 'tz' is an instance of `<'datetime.tzinfo'>`, return 'tz' directly.
-        2. If 'tz' is a string, use Python 'Zoneinfo' to create the timezone object.
+    :param tz `<'datetime.timezone/Zoneinfo/pytz/str'>`: The timezone object.
+        - If 'tz' is an instance of `<'datetime.timezone'>`, return 'tz' directly.
+        - If 'tz' is a string or timezone from Zoneinfo or pytz,
+           use Python 'Zoneinfo' to (re)-create the timezone object.
     """
-    # . <'NoneType'>
+    # NoneType
     if tz is None:
         return tz
-
-    # . <'ZoneInfo'> or <'datetime.timezone'>
+    # datetime.timezone
     dtype = type(tz)
-    if dtype is typeref.ZONEINFO or dtype is typeref.TIMEZONE:
+    if dtype is typeref.TIMEZONE:
         return tz
-
-    # . <'str'> timezone name
-    if dtype is str:
+    # 'str' timezone name
+    elif dtype is str:
         try:
-            return ZoneInfo(tz)
-        except Exception as err:
-            # . local
-            if tz.lower() == "local":
-                return tz_local(None)  # type: ignore
-            # . invalid
-            raise errors.InvalidTimezoneError(
-                "invalid timezone '%s': %s." % (tz, err)
-            ) from err
-
-    # . pytz
-    if hasattr(tz, "localize"):
-        try:
-            return ZoneInfo(tz.zone)  # type: ignore
+            return _TIMEZONE_MAP[tz]
         except Exception:
             pass
-
-    # . unsupported
-    raise errors.InvalidTimezoneError("unsupported timezone: %s %r." % (type(tz), tz))
+    # 'Zoneinfo' timezone
+    elif dtype is typeref.ZONEINFO:
+        try:
+            return _TIMEZONE_MAP[tz.key]
+        except Exception:
+            pass
+    # Subclass of 'Zoneinfo' timezone
+    elif isinstance(tz, typeref.ZONEINFO):
+        return tz
+    # 'pytz' timezone
+    elif hasattr(tz, "localize"):
+        try:
+            return _TIMEZONE_MAP[tz.zone]
+        except Exception:
+            pass
+    # Invalid timezone
+    raise errors.InvalidTimezoneError("invalid timezone '%s' %s" % (tz, type(tz)))
 
 
 ########## The REST utility functions are in the utils.pxd file ##########
 ########## The following functions are for testing purpose only ##########
 def _test_utils() -> None:
-    # Delta
-    _test_combine_abs_ms_us()
     # Parser
     _test_parser()
     # Time
@@ -121,8 +214,6 @@ def _test_utils() -> None:
     _test_date_generate()
     _test_date_type_check()
     _test_date_conversion()
-    _test_date_manipulation()
-    _test_date_arithmetic()
     # datetime.datetime
     _test_dt_generate()
     _test_dt_type_check()
@@ -135,7 +226,6 @@ def _test_utils() -> None:
     _test_time_type_check()
     _test_time_tzinfo()
     _test_time_conversion()
-    _test_time_manipulate()
     # datetime.timedelta
     _test_timedelta_generate()
     _test_timedelta_type_check()
@@ -152,22 +242,12 @@ def _test_utils() -> None:
     # numpy.timedelta64
     _test_timedelta64_type_check()
     _test_timedelta64_conversion()
-
-
-# Delta
-def _test_combine_abs_ms_us() -> None:
-    assert combine_abs_ms_us(-1, -1) == -1  # type: ignore
-    assert combine_abs_ms_us(0, 0) == 0  # type: ignore
-    assert combine_abs_ms_us(-1, 0) == 0  # type: ignore
-    assert combine_abs_ms_us(-1, 1) == 1  # type: ignore
-    assert combine_abs_ms_us(0, -1) == 0  # type: ignore
-    assert combine_abs_ms_us(1, -1) == 1000  # type: ignore
-    assert combine_abs_ms_us(1, 1) == 1001  # type: ignore
-    assert combine_abs_ms_us(1, 999) == 1999  # type: ignore
-    assert combine_abs_ms_us(1, 999999) == 1999  # type: ignore
-    assert combine_abs_ms_us(999, 999) == 999999  # type: ignore
-    assert combine_abs_ms_us(999, 999999) == 999999  # type: ignore
-    print("Passed: combine_abs_ms_us")
+    # numpy.ndarray
+    _test_ndarray_type_check()
+    _test_ndarray_dt64_type_check()
+    _test_ndarray_dt64_conversion()
+    _test_ndarray_td64_type_check()
+    _test_ndarray_td64_conversion()
 
 
 # Parser
@@ -417,7 +497,7 @@ def _test_iso_1st_monday() -> None:
     from _pydatetime import _isoweek1monday  # type: ignore
 
     for year in range(1, 10000):
-        val = iso_1st_monday(year)  # type: ignore
+        val = _iso_1st_monday(year)  # type: ignore
         cmp = _isoweek1monday(year)
         assert val == cmp, f"{year}: {val} != {cmp}"
     print("Passed: iso_1st_monday")
@@ -576,66 +656,6 @@ def _test_date_conversion() -> None:
     del CustomDate, datetime
 
 
-def _test_date_manipulation() -> None:
-    import datetime
-
-    date = datetime.date(2021, 1, 2)
-    assert datetime.date(2022, 1, 2) == date_replace(date, 2022)  # type: ignore
-    assert datetime.date(2022, 1, 2) == date_replace(date, 2022, -1, -1)  # type: ignore
-    assert datetime.date(2021, 2, 2) == date_replace(date, -1, 2)  # type: ignore
-    assert datetime.date(2021, 2, 2) == date_replace(date, -1, 2, -1)  # type: ignore
-    assert datetime.date(2021, 1, 1) == date_replace(date, -1, -1, 1)  # type: ignore
-    assert datetime.date(2022, 2, 28) == date_replace(date, 2022, 2, 28)  # type: ignore
-    assert datetime.date(2022, 2, 28) == date_replace(date, 2022, 2, 31)  # type: ignore
-
-    assert datetime.date(2020, 12, 28) == date_chg_weekday(date, -1)  # type: ignore
-    assert datetime.date(2020, 12, 28) == date_chg_weekday(date, 0)  # type: ignore
-    assert datetime.date(2020, 12, 29) == date_chg_weekday(date, 1)  # type: ignore
-    assert datetime.date(2020, 12, 30) == date_chg_weekday(date, 2)  # type: ignore
-    assert datetime.date(2020, 12, 31) == date_chg_weekday(date, 3)  # type: ignore
-    assert datetime.date(2021, 1, 1) == date_chg_weekday(date, 4)  # type: ignore
-    assert date is date_chg_weekday(date, 5)  # type: ignore
-    assert datetime.date(2021, 1, 3) == date_chg_weekday(date, 6)  # type: ignore
-    assert datetime.date(2021, 1, 3) == date_chg_weekday(date, 7)  # type: ignore
-
-    print("Passed: date_manipulation")
-
-    del datetime
-
-
-def _test_date_arithmetic() -> None:
-    import datetime
-
-    date = datetime.date(2021, 1, 2)
-    td1 = datetime.timedelta(1, 1, 1, 1, 1, 1, 1)
-    assert date_add(date, 1, 1, 1, 1, 1, 1, 1) == date + td1  # type: ignore
-
-    td2 = datetime.timedelta(1, 86400, 1)
-    assert date_add(date, 1, 86400, 1) == date + td2  # type: ignore
-
-    td3 = datetime.timedelta(1, 86399, 1)
-    assert date_add(date, 1, 86399, 1) == date + td3  # type: ignore
-
-    td4 = datetime.timedelta(-1, -1, -1, -1, -1, -1, -1)
-    assert date_add(date, -1, -1, -1, -1, -1, -1, -1) == date + td4  # type: ignore
-
-    td5 = datetime.timedelta(-1, -86400, -1)
-    assert date_add(date, -1, -86400, -1) == date + td5  # type: ignore
-
-    td6 = datetime.timedelta(-1, -86399, -1)
-    assert date_add(date, -1, -86399, -1) == date + td6  # type: ignore
-
-    td7 = datetime.timedelta(1, 60, 100000, 0, 60, 24, 0)
-    assert date_add(date, 1, 60, 100000, 0, 60, 24, 0) == date + td7  # type: ignore
-
-    td8 = datetime.timedelta(-1, -60, -100000, 0, -60, -24, 0)
-    assert date_add(date, -1, -60, -100000, 0, -60, -24, 0) == date + td8  # type: ignore
-
-    print("Passed: date_arithmetic")
-
-    del datetime
-
-
 # datetime.datetime
 def _test_dt_generate() -> None:
     import datetime
@@ -755,12 +775,12 @@ def _test_dt_conversion() -> None:
         )
 
     assert "01/02/2021 000006.05-04-03" == dt_to_strformat(dt, "%m/%d/%Y %f.%S-%M-%H")  # type: ignore
-    assert "01/02/2021 000006.05-04-03+01:01" == dt_to_strformat(dt_tz1, "%m/%d/%Y %f.%S-%M-%H%z")  # type: ignore
+    assert "01/02/2021 000006.05-04-03+0101" == dt_to_strformat(dt_tz1, "%m/%d/%Y %f.%S-%M-%H%z")  # type: ignore
     assert "01/02/2021 000006.05-04-03UTC+01:01" == dt_to_strformat(dt_tz1, "%m/%d/%Y %f.%S-%M-%H%Z")  # type: ignore
     assert "2021-01-02T03:04:05.000006" == dt_to_isoformat(dt_tz1, "T", False)  # type: ignore
     assert "2021-01-02T03:04:05" == dt_to_isoformat(dt_tz1.replace(microsecond=0), "T", False)  # type: ignore
-    assert "2021-01-02 03:04:05.000006+01:01" == dt_to_isoformat(dt_tz1, " ", True)  # type: ignore
-    assert "2021-01-02 03:04:05+01:01" == dt_to_isoformat(dt_tz1.replace(microsecond=0), " ", True)  # type: ignore
+    assert "2021-01-02 03:04:05.000006+0101" == dt_to_isoformat(dt_tz1, " ", True)  # type: ignore
+    assert "2021-01-02 03:04:05+0101" == dt_to_isoformat(dt_tz1.replace(microsecond=0), " ", True)  # type: ignore
     assert dt.toordinal() == dt_to_ordinal(dt)  # type: ignore
     assert dt_tz2.toordinal() == dt_to_ordinal(dt_tz2, False)  # type: ignore
     assert dt_tz2.toordinal() - 1 == dt_to_ordinal(dt_tz2, True)  # type: ignore
@@ -838,28 +858,9 @@ def _test_dt_mainipulate() -> None:
     tz3 = datetime.timezone(datetime.timedelta(hours=-23, minutes=-59))
     tz4 = ZoneInfo("CET")
 
-    assert datetime.datetime(2022, 1, 2, 3, 4, 5, 6) == dt_replace(dt, 2022)  # type: ignore
-    assert datetime.datetime(2022, 1, 2, 3, 4, 5, 6) == dt_replace(dt, 2022, -1, -1)  # type: ignore
-    assert datetime.datetime(2021, 2, 2, 3, 4, 5, 6) == dt_replace(dt, -1, 2)  # type: ignore
-    assert datetime.datetime(2021, 2, 2, 3, 4, 5, 6) == dt_replace(dt, -1, 2, -1)  # type: ignore
-    assert datetime.datetime(2021, 1, 1, 3, 4, 5, 6) == dt_replace(dt, -1, -1, 1)  # type: ignore
-    assert datetime.datetime(2022, 2, 28, 2, 2, 2, 2, tz1) == dt_replace(dt, 2022, 2, 28, 2, 2, 2, -1, 2, tz1)  # type: ignore
-    assert datetime.datetime(2022, 2, 28, 2, 2, 2, 2, tz1) == dt_replace(dt, 2022, 2, 31, 2, 2, 2, -1, 2, tz1)  # type: ignore
-    assert datetime.datetime(2022, 2, 28, 2, 2, 2, 2) == dt_replace(dt, 2022, 2, 31, 2, 2, 2, -1, 2, None)  # type: ignore
     for tz in (None, tz1, tz2, tz3, tz4):
         assert dt.replace(tzinfo=tz) == dt_replace_tz(dt, tz)  # type: ignore
     assert 1 == dt_replace_fold(dt.replace(tzinfo=tz1, fold=0), 1).fold  # type: ignore
-
-    dt = datetime.datetime(2021, 1, 2)
-    assert datetime.datetime(2020, 12, 28) == dt_chg_weekday(dt, -1)  # type: ignore
-    assert datetime.datetime(2020, 12, 28) == dt_chg_weekday(dt, 0)  # type: ignore
-    assert datetime.datetime(2020, 12, 29) == dt_chg_weekday(dt, 1)  # type: ignore
-    assert datetime.datetime(2020, 12, 30) == dt_chg_weekday(dt, 2)  # type: ignore
-    assert datetime.datetime(2020, 12, 31) == dt_chg_weekday(dt, 3)  # type: ignore
-    assert datetime.datetime(2021, 1, 1) == dt_chg_weekday(dt, 4)  # type: ignore
-    assert dt is date_chg_weekday(dt, 5)  # type: ignore
-    assert datetime.datetime(2021, 1, 3) == dt_chg_weekday(dt, 6)  # type: ignore
-    assert datetime.datetime(2021, 1, 3) == dt_chg_weekday(dt, 7)  # type: ignore
 
     print("Passed: dt_manipulate")
 
@@ -870,8 +871,8 @@ def _test_dt_arithmetic() -> None:
     import datetime
 
     dt = datetime.datetime(2021, 1, 2, 3, 4, 5, 6)
-    td1 = datetime.timedelta(1, 1, 1, 1, 1, 1, 1)
-    assert dt_add(dt, 1, 1, 1, 1, 1, 1, 1) == dt + td1  # type: ignore
+    td1 = datetime.timedelta(1, 1, 1)
+    assert dt_add(dt, 1, 1, 1) == dt + td1  # type: ignore
 
     td2 = datetime.timedelta(1, 86400, 1)
     assert dt_add(dt, 1, 86400, 1) == dt + td2  # type: ignore
@@ -879,8 +880,8 @@ def _test_dt_arithmetic() -> None:
     td3 = datetime.timedelta(1, 86399, 1)
     assert dt_add(dt, 1, 86399, 1) == dt + td3  # type: ignore
 
-    td4 = datetime.timedelta(-1, -1, -1, -1, -1, -1, -1)
-    assert dt_add(dt, -1, -1, -1, -1, -1, -1, -1) == dt + td4  # type: ignore
+    td4 = datetime.timedelta(-1, -1, -1)
+    assert dt_add(dt, -1, -1, -1) == dt + td4  # type: ignore
 
     td5 = datetime.timedelta(-1, -86400, -1)
     assert dt_add(dt, -1, -86400, -1) == dt + td5  # type: ignore
@@ -888,11 +889,11 @@ def _test_dt_arithmetic() -> None:
     td6 = datetime.timedelta(-1, -86399, -1)
     assert dt_add(dt, -1, -86399, -1) == dt + td6  # type: ignore
 
-    td7 = datetime.timedelta(1, 60, 100000, 0, 60, 24, 0)
-    assert dt_add(dt, 1, 60, 100000, 0, 60, 24, 0) == dt + td7  # type: ignore
+    td7 = datetime.timedelta(1, 60, 100000)
+    assert dt_add(dt, 1, 60, 100000) == dt + td7  # type: ignore
 
-    td8 = datetime.timedelta(-1, -60, -100000, 0, -60, -24, 0)
-    assert dt_add(dt, -1, -60, -100000, 0, -60, -24, 0) == dt + td8  # type: ignore
+    td8 = datetime.timedelta(-1, -60, -100000)
+    assert dt_add(dt, -1, -60, -100000) == dt + td8  # type: ignore
 
     print("Passed: date_arithmetic")
 
@@ -985,37 +986,10 @@ def _test_time_conversion() -> None:
     dt = datetime.datetime(1970, 1, 1, 3, 4, 5, 6)
     dt_tz1 = datetime.datetime(1970, 1, 1, 3, 4, 5, 6, tz1)
 
-    _tm = time_to_tm(t1, False)  # type: ignore
-    assert tuple(dt.timetuple()) == (
-        _tm.tm_year,
-        _tm.tm_mon,
-        _tm.tm_mday,
-        _tm.tm_hour,
-        _tm.tm_min,
-        _tm.tm_sec,
-        _tm.tm_wday,
-        _tm.tm_yday,
-        _tm.tm_isdst,
-    )
-    _tm = time_to_tm(t_tz1, True)  # type: ignore
-    assert tuple(dt_tz1.utctimetuple()) == (
-        _tm.tm_year,
-        _tm.tm_mon,
-        _tm.tm_mday,
-        _tm.tm_hour,
-        _tm.tm_min,
-        _tm.tm_sec,
-        _tm.tm_wday,
-        _tm.tm_yday,
-        _tm.tm_isdst,
-    )
-    assert "000006.05:04:03" == time_to_strformat(t1, "%f.%S:%M:%H")  # type: ignore
-    assert "000006.05:04:03+01:01" == time_to_strformat(t_tz1, "%f.%S:%M:%H%z")  # type: ignore
-    assert "000006.05:04:03UTC+01:01" == time_to_strformat(t_tz1, "%f.%S:%M:%H%Z")  # type: ignore
     assert "03:04:05.000006" == time_to_isoformat(t_tz1, False)  # type: ignore
-    assert "03:04:05.000006+01:01" == time_to_isoformat(t_tz1, True)  # type: ignore
+    assert "03:04:05.000006+0101" == time_to_isoformat(t_tz1, True)  # type: ignore
     assert "03:04:05" == time_to_isoformat(t_tz1.replace(microsecond=0), False)  # type: ignore
-    assert "03:04:05+01:01" == time_to_isoformat(t_tz1.replace(microsecond=0), True)  # type: ignore
+    assert "03:04:05+0101" == time_to_isoformat(t_tz1.replace(microsecond=0), True)  # type: ignore
     secs = t1.hour * 3600 + t1.minute * 60 + t1.second + t1.microsecond / 1_000_000
     assert secs == time_to_seconds(t1)  # type: ignore
     assert secs == time_to_seconds(t_tz1, False)  # type: ignore
@@ -1044,32 +1018,6 @@ def _test_time_conversion() -> None:
     print("Passed: time_conversion")
 
     del CustomTime, datetime
-
-
-def _test_time_manipulate() -> None:
-    import datetime
-    from zoneinfo import ZoneInfo
-
-    t = datetime.time(3, 4, 5, 6)
-    tz1 = datetime.timezone(datetime.timedelta(hours=1, minutes=1))
-    tz2 = datetime.timezone(datetime.timedelta(hours=23, minutes=59))
-    tz3 = datetime.timezone(datetime.timedelta(hours=-23, minutes=-59))
-    tz4 = ZoneInfo("CET")
-
-    assert datetime.time(4, 4, 5, 6) == time_replace(t, 4)  # type: ignore
-    assert datetime.time(4, 4, 5, 6) == time_replace(t, 4, -1)  # type: ignore
-    assert datetime.time(3, 5, 5, 6) == time_replace(t, -1, 5)  # type: ignore
-    assert datetime.time(3, 5, 5, 6) == time_replace(t, -1, 5, -1)  # type: ignore
-    assert datetime.time(3, 4, 6, 6) == time_replace(t, -1, -1, 6)  # type: ignore
-    assert datetime.time(3, 4, 6, 6) == time_replace(t, -1, -1, 6, -1)  # type: ignore
-    assert datetime.time(3, 4, 5, 7) == time_replace(t, -1, -1, -1, 7)  # type: ignore
-    for tz in (None, tz1, tz2, tz3, tz4):
-        assert t.replace(tzinfo=tz) == time_replace_tz(t, tz)  # type: ignore
-    assert 1 == time_replace_fold(t.replace(tzinfo=tz1, fold=0), 1).fold  # type: ignore
-
-    print("Passed: time_manipulate")
-
-    del datetime, ZoneInfo
 
 
 # datetime.timedelta
@@ -1133,6 +1081,8 @@ def _test_timedelta_conversion() -> None:
             td = datetime.timedelta(hours=h, minutes=m)
             dt_str = str(datetime.datetime.now(datetime.timezone(td)))
             tz_str = dt_str[len(dt_str) - 6 :]
+            with cython.wraparound(True):
+                tz_str = tz_str[:-3] + tz_str[-2:]
             assert tz_str == td_to_utcformat(td)  # type: ignore
 
     td = datetime.timedelta(1, 1, 1)
@@ -1160,6 +1110,7 @@ def _test_timedelta_conversion() -> None:
 # datetime.tzinfo
 def _test_tzinfo_generate() -> None:
     import datetime, time
+    from babel.dates import LOCALTZ
 
     # New
     assert datetime.timezone.utc == tz_new()  # type: ignore
@@ -1169,12 +1120,11 @@ def _test_tzinfo_generate() -> None:
     assert datetime.timezone(datetime.timedelta(hours=-23, minutes=-59)) == tz_new(-23, -59)  # type: ignore
 
     # Local
-    local_offset = -time.timezone if time.localtime().tm_isdst == 0 else -time.altzone
-    assert datetime.timezone(datetime.timedelta(seconds=local_offset)) == tz_local()  # type: ignore
+    assert tz_parse(LOCALTZ) == tz_local()  # type: ignore
 
     print("Passed: tzinfo_generate")
 
-    del datetime, time
+    del datetime, time, LOCALTZ
 
 
 def _test_tzinfo_type_check() -> None:
@@ -1213,13 +1163,13 @@ def _test_tzinfo_access() -> None:
 
     dt = datetime.datetime.now()
     tz = datetime.timezone(datetime.timedelta(hours=23, minutes=59))
-    assert "+23:59" == tz_utcformat(tz, dt)  # type: ignore
+    assert "+2359" == tz_utcformat(tz, dt)  # type: ignore
     tz = datetime.timezone(datetime.timedelta(hours=1, minutes=1))
-    assert "+01:01" == tz_utcformat(tz, dt)  # type: ignore
+    assert "+0101" == tz_utcformat(tz, dt)  # type: ignore
     tz = datetime.timezone(datetime.timedelta(hours=-1, minutes=-1))
-    assert "-01:01" == tz_utcformat(tz, dt)  # type: ignore
+    assert "-0101" == tz_utcformat(tz, dt)  # type: ignore
     tz = datetime.timezone(datetime.timedelta(hours=-23, minutes=-59))
-    assert "-23:59" == tz_utcformat(tz, dt)  # type: ignore
+    assert "-2359" == tz_utcformat(tz, dt)  # type: ignore
 
     print("Passed: tzinfo_access")
 
@@ -1275,403 +1225,13 @@ def _test_datetime64_type_check() -> None:
 def _test_datetime64_conversion() -> None:
     import datetime, numpy as np
 
-    #### Positive
-    dt_d = np.datetime64("1970-01-02")  # D
-    dt_h = np.datetime64("1970-01-01T01")  # h
-    dt_m = np.datetime64("1970-01-01T00:01")  # m
-    dt_s = np.datetime64("1970-01-01T00:00:01")  # s
-    dt_ms = np.datetime64("1970-01-01T00:00:01.123")  # ms
-    dt_us = np.datetime64("1970-01-01T00:00:01.123456")  # us
-    dt_ns = np.datetime64("1970-01-01T00:00:01.123456789")  # ns
-    dt_ps = np.datetime64("1970-01-01T00:00:01.123456789123")  # ps
-    dt_fs = np.datetime64("1970-01-01T00:00:01.123456789123456")  # fs
-    dt_as = np.datetime64("1970-01-01T00:00:01.123456789123456789")  # as
-
-    cmp = {
-        "tm_sec": 1,
-        "tm_min": 0,
-        "tm_hour": 0,
-        "tm_mday": 1,
-        "tm_mon": 1,
-        "tm_year": 1970,
-        "tm_wday": 3,
-        "tm_yday": 1,
-        "tm_isdst": -1,
-    }
-    for dt in (dt_s, dt_ms, dt_us, dt_ns, dt_ps, dt_fs, dt_as):
-        assert cmp == dt64_to_tm(dt)  # type: ignore
-
-    # to strformat
-    fmt = "%Y/%m/%d %H-%M-%S.%f"
-    assert "1970/01/01 00-00-01." == dt64_to_strformat(dt_s, fmt, False)  # type: ignore
-    assert "1970/01/01 00-00-01.123000" == dt64_to_strformat(dt_ms, fmt, False)  # type: ignore
-    assert "1970/01/01 00-00-01.123456" == dt64_to_strformat(dt_us, fmt, False)  # type: ignore
-    assert "1970/01/01 00-00-01.123456789" == dt64_to_strformat(dt_ns, fmt, False)  # type: ignore
-    assert "1970/01/01 00-00-01.123456789123" == dt64_to_strformat(dt_ps, fmt, False)  # type: ignore
-    assert "1970/01/01 00-00-01.123456789123456" == dt64_to_strformat(dt_fs, fmt, False)  # type: ignore
-    assert "1970/01/01 00-00-01.123456789123456789" == dt64_to_strformat(dt_as, fmt, False)  # type: ignore
-
-    assert "1970/01/01 00-00-01." == dt64_to_strformat(dt_s, fmt, True)  # type: ignore
-    assert "1970/01/01 00-00-01.123000" == dt64_to_strformat(dt_ms, fmt, True)  # type: ignore
-    assert "1970/01/01 00-00-01.123456" == dt64_to_strformat(dt_us, fmt, True)  # type: ignore
-    assert "1970/01/01 00-00-01.123456" == dt64_to_strformat(dt_ns, fmt, True)  # type: ignore
-    assert "1970/01/01 00-00-01.123456" == dt64_to_strformat(dt_ps, fmt, True)  # type: ignore
-    assert "1970/01/01 00-00-01.123456" == dt64_to_strformat(dt_fs, fmt, True)  # type: ignore
-    assert "1970/01/01 00-00-01.123456" == dt64_to_strformat(dt_as, fmt, True)  # type: ignore
-
-    # To isoformat
-    assert "1970-01-01 00:00:01" == dt64_to_isoformat(dt_s, " ", False)  # type: ignore
-    assert "1970-01-01T00:00:01.123000" == dt64_to_isoformat(dt_ms, "T", False)  # type: ignore
-    assert "1970-01-01 00:00:01.123456" == dt64_to_isoformat(dt_us, " ", False)  # type: ignore
-    assert "1970-01-01T00:00:01.123456789" == dt64_to_isoformat(dt_ns, "T", False)  # type: ignore
-    assert "1970-01-01 00:00:01.123456789123" == dt64_to_isoformat(dt_ps, " ", False)  # type: ignore
-    assert "1970-01-01T00:00:01.123456789123456" == dt64_to_isoformat(dt_fs, "T", False)  # type: ignore
-    assert "1970-01-01 00:00:01.123456789123456789" == dt64_to_isoformat(dt_as, " ", False)  # type: ignore
-
-    assert "1970-01-01 00:00:01" == dt64_to_isoformat(dt_s, " ", True)  # type: ignore
-    assert "1970-01-01T00:00:01.123000" == dt64_to_isoformat(dt_ms, "T", True)  # type: ignore
-    assert "1970-01-01 00:00:01.123456" == dt64_to_isoformat(dt_us, " ", True)  # type: ignore
-    assert "1970-01-01T00:00:01.123456" == dt64_to_isoformat(dt_ns, "T", True)  # type: ignore
-    assert "1970-01-01 00:00:01.123456" == dt64_to_isoformat(dt_ps, " ", True)  # type: ignore
-    assert "1970-01-01T00:00:01.123456" == dt64_to_isoformat(dt_fs, "T", True)  # type: ignore
-    assert "1970-01-01 00:00:01.123456" == dt64_to_isoformat(dt_as, " ", True)  # type: ignore
-
-    # To date
-    assert datetime.date(1970, 1, 2) == dt64_to_date(dt_d)  # type: ignore
-    assert datetime.date(1970, 1, 1) == dt64_to_date(dt_h)  # type: ignore
-    assert datetime.date(1970, 1, 1) == dt64_to_date(dt_m)  # type: ignore
-    assert datetime.date(1970, 1, 1) == dt64_to_date(dt_s)  # type: ignore
-    assert datetime.date(1970, 1, 1) == dt64_to_date(dt_ms)  # type: ignore
-    assert datetime.date(1970, 1, 1) == dt64_to_date(dt_us)  # type: ignore
-    assert datetime.date(1970, 1, 1) == dt64_to_date(dt_ns)  # type: ignore
-    assert datetime.date(1970, 1, 1) == dt64_to_date(dt_ps)  # type: ignore
-    assert datetime.date(1970, 1, 1) == dt64_to_date(dt_fs)  # type: ignore
-    assert datetime.date(1970, 1, 1) == dt64_to_date(dt_as)  # type: ignore
-
-    # To datetime
-    assert datetime.datetime(1970, 1, 2) == dt64_to_dt(dt_d)  # type: ignore
-    assert datetime.datetime(1970, 1, 1, 1) == dt64_to_dt(dt_h)  # type: ignore
-    assert datetime.datetime(1970, 1, 1, 0, 1) == dt64_to_dt(dt_m)  # type: ignore
-    assert datetime.datetime(1970, 1, 1, 0, 0, 1) == dt64_to_dt(dt_s)  # type: ignore
-    assert datetime.datetime(1970, 1, 1, 0, 0, 1, 123000) == dt64_to_dt(dt_ms)  # type: ignore
-    assert datetime.datetime(1970, 1, 1, 0, 0, 1, 123456) == dt64_to_dt(dt_us)  # type: ignore
-    assert datetime.datetime(1970, 1, 1, 0, 0, 1, 123456) == dt64_to_dt(dt_ns)  # type: ignore
-    assert datetime.datetime(1970, 1, 1, 0, 0, 1, 123456) == dt64_to_dt(dt_ps)  # type: ignore
-    assert datetime.datetime(1970, 1, 1, 0, 0, 1, 123456) == dt64_to_dt(dt_fs)  # type: ignore
-    assert datetime.datetime(1970, 1, 1, 0, 0, 1, 123456) == dt64_to_dt(dt_as)  # type: ignore
-
-    # To time
-    assert datetime.time(0, 0, 0, 0) == dt64_to_time(dt_d)  # type: ignore
-    assert datetime.time(1, 0, 0, 0) == dt64_to_time(dt_h)  # type: ignore
-    assert datetime.time(0, 1, 0, 0) == dt64_to_time(dt_m)  # type: ignore
-    assert datetime.time(0, 0, 1, 0) == dt64_to_time(dt_s)  # type: ignore
-    assert datetime.time(0, 0, 1, 123000) == dt64_to_time(dt_ms)  # type: ignore
-    assert datetime.time(0, 0, 1, 123456) == dt64_to_time(dt_us)  # type: ignore
-    assert datetime.time(0, 0, 1, 123456) == dt64_to_time(dt_ns)  # type: ignore
-    assert datetime.time(0, 0, 1, 123456) == dt64_to_time(dt_ps)  # type: ignore
-    assert datetime.time(0, 0, 1, 123456) == dt64_to_time(dt_fs)  # type: ignore
-    assert datetime.time(0, 0, 1, 123456) == dt64_to_time(dt_as)  # type: ignore
-
-    # To intger
-    dt_d = np.datetime64(1, "D")  # D
-    dt_h = np.datetime64(1, "h")  # h
-    dt_m = np.datetime64(1, "m")  # m
-    dt_s = np.datetime64(1, "s")  # s
-    dt_ms = np.datetime64(123, "ms")  # ms
-    dt_us = np.datetime64(123456, "us")  # us
-    dt_ns = np.datetime64(123456789, "ns")  # ns
-    dt_ps = np.datetime64(123456789123, "ps")  # ps
-    dt_fs = np.datetime64(123456789123456, "fs")  # fs
-    dt_as = np.datetime64(123456789123456789, "as")  # as
-
-    # days
-    assert 1 == dt64_to_days(dt_d)  # type: ignore
-    assert 24 == dt64_to_hours(dt_d)  # type: ignore
-    assert 24 * 60 == dt64_to_minutes(dt_d)  # type: ignore
-    assert 24 * 60 * 60 == dt64_to_seconds(dt_d)  # type: ignore
-    assert 24 * 60 * 60 * 1_000 == dt64_to_ms(dt_d)  # type: ignore
-    assert 24 * 60 * 60 * 1_000_000 == dt64_to_us(dt_d)  # type: ignore
-    assert 24 * 60 * 60 * 1_000_000_000 == dt64_to_ns(dt_d)  # type: ignore
-
-    # hours
-    assert 0 == dt64_to_days(dt_h)  # type: ignore
-    assert 1 == dt64_to_hours(dt_h)  # type: ignore
-    assert 60 == dt64_to_minutes(dt_h)  # type: ignore
-    assert 60 * 60 == dt64_to_seconds(dt_h)  # type: ignore
-    assert 60 * 60 * 1_000 == dt64_to_ms(dt_h)  # type: ignore
-    assert 60 * 60 * 1_000_000 == dt64_to_us(dt_h)  # type: ignore
-    assert 60 * 60 * 1_000_000_000 == dt64_to_ns(dt_h)  # type: ignore
-
-    # minutes
-    assert 0 == dt64_to_days(dt_m)  # type: ignore
-    assert 0 == dt64_to_hours(dt_m)  # type: ignore
-    assert 1 == dt64_to_minutes(dt_m)  # type: ignore
-    assert 60 == dt64_to_seconds(dt_m)  # type: ignore
-    assert 60 * 1_000 == dt64_to_ms(dt_m)  # type: ignore
-    assert 60 * 1_000_000 == dt64_to_us(dt_m)  # type: ignore
-    assert 60 * 1_000_000_000 == dt64_to_ns(dt_m)  # type: ignore
-
-    # seconds
-    assert 0 == dt64_to_days(dt_s)  # type: ignore
-    assert 0 == dt64_to_hours(dt_s)  # type: ignore
-    assert 0 == dt64_to_minutes(dt_s)  # type: ignore
-    assert 1 == dt64_to_seconds(dt_s)  # type: ignore
-    assert 1_000 == dt64_to_ms(dt_s)  # type: ignore
-    assert 1_000_000 == dt64_to_us(dt_s)  # type: ignore
-    assert 1_000_000_000 == dt64_to_ns(dt_s)  # type: ignore
-
-    # milliseconds
-    assert 0 == dt64_to_days(dt_ms)  # type: ignore
-    assert 0 == dt64_to_hours(dt_ms)  # type: ignore
-    assert 0 == dt64_to_minutes(dt_ms)  # type: ignore
-    assert 0 == dt64_to_seconds(dt_ms)  # type: ignore
-    assert 123 == dt64_to_ms(dt_ms)  # type: ignore
-    assert 123000 == dt64_to_us(dt_ms)  # type: ignore
-    assert 123000000 == dt64_to_ns(dt_ms)  # type: ignore
-
-    # microseconds
-    assert 0 == dt64_to_days(dt_us)  # type: ignore
-    assert 0 == dt64_to_hours(dt_us)  # type: ignore
-    assert 0 == dt64_to_minutes(dt_us)  # type: ignore
-    assert 0 == dt64_to_seconds(dt_us)  # type: ignore
-    assert 123 == dt64_to_ms(dt_us)  # type: ignore
-    assert 123456 == dt64_to_us(dt_us)  # type: ignore
-    assert 123456000 == dt64_to_ns(dt_us)  # type: ignore
-
-    # nanoseconds
-    assert 0 == dt64_to_days(dt_ns)  # type: ignore
-    assert 0 == dt64_to_hours(dt_ns)  # type: ignore
-    assert 0 == dt64_to_minutes(dt_ns)  # type: ignore
-    assert 0 == dt64_to_seconds(dt_ns)  # type: ignore
-    assert 123 == dt64_to_ms(dt_ns)  # type: ignore
-    assert 123456 == dt64_to_us(dt_ns)  # type: ignore
-    assert 123456789 == dt64_to_ns(dt_ns)  # type: ignore
-
-    # picoseconds
-    assert 0 == dt64_to_days(dt_ps)  # type: ignore
-    assert 0 == dt64_to_hours(dt_ps)  # type: ignore
-    assert 0 == dt64_to_minutes(dt_ps)  # type: ignore
-    assert 0 == dt64_to_seconds(dt_ps)  # type: ignore
-    assert 123 == dt64_to_ms(dt_ps)  # type: ignore
-    assert 123456 == dt64_to_us(dt_ps)  # type: ignore
-    assert 123456789 == dt64_to_ns(dt_ps)  # type: ignore
-
-    # femtoseconds
-    assert 0 == dt64_to_days(dt_fs)  # type: ignore
-    assert 0 == dt64_to_hours(dt_fs)  # type: ignore
-    assert 0 == dt64_to_minutes(dt_fs)  # type: ignore
-    assert 0 == dt64_to_seconds(dt_fs)  # type: ignore
-    assert 123 == dt64_to_ms(dt_fs)  # type: ignore
-    assert 123456 == dt64_to_us(dt_fs)  # type: ignore
-    assert 123456789 == dt64_to_ns(dt_fs)  # type: ignore
-
-    # attoseconds
-    assert 0 == dt64_to_days(dt_as)  # type: ignore
-    assert 0 == dt64_to_hours(dt_as)  # type: ignore
-    assert 0 == dt64_to_minutes(dt_as)  # type: ignore
-    assert 0 == dt64_to_seconds(dt_as)  # type: ignore
-    assert 123 == dt64_to_ms(dt_as)  # type: ignore
-    assert 123456 == dt64_to_us(dt_as)  # type: ignore
-    assert 123456789 == dt64_to_ns(dt_as)  # type: ignore
-
-    #### Negative
-    dt_d = np.datetime64("1969-12-31")  # D
-    dt_h = np.datetime64("1969-12-31T23")  # h
-    dt_m = np.datetime64("1969-12-31T23:59")  # m
-    dt_s = np.datetime64("1969-12-31T23:59:59")  # s
-    dt_ms = np.datetime64("1969-12-31T23:59:59.123")  # ms
-    dt_us = np.datetime64("1969-12-31T23:59:59.123456")  # us
-    dt_ns = np.datetime64("1969-12-31T23:59:59.123456789")  # ns
-    dt_ps = np.datetime64("1969-12-31T23:59:59.123456789123")  # ps
-    dt_fs = np.datetime64("1969-12-31T23:59:59.123456789123456")  # fs
-    dt_as = np.datetime64("1969-12-31T23:59:59.123456789123456789")  # as
-
-    cmp = {
-        "tm_sec": 59,
-        "tm_min": 59,
-        "tm_hour": 23,
-        "tm_mday": 31,
-        "tm_mon": 12,
-        "tm_year": 1969,
-        "tm_wday": 2,
-        "tm_yday": 365,
-        "tm_isdst": -1,
-    }
-    for dt in (dt_s, dt_ms, dt_us, dt_ns, dt_ps, dt_fs, dt_as):
-        assert cmp == dt64_to_tm(dt)  # type: ignore
-
-    # to strformat
-    fmt = "%Y/%m/%d %H-%M-%S.%f"
-    assert "1969/12/31 23-59-59." == dt64_to_strformat(dt_s, fmt, False)  # type: ignore
-    assert "1969/12/31 23-59-59.123000" == dt64_to_strformat(dt_ms, fmt, False)  # type: ignore
-    assert "1969/12/31 23-59-59.123456" == dt64_to_strformat(dt_us, fmt, False)  # type: ignore
-    assert "1969/12/31 23-59-59.123456789" == dt64_to_strformat(dt_ns, fmt, False)  # type: ignore
-    assert "1969/12/31 23-59-59.123456789123" == dt64_to_strformat(dt_ps, fmt, False)  # type: ignore
-    assert "1969/12/31 23-59-59.123456789123456" == dt64_to_strformat(dt_fs, fmt, False)  # type: ignore
-    assert "1969/12/31 23-59-59.123456789123456789" == dt64_to_strformat(dt_as, fmt, False)  # type: ignore
-
-    assert "1969/12/31 23-59-59." == dt64_to_strformat(dt_s, fmt, True)  # type: ignore
-    assert "1969/12/31 23-59-59.123000" == dt64_to_strformat(dt_ms, fmt, True)  # type: ignore
-    assert "1969/12/31 23-59-59.123456" == dt64_to_strformat(dt_us, fmt, True)  # type: ignore
-    assert "1969/12/31 23-59-59.123456" == dt64_to_strformat(dt_ns, fmt, True)  # type: ignore
-    assert "1969/12/31 23-59-59.123456" == dt64_to_strformat(dt_ps, fmt, True)  # type: ignore
-    assert "1969/12/31 23-59-59.123456" == dt64_to_strformat(dt_fs, fmt, True)  # type: ignore
-    assert "1969/12/31 23-59-59.123456" == dt64_to_strformat(dt_as, fmt, True)  # type: ignore
-
-    # To isoformat
-    assert "1969-12-31 23:59:59" == dt64_to_isoformat(dt_s, " ", False)  # type: ignore
-    assert "1969-12-31T23:59:59.123000" == dt64_to_isoformat(dt_ms, "T", False)  # type: ignore
-    assert "1969-12-31 23:59:59.123456" == dt64_to_isoformat(dt_us, " ", False)  # type: ignore
-    assert "1969-12-31T23:59:59.123456789" == dt64_to_isoformat(dt_ns, "T", False)  # type: ignore
-    assert "1969-12-31 23:59:59.123456789123" == dt64_to_isoformat(dt_ps, " ", False)  # type: ignore
-    assert "1969-12-31T23:59:59.123456789123456" == dt64_to_isoformat(dt_fs, "T", False)  # type: ignore
-    assert "1969-12-31 23:59:59.123456789123456789" == dt64_to_isoformat(dt_as, " ", False)  # type: ignore
-
-    assert "1969-12-31 23:59:59" == dt64_to_isoformat(dt_s, " ", True)  # type: ignore
-    assert "1969-12-31T23:59:59.123000" == dt64_to_isoformat(dt_ms, "T", True)  # type: ignore
-    assert "1969-12-31 23:59:59.123456" == dt64_to_isoformat(dt_us, " ", True)  # type: ignore
-    assert "1969-12-31T23:59:59.123456" == dt64_to_isoformat(dt_ns, "T", True)  # type: ignore
-    assert "1969-12-31 23:59:59.123456" == dt64_to_isoformat(dt_ps, " ", True)  # type: ignore
-    assert "1969-12-31T23:59:59.123456" == dt64_to_isoformat(dt_fs, "T", True)  # type: ignore
-    assert "1969-12-31 23:59:59.123456" == dt64_to_isoformat(dt_as, " ", True)  # type: ignore
-
-    # To date
-    assert datetime.date(1969, 12, 31) == dt64_to_date(dt_d)  # type: ignore
-    assert datetime.date(1969, 12, 31) == dt64_to_date(dt_h)  # type: ignore
-    assert datetime.date(1969, 12, 31) == dt64_to_date(dt_m)  # type: ignore
-    assert datetime.date(1969, 12, 31) == dt64_to_date(dt_s)  # type: ignore
-    assert datetime.date(1969, 12, 31) == dt64_to_date(dt_ms)  # type: ignore
-    assert datetime.date(1969, 12, 31) == dt64_to_date(dt_us)  # type: ignore
-    assert datetime.date(1969, 12, 31) == dt64_to_date(dt_ns)  # type: ignore
-    assert datetime.date(1969, 12, 31) == dt64_to_date(dt_ps)  # type: ignore
-    assert datetime.date(1969, 12, 31) == dt64_to_date(dt_fs)  # type: ignore
-    assert datetime.date(1969, 12, 31) == dt64_to_date(dt_as)  # type: ignore
-
-    # To datetime
-    assert datetime.datetime(1969, 12, 31) == dt64_to_dt(dt_d)  # type: ignore
-    assert datetime.datetime(1969, 12, 31, 23) == dt64_to_dt(dt_h)  # type: ignore
-    assert datetime.datetime(1969, 12, 31, 23, 59) == dt64_to_dt(dt_m)  # type: ignore
-    assert datetime.datetime(1969, 12, 31, 23, 59, 59) == dt64_to_dt(dt_s)  # type: ignore
-    assert datetime.datetime(1969, 12, 31, 23, 59, 59, 123000) == dt64_to_dt(dt_ms)  # type: ignore
-    assert datetime.datetime(1969, 12, 31, 23, 59, 59, 123456) == dt64_to_dt(dt_us)  # type: ignore
-    assert datetime.datetime(1969, 12, 31, 23, 59, 59, 123456) == dt64_to_dt(dt_ns)  # type: ignore
-    assert datetime.datetime(1969, 12, 31, 23, 59, 59, 123456) == dt64_to_dt(dt_ps)  # type: ignore
-    assert datetime.datetime(1969, 12, 31, 23, 59, 59, 123456) == dt64_to_dt(dt_fs)  # type: ignore
-    assert datetime.datetime(1969, 12, 31, 23, 59, 59, 123456) == dt64_to_dt(dt_as)  # type: ignore
-
-    # To time
-    assert datetime.time(0, 0, 0, 0) == dt64_to_time(dt_d)  # type: ignore
-    assert datetime.time(23, 0, 0, 0) == dt64_to_time(dt_h)  # type: ignore
-    assert datetime.time(23, 59, 0, 0) == dt64_to_time(dt_m)  # type: ignore
-    assert datetime.time(23, 59, 59, 0) == dt64_to_time(dt_s)  # type: ignore
-    assert datetime.time(23, 59, 59, 123000) == dt64_to_time(dt_ms)  # type: ignore
-    assert datetime.time(23, 59, 59, 123456) == dt64_to_time(dt_us)  # type: ignore
-    assert datetime.time(23, 59, 59, 123456) == dt64_to_time(dt_ns)  # type: ignore
-    assert datetime.time(23, 59, 59, 123456) == dt64_to_time(dt_ps)  # type: ignore
-    assert datetime.time(23, 59, 59, 123456) == dt64_to_time(dt_fs)  # type: ignore
-    assert datetime.time(23, 59, 59, 123456) == dt64_to_time(dt_as)  # type: ignore
-
-    # To intger
-    dt_d = np.datetime64(-1, "D")  # D
-    dt_h = np.datetime64(-1, "h")  # h
-    dt_m = np.datetime64(-1, "m")  # m
-    dt_s = np.datetime64(-1, "s")  # s
-    dt_ms = np.datetime64(-123, "ms")  # ms
-    dt_us = np.datetime64(-123456, "us")  # us
-    dt_ns = np.datetime64(-123456789, "ns")  # ns
-    dt_ps = np.datetime64(-123456789123, "ps")  # ps
-    dt_fs = np.datetime64(-123456789123456, "fs")  # fs
-    dt_as = np.datetime64(-123456789123456789, "as")  # as
-
-    # days
-    assert -1 == dt64_to_days(dt_d)  # type: ignore
-    assert -24 == dt64_to_hours(dt_d)  # type: ignore
-    assert -24 * 60 == dt64_to_minutes(dt_d)  # type: ignore
-    assert -24 * 60 * 60 == dt64_to_seconds(dt_d)  # type: ignore
-    assert -24 * 60 * 60 * 1_000 == dt64_to_ms(dt_d)  # type: ignore
-    assert -24 * 60 * 60 * 1_000_000 == dt64_to_us(dt_d)  # type: ignore
-    assert -24 * 60 * 60 * 1_000_000_000 == dt64_to_ns(dt_d)  # type: ignore
-
-    # hours
-    assert -1 == dt64_to_days(dt_h)  # type: ignore
-    assert -1 == dt64_to_hours(dt_h)  # type: ignore
-    assert -60 == dt64_to_minutes(dt_h)  # type: ignore
-    assert -60 * 60 == dt64_to_seconds(dt_h)  # type: ignore
-    assert -60 * 60 * 1_000 == dt64_to_ms(dt_h)  # type: ignore
-    assert -60 * 60 * 1_000_000 == dt64_to_us(dt_h)  # type: ignore
-    assert -60 * 60 * 1_000_000_000 == dt64_to_ns(dt_h)  # type: ignore
-
-    # minutes
-    assert -1 == dt64_to_days(dt_m)  # type: ignore
-    assert -1 == dt64_to_hours(dt_m)  # type: ignore
-    assert -1 == dt64_to_minutes(dt_m)  # type: ignore
-    assert -60 == dt64_to_seconds(dt_m)  # type: ignore
-    assert -60 * 1_000 == dt64_to_ms(dt_m)  # type: ignore
-    assert -60 * 1_000_000 == dt64_to_us(dt_m)  # type: ignore
-    assert -60 * 1_000_000_000 == dt64_to_ns(dt_m)  # type: ignore
-
-    # seconds
-    assert -1 == dt64_to_days(dt_s)  # type: ignore
-    assert -1 == dt64_to_hours(dt_s)  # type: ignore
-    assert -1 == dt64_to_minutes(dt_s)  # type: ignore
-    assert -1 == dt64_to_seconds(dt_s)  # type: ignore
-    assert -1_000 == dt64_to_ms(dt_s)  # type: ignore
-    assert -1_000_000 == dt64_to_us(dt_s)  # type: ignore
-    assert -1_000_000_000 == dt64_to_ns(dt_s)  # type: ignore
-
-    # milliseconds
-    assert -1 == dt64_to_days(dt_ms)  # type: ignore
-    assert -1 == dt64_to_hours(dt_ms)  # type: ignore
-    assert -1 == dt64_to_minutes(dt_ms)  # type: ignore
-    assert -1 == dt64_to_seconds(dt_ms)  # type: ignore
-    assert -123 == dt64_to_ms(dt_ms)  # type: ignore
-    assert -123000 == dt64_to_us(dt_ms)  # type: ignore
-    assert -123000000 == dt64_to_ns(dt_ms)  # type: ignore
-
-    # microseconds
-    assert -1 == dt64_to_days(dt_us)  # type: ignore
-    assert -1 == dt64_to_hours(dt_us)  # type: ignore
-    assert -1 == dt64_to_minutes(dt_us)  # type: ignore
-    assert -1 == dt64_to_seconds(dt_us)  # type: ignore
-    assert -124 == dt64_to_ms(dt_us)  # type: ignore
-    assert -123456 == dt64_to_us(dt_us)  # type: ignore
-    assert -123456000 == dt64_to_ns(dt_us)  # type: ignore
-
-    # nanoseconds
-    assert -1 == dt64_to_days(dt_ns)  # type: ignore
-    assert -1 == dt64_to_hours(dt_ns)  # type: ignore
-    assert -1 == dt64_to_minutes(dt_ns)  # type: ignore
-    assert -1 == dt64_to_seconds(dt_ns)  # type: ignore
-    assert -124 == dt64_to_ms(dt_ns)  # type: ignore
-    assert -123457 == dt64_to_us(dt_ns)  # type: ignore
-    assert -123456789 == dt64_to_ns(dt_ns)  # type: ignore
-
-    # picoseconds
-    assert -1 == dt64_to_days(dt_ps)  # type: ignore
-    assert -1 == dt64_to_hours(dt_ps)  # type: ignore
-    assert -1 == dt64_to_minutes(dt_ps)  # type: ignore
-    assert -1 == dt64_to_seconds(dt_ps)  # type: ignore
-    assert -124 == dt64_to_ms(dt_ps)  # type: ignore
-    assert -123457 == dt64_to_us(dt_ps)  # type: ignore
-    assert -123456790 == dt64_to_ns(dt_ps)  # type: ignore
-
-    # femtoseconds
-    assert -1 == dt64_to_days(dt_fs)  # type: ignore
-    assert -1 == dt64_to_hours(dt_fs)  # type: ignore
-    assert -1 == dt64_to_minutes(dt_fs)  # type: ignore
-    assert -1 == dt64_to_seconds(dt_fs)  # type: ignore
-    assert -124 == dt64_to_ms(dt_fs)  # type: ignore
-    assert -123457 == dt64_to_us(dt_fs)  # type: ignore
-    assert -123456790 == dt64_to_ns(dt_fs)  # type: ignore
-
-    # attoseconds
-    assert -1 == dt64_to_days(dt_as)  # type: ignore
-    assert -1 == dt64_to_hours(dt_as)  # type: ignore
-    assert -1 == dt64_to_minutes(dt_as)  # type: ignore
-    assert -1 == dt64_to_seconds(dt_as)  # type: ignore
-    assert -124 == dt64_to_ms(dt_as)  # type: ignore
-    assert -123457 == dt64_to_us(dt_as)  # type: ignore
-    assert -123456790 == dt64_to_ns(dt_as)  # type: ignore
+    units = ("Y", "M", "W", "D", "h", "m", "s", "ms", "us", "ns")
+    for unit in units:
+        for i in range(-500, 501):
+            dt64 = np.datetime64(i, unit)
+            us = dt64.astype("datetime64[us]").astype("int64")
+            assert dt64_as_int64_us(dt64) == us  # type: ignore
+            assert dt64_to_dt(dt64) == dt_fr_us(us)  # type: ignore
 
     print("Passed: datetime64_conversion")
 
@@ -1703,234 +1263,100 @@ def _test_timedelta64_type_check() -> None:
 def _test_timedelta64_conversion() -> None:
     import datetime, numpy as np
 
-    #### Positive
-    td_d = np.timedelta64(1, "D")  # D
-    td_h = np.timedelta64(1, "h")  # h
-    td_m = np.timedelta64(1, "m")  # m
-    td_s = np.timedelta64(1, "s")  # s
-    td_ms = np.timedelta64(123, "ms")  # ms
-    td_us = np.timedelta64(123456, "us")  # us
-    td_ns = np.timedelta64(123456789, "ns")  # ns
-    td_ps = np.timedelta64(123456789123, "ps")  # ps
-    td_fs = np.timedelta64(123456789123456, "fs")  # fs
-    td_as = np.timedelta64(123456789123456789, "as")  # as
-
-    # days
-    assert 1 == td64_to_days(td_d)  # type: ignore
-    assert 24 == td64_to_hours(td_d)  # type: ignore
-    assert 24 * 60 == td64_to_minutes(td_d)  # type: ignore
-    assert 24 * 60 * 60 == td64_to_seconds(td_d)  # type: ignore
-    assert 24 * 60 * 60 * 1_000 == td64_to_ms(td_d)  # type: ignore
-    assert 24 * 60 * 60 * 1_000_000 == td64_to_us(td_d)  # type: ignore
-    assert 24 * 60 * 60 * 1_000_000_000 == td64_to_ns(td_d)  # type: ignore
-
-    # hours
-    assert 0 == td64_to_days(td_h)  # type: ignore
-    assert 1 == td64_to_hours(td_h)  # type: ignore
-    assert 60 == td64_to_minutes(td_h)  # type: ignore
-    assert 60 * 60 == td64_to_seconds(td_h)  # type: ignore
-    assert 60 * 60 * 1_000 == td64_to_ms(td_h)  # type: ignore
-    assert 60 * 60 * 1_000_000 == td64_to_us(td_h)  # type: ignore
-    assert 60 * 60 * 1_000_000_000 == td64_to_ns(td_h)  # type: ignore
-
-    # minutes
-    assert 0 == td64_to_days(td_m)  # type: ignore
-    assert 0 == td64_to_hours(td_m)  # type: ignore
-    assert 1 == td64_to_minutes(td_m)  # type: ignore
-    assert 60 == td64_to_seconds(td_m)  # type: ignore
-    assert 60 * 1_000 == td64_to_ms(td_m)  # type: ignore
-    assert 60 * 1_000_000 == td64_to_us(td_m)  # type: ignore
-    assert 60 * 1_000_000_000 == td64_to_ns(td_m)  # type: ignore
-
-    # seconds
-    assert 0 == td64_to_days(td_s)  # type: ignore
-    assert 0 == td64_to_hours(td_s)  # type: ignore
-    assert 0 == td64_to_minutes(td_s)  # type: ignore
-    assert 1 == td64_to_seconds(td_s)  # type: ignore
-    assert 1_000 == td64_to_ms(td_s)  # type: ignore
-    assert 1_000_000 == td64_to_us(td_s)  # type: ignore
-    assert 1_000_000_000 == td64_to_ns(td_s)  # type: ignore
-
-    # milliseconds
-    assert 0 == td64_to_days(td_ms)  # type: ignore
-    assert 0 == td64_to_hours(td_ms)  # type: ignore
-    assert 0 == td64_to_minutes(td_ms)  # type: ignore
-    assert 0 == td64_to_seconds(td_ms)  # type: ignore
-    assert 123 == td64_to_ms(td_ms)  # type: ignore
-    assert 123_000 == td64_to_us(td_ms)  # type: ignore
-    assert 123_000_000 == td64_to_ns(td_ms)  # type: ignore
-
-    # microseconds
-    assert 0 == td64_to_days(td_us)  # type: ignore
-    assert 0 == td64_to_hours(td_us)  # type: ignore
-    assert 0 == td64_to_minutes(td_us)  # type: ignore
-    assert 0 == td64_to_seconds(td_us)  # type: ignore
-    assert 123 == td64_to_ms(td_us)  # type: ignore
-    assert 123_456 == td64_to_us(td_us)  # type: ignore
-    assert 123_456_000 == td64_to_ns(td_us)  # type: ignore
-
-    # nanoseconds
-    assert 0 == td64_to_days(td_ns)  # type: ignore
-    assert 0 == td64_to_hours(td_ns)  # type: ignore
-    assert 0 == td64_to_minutes(td_ns)  # type: ignore
-    assert 0 == td64_to_seconds(td_ns)  # type: ignore
-    assert 123 == td64_to_ms(td_ns)  # type: ignore
-    assert 123_457 == td64_to_us(td_ns)  # type: ignore
-    assert 123_456_789 == td64_to_ns(td_ns)  # type: ignore
-
-    # picoseconds
-    assert 0 == td64_to_days(td_ps)  # type: ignore
-    assert 0 == td64_to_hours(td_ps)  # type: ignore
-    assert 0 == td64_to_minutes(td_ps)  # type: ignore
-    assert 0 == td64_to_seconds(td_ps)  # type: ignore
-    assert 123 == td64_to_ms(td_ps)  # type: ignore
-    assert 123_457 == td64_to_us(td_ps)  # type: ignore
-    assert 123_456_789 == td64_to_ns(td_ps)  # type: ignore
-
-    # femtoseconds
-    assert 0 == td64_to_days(td_fs)  # type: ignore
-    assert 0 == td64_to_hours(td_fs)  # type: ignore
-    assert 0 == td64_to_minutes(td_fs)  # type: ignore
-    assert 0 == td64_to_seconds(td_fs)  # type: ignore
-    assert 123 == td64_to_ms(td_fs)  # type: ignore
-    assert 123_457 == td64_to_us(td_fs)  # type: ignore
-    assert 123_456_789 == td64_to_ns(td_fs)  # type: ignore
-
-    # attoseconds
-    assert 0 == td64_to_days(td_as)  # type: ignore
-    assert 0 == td64_to_hours(td_as)  # type: ignore
-    assert 0 == td64_to_minutes(td_as)  # type: ignore
-    assert 0 == td64_to_seconds(td_as)  # type: ignore
-    assert 123 == td64_to_ms(td_as)  # type: ignore
-    assert 123_457 == td64_to_us(td_as)  # type: ignore
-    assert 123_456_789 == td64_to_ns(td_as)  # type: ignore
-
-    # To timedelta
-    assert datetime.timedelta(days=1) == td64_to_td(td_d)  # type: ignore
-    assert datetime.timedelta(hours=1) == td64_to_td(td_h)  # type: ignore
-    assert datetime.timedelta(minutes=1) == td64_to_td(td_m)  # type: ignore
-    assert datetime.timedelta(seconds=1) == td64_to_td(td_s)  # type: ignore
-    assert datetime.timedelta(milliseconds=123) == td64_to_td(td_ms)  # type: ignore
-    assert datetime.timedelta(microseconds=123456) == td64_to_td(td_us)  # type: ignore
-    assert datetime.timedelta(microseconds=123457) == td64_to_td(td_ns)  # type: ignore
-    assert datetime.timedelta(microseconds=123457) == td64_to_td(td_ps)  # type: ignore
-    assert datetime.timedelta(microseconds=123457) == td64_to_td(td_fs)  # type: ignore
-    assert datetime.timedelta(microseconds=123457) == td64_to_td(td_as)  # type: ignore
-
-    #### Negative
-    td_d = np.timedelta64(-1, "D")  # D
-    td_h = np.timedelta64(-1, "h")  # h
-    td_m = np.timedelta64(-1, "m")  # m
-    td_s = np.timedelta64(-1, "s")  # s
-    td_ms = np.timedelta64(-123, "ms")  # ms
-    td_us = np.timedelta64(-123456, "us")  # us
-    td_ns = np.timedelta64(-123456789, "ns")  # ns
-    td_ps = np.timedelta64(-123456789123, "ps")  # ps
-    td_fs = np.timedelta64(-123456789123456, "fs")  # fs
-    td_as = np.timedelta64(-123456789123456789, "as")  # as
-
-    # days
-    assert -1 == td64_to_days(td_d)  # type: ignore
-    assert -24 == td64_to_hours(td_d)  # type: ignore
-    assert -24 * 60 == td64_to_minutes(td_d)  # type: ignore
-    assert -24 * 60 * 60 == td64_to_seconds(td_d)  # type: ignore
-    assert -24 * 60 * 60 * 1_000 == td64_to_ms(td_d)  # type: ignore
-    assert -24 * 60 * 60 * 1_000_000 == td64_to_us(td_d)  # type: ignore
-    assert -24 * 60 * 60 * 1_000_000_000 == td64_to_ns(td_d)  # type: ignore
-
-    # hours
-    assert 0 == td64_to_days(td_h)  # type: ignore
-    assert -1 == td64_to_hours(td_h)  # type: ignore
-    assert -60 == td64_to_minutes(td_h)  # type: ignore
-    assert -60 * 60 == td64_to_seconds(td_h)  # type: ignore
-    assert -60 * 60 * 1_000 == td64_to_ms(td_h)  # type: ignore
-    assert -60 * 60 * 1_000_000 == td64_to_us(td_h)  # type: ignore
-    assert -60 * 60 * 1_000_000_000 == td64_to_ns(td_h)  # type: ignore
-
-    # minutes
-    assert 0 == td64_to_days(td_m)  # type: ignore
-    assert 0 == td64_to_hours(td_m)  # type: ignore
-    assert -1 == td64_to_minutes(td_m)  # type: ignore
-    assert -60 == td64_to_seconds(td_m)  # type: ignore
-    assert -60 * 1_000 == td64_to_ms(td_m)  # type: ignore
-    assert -60 * 1_000_000 == td64_to_us(td_m)  # type: ignore
-    assert -60 * 1_000_000_000 == td64_to_ns(td_m)  # type: ignore
-
-    # seconds
-    assert 0 == td64_to_days(td_s)  # type: ignore
-    assert 0 == td64_to_hours(td_s)  # type: ignore
-    assert 0 == td64_to_minutes(td_s)  # type: ignore
-    assert -1 == td64_to_seconds(td_s)  # type: ignore
-    assert -1_000 == td64_to_ms(td_s)  # type: ignore
-    assert -1_000_000 == td64_to_us(td_s)  # type: ignore
-    assert -1_000_000_000 == td64_to_ns(td_s)  # type: ignore
-
-    # milliseconds
-    assert 0 == td64_to_days(td_ms)  # type: ignore
-    assert 0 == td64_to_hours(td_ms)  # type: ignore
-    assert 0 == td64_to_minutes(td_ms)  # type: ignore
-    assert 0 == td64_to_seconds(td_ms)  # type: ignore
-    assert -123 == td64_to_ms(td_ms)  # type: ignore
-    assert -123_000 == td64_to_us(td_ms)  # type: ignore
-    assert -123_000_000 == td64_to_ns(td_ms)  # type: ignore
-
-    # microseconds
-    assert 0 == td64_to_days(td_us)  # type: ignore
-    assert 0 == td64_to_hours(td_us)  # type: ignore
-    assert 0 == td64_to_minutes(td_us)  # type: ignore
-    assert 0 == td64_to_seconds(td_us)  # type: ignore
-    assert -123 == td64_to_ms(td_us)  # type: ignore
-    assert -123_456 == td64_to_us(td_us)  # type: ignore
-    assert -123_456_000 == td64_to_ns(td_us)  # type: ignore
-
-    # nanoseconds
-    assert 0 == td64_to_days(td_ns)  # type: ignore
-    assert 0 == td64_to_hours(td_ns)  # type: ignore
-    assert 0 == td64_to_minutes(td_ns)  # type: ignore
-    assert 0 == td64_to_seconds(td_ns)  # type: ignore
-    assert -123 == td64_to_ms(td_ns)  # type: ignore
-    assert -123_457 == td64_to_us(td_ns)  # type: ignore
-    assert -123_456_789 == td64_to_ns(td_ns)  # type: ignore
-
-    # picoseconds
-    assert 0 == td64_to_days(td_ps)  # type: ignore
-    assert 0 == td64_to_hours(td_ps)  # type: ignore
-    assert 0 == td64_to_minutes(td_ps)  # type: ignore
-    assert 0 == td64_to_seconds(td_ps)  # type: ignore
-    assert -123 == td64_to_ms(td_ps)  # type: ignore
-    assert -123_457 == td64_to_us(td_ps)  # type: ignore
-    assert -123_456_789 == td64_to_ns(td_ps)  # type: ignore
-
-    # femtoseconds
-    assert 0 == td64_to_days(td_fs)  # type: ignore
-    assert 0 == td64_to_hours(td_fs)  # type: ignore
-    assert 0 == td64_to_minutes(td_fs)  # type: ignore
-    assert 0 == td64_to_seconds(td_fs)  # type: ignore
-    assert -123 == td64_to_ms(td_fs)  # type: ignore
-    assert -123_457 == td64_to_us(td_fs)  # type: ignore
-    assert -123_456_789 == td64_to_ns(td_fs)  # type: ignore
-
-    # attoseconds
-    assert 0 == td64_to_days(td_as)  # type: ignore
-    assert 0 == td64_to_hours(td_as)  # type: ignore
-    assert 0 == td64_to_minutes(td_as)  # type: ignore
-    assert 0 == td64_to_seconds(td_as)  # type: ignore
-    assert -123 == td64_to_ms(td_as)  # type: ignore
-    assert -123_457 == td64_to_us(td_as)  # type: ignore
-    assert -123_456_789 == td64_to_ns(td_as)  # type: ignore
-
-    # To timedelta
-    assert datetime.timedelta(days=-1) == td64_to_td(td_d)  # type: ignore
-    assert datetime.timedelta(hours=-1) == td64_to_td(td_h)  # type: ignore
-    assert datetime.timedelta(minutes=-1) == td64_to_td(td_m)  # type: ignore
-    assert datetime.timedelta(seconds=-1) == td64_to_td(td_s)  # type: ignore
-    assert datetime.timedelta(milliseconds=-123) == td64_to_td(td_ms)  # type: ignore
-    assert datetime.timedelta(microseconds=-123456) == td64_to_td(td_us)  # type: ignore
-    assert datetime.timedelta(microseconds=-123457) == td64_to_td(td_ns)  # type: ignore
-    assert datetime.timedelta(microseconds=-123457) == td64_to_td(td_ps)  # type: ignore
-    assert datetime.timedelta(microseconds=-123457) == td64_to_td(td_fs)  # type: ignore
-    assert datetime.timedelta(microseconds=-123457) == td64_to_td(td_as)  # type: ignore
+    units = ("Y", "M", "W", "D", "h", "m", "s", "ms", "us", "ns")
+    for unit in units:
+        for i in range(-500, 501):
+            td64 = np.timedelta64(i, unit)
+            us = td64.astype("timedelta64[us]").astype("int64")
+            assert td64_as_int64_us(td64) == us  # type: ignore
+            assert td64_to_td(td64) == datetime.timedelta(microseconds=int(us))  # type: ignore
 
     print("Passed: timedelta64_conversion")
 
     del datetime, np
+
+
+# . numpy.ndarray
+def _test_ndarray_type_check() -> None:
+    import numpy as np
+
+    assert is_arr(np.array([1, 2, 3]))  # type: ignore
+    assert is_arr(np.array([]))  # type: ignore
+    assert is_arr("a") == False  # type: ignore
+
+    print("Passed: ndarray_type_check")
+
+    del np
+
+
+# . numpy.ndarray[datetime64]
+def _test_ndarray_dt64_type_check() -> None:
+    import numpy as np
+
+    assert is_dt64arr(np.array([1, 2, 3], dtype="datetime64[ns]"))  # type: ignore
+    assert is_dt64arr(np.array([], dtype="datetime64[ns]"))  # type: ignore
+    assert is_dt64arr(np.array([1, 2, 3], dtype="int64")) == False  # type: ignore
+    assert is_dt64arr(np.array([], dtype="int64")) == False  # type: ignore
+
+    print("Passed: ndarray_dt64_type_check")
+
+    del np
+
+
+def _test_ndarray_dt64_conversion() -> None:
+    import numpy as np
+
+    units = ("Y", "M", "W", "D", "h", "m", "s", "ms", "us", "ns")
+
+    for my_unit in units:
+        arr = np.array([i for i in range(-500, 501)], dtype=f"datetime64[{my_unit}]")
+        arr_i = arr.astype("int64")
+        for to_unit in units:
+            cmp = arr.astype(f"datetime64[{to_unit}]").astype("int64")
+            val = dt64arr_as_int64(arr, to_unit)  # type: ignore
+            assert np.equal(val, cmp).all()
+            val = dt64arr_as_int64(arr, to_unit, my_unit)  # type: ignore
+            assert np.equal(val, cmp).all()
+            val = dt64arr_as_int64(arr_i, to_unit, my_unit)  # type: ignore
+            assert np.equal(val, cmp).all()
+
+    for my_unit in units:
+        arr = np.array([i for i in range(-500, 501)], dtype=f"datetime64[{my_unit}]")
+        for to_unit in units:
+            cmp = arr.astype(f"datetime64[{to_unit}]")
+            val = dt64arr_as_unit(arr, to_unit)  # type: ignore
+            assert np.equal(val, cmp).all()
+
+    print("Passed: ndarray_dt64_conversion")
+
+    del np
+
+
+# . numpy.ndarray[timedelta64]
+def _test_ndarray_td64_type_check() -> None:
+    import numpy as np
+
+    assert is_td64arr(np.array([1, 2, 3], dtype="timedelta64[ns]"))  # type: ignore
+    assert is_td64arr(np.array([], dtype="timedelta64[ns]"))  # type: ignore
+    assert is_td64arr(np.array([1, 2, 3], dtype="int64")) == False  # type: ignore
+    assert is_td64arr(np.array([], dtype="int64")) == False  # type: ignore
+
+    print("Passed: ndarray_td64_type_check")
+
+    del np
+
+
+def _test_ndarray_td64_conversion() -> None:
+    import numpy as np
+
+    units = ("Y", "M", "W", "D", "h", "m", "s", "ms", "us", "ns")
+
+    for my_unit in units:
+        arr = np.array([i for i in range(-500, 501)], dtype=f"timedelta64[{my_unit}]")
+        cmp = arr.astype(f"timedelta64[us]")
+        val = td64arr_as_int64_us(arr)  # type: ignore
+        assert np.equal(val, cmp).all()
+
+    print("Passed: ndarray_td64_conversion")
+
+    del np
