@@ -32,9 +32,13 @@ WEEKDAY_REPRS: tuple[str, ...] = ("MO", "TU", "WE", "TH", "FR", "SA", "SU")
 @cython.cfunc
 @cython.inline(True)
 @cython.exceptval(-1, check=False)
-def is_delta(o: object) -> cython.bint:
-    """(cfunc) Check if an object is an instance of 'Delta' `<'bool'>`."""
-    return isinstance(o, Delta)
+def is_delta(obj: object) -> cython.bint:
+    """(cfunc) Check if an object is an instance of 'Delta' `<'bool'>`.
+
+    Equivalent to:
+    >>> isinstance(obj, Delta)
+    """
+    return isinstance(obj, Delta)
 
 
 @cython.cfunc
@@ -57,16 +61,16 @@ def _date_add_delta(
     second: cython.int,
     microsecond: cython.int,
 ) -> object:
-    """(cfunc) Add relative & absolute delta to a date object,
+    """(internal) Add relative & absolute delta to a date object,
     returns `<'datetime.date'>` or the original subclass type.
 
     ### Notes:
     - This function is specifically designed for the <'Delta'> class.
       Do `NOT` use this function directly.
-    - Argument 'dt' must be an instance or subclass of datetime.date.
+    - Argument 'date' must be an instance or subclass of `datetime.date`.
     - Relative delta fields must be normalized.
     - Absolute delta fields must be in valid range to the corresponding
-      field, or set to `-1` to keep the original value.
+      field, or set to `-1` to retain the original value.
     """
     # Calculate delta
     # . year
@@ -90,11 +94,12 @@ def _date_add_delta(
     dd: cython.int = day if day != -1 else dt_dd
     if dd != dt_dd:
         ymd_eq = False
-    # . H/M/S/f
+    # ----------------------------------------------------
     us: cython.int = (microsecond if microsecond != -1 else 0) + microseconds
     ss: cython.int = (second if second != -1 else 0) + seconds
     mi: cython.int = (minute if minute != -1 else 0) + minutes
     hh: cython.int = (hour if hour != -1 else 0) + hours
+    # ----------------------------------------------------
     # . microseconds
     if us != 0:
         if us > 999_999:
@@ -169,16 +174,16 @@ def _dt_add_delta(
     second: cython.int,
     microsecond: cython.int,
 ) -> object:
-    """(cfunc) Add relative & absolute delta to a datetime object,
+    """(internal) Add relative & absolute delta to a datetime object,
     returns `<'datetime.datetime'>` or the original subclass type.
 
     ### Notes:
     - This function is specifically designed for the <'Delta'> class.
       Do `NOT` use this function directly.
-    - Argument 'dt' must be an instance or subclass of datetime.datetime.
+    - Argument 'dt' must be an instance or subclass of `datetime.datetime`.
     - Relative delta fields must be normalized.
     - Absolute delta fields must be in valid range to the corresponding
-      field, or set to `-1` to keep the original value.
+      field, or set to `-1` to retain the original value.
     """
     # Calculate delta
     # . year
@@ -220,9 +225,9 @@ def _dt_add_delta(
         elif us < 0:
             ss -= 1
             us += 1_000_000
-        hms_eq: cython.bint = us == dt_us
+        hmsf_eq: cython.bint = us == dt_us
     else:
-        hms_eq: cython.bint = True
+        hmsf_eq: cython.bint = True
     # . seconds
     if ss != dt_ss:
         if ss > 59:
@@ -231,8 +236,8 @@ def _dt_add_delta(
         elif ss < 0:
             mi -= 1
             ss += 60
-        if hms_eq:
-            hms_eq = ss == dt_ss
+        if hmsf_eq:
+            hmsf_eq = ss == dt_ss
     # . minutes
     if mi != dt_mi:
         if mi > 59:
@@ -241,8 +246,8 @@ def _dt_add_delta(
         elif mi < 0:
             hh -= 1
             mi += 60
-        if hms_eq:
-            hms_eq = mi == dt_mi
+        if hmsf_eq:
+            hmsf_eq = mi == dt_mi
     # . hours & days
     if hh != dt_hh:
         if hh > 23:
@@ -251,15 +256,15 @@ def _dt_add_delta(
         elif hh < 0:
             days -= 1
             hh += 24
-        if hms_eq:
-            hms_eq = hh == dt_hh
+        if hmsf_eq:
+            hmsf_eq = hh == dt_hh
 
     # Add delta
     if days != 0:
         _ymd = utils.ymd_fr_ordinal(utils.ymd_to_ordinal(yy, mm, dd) + days)
         yy, mm, dd = _ymd.year, _ymd.month, _ymd.day
     elif ymd_eq:
-        if hms_eq:
+        if hmsf_eq:
             return dt  # exit: no change
     elif dd > 28:
         dd = min(dd, utils.days_in_month(yy, mm))
@@ -356,9 +361,9 @@ class Delta:
         ## Relative Deltas (Add to specified fields)
 
         :param years `<'int'>`: Relative years, defaults to `0`.
-        :param quarters `<'int'>`: Relative quarters (`3 months`), defaults to `0`.
+        :param quarters `<'int'>`: Relative quarters (3 months), defaults to `0`.
         :param months `<'int'>`: Relative months, defaults to `0`.
-        :param weeks `<'int'>`: Relative weeks (`7 days`), defaults to `0`.
+        :param weeks `<'int'>`: Relative weeks (7 days), defaults to `0`.
         :param days `<'int'>`: Relative days, defaults to `0`.
         :param hours `<'int'>`: Relative hours, defaults to `0`.
         :param minutes `<'int'>`: Relative minutes, defaults to `0`.
@@ -497,7 +502,16 @@ class Delta:
         self._hour = min(hour, 23) if hour >= 0 else -1
         self._minute = min(minute, 59) if minute >= 0 else -1
         self._second = min(second, 59) if second >= 0 else -1
-        self._microsecond = utils.combine_abs_ms_us(millisecond, microsecond)  # type: ignore
+        if millisecond >= 0:
+            millisecond = min(millisecond, 999) * 1_000
+            if microsecond > 0:
+                self._microsecond = millisecond + microsecond % 1_000
+            else:
+                self._microsecond = millisecond
+        elif microsecond >= 0:
+            self._microsecond = min(microsecond, 999_999)
+        else:
+            self._microsecond = -1
 
         # Initial hashcode
         self._hashcode = -1
@@ -628,7 +642,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _add_date(self, o: object) -> object:
-        """(cfunc) Addition with datetime.date instance or subclass,
+        """(internal) Addition with datetime.date instance or subclass,
         returns `<'datetime.date'>` or the original subclass type.
         """
         return _date_add_delta(
@@ -653,7 +667,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _add_datetime(self, o: object) -> object:
-        """(cfunc) Addition with datetime.datetime instance or subclass,
+        """(internal) Addition with datetime.datetime instance or subclass,
         returns `<'datetime.datetime'>` or the original subclass type.
         """
         return _dt_add_delta(
@@ -678,7 +692,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _add_delta(self, o: Delta) -> Delta:
-        """(cfunc) Addition with another cytimes.Delta,
+        """(internal) Addition with another cytimes.Delta,
         returns `<'cytimes.Delta'>`.
         """
         return Delta(
@@ -706,7 +720,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _add_timedelta(self, o: object) -> Delta:
-        """(cfunc) Addition with datetime.timedelta instance or subclass,
+        """(internal) Addition with datetime.timedelta instance or subclass,
         returns `<'cytimes.Delta'>`."""
         return Delta(
             self._years,
@@ -733,7 +747,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _add_relativedelta(self, o: relativedelta) -> Delta:
-        """(cfunc) Left operand addition with dateutil.relativedelta,
+        """(internal) Left operand addition with dateutil.relativedelta,
         (i.e., Delta + relativedelta), returns `<'cytimes.Delta'>`.
         """
         # Normalize
@@ -789,7 +803,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _add_int(self, o: cython.int) -> Delta:
-        """(cfunc) Addition with int, returns `<'cytimes.Delta'>`."""
+        """(internal) Addition with int, returns `<'cytimes.Delta'>`."""
         return Delta(
             self._years + o,
             0,
@@ -815,7 +829,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _add_float(self, o: cython.double) -> Delta:
-        """(cfunc) Addition with float, returns `<'cytimes.Delta'>`."""
+        """(internal) Addition with float, returns `<'cytimes.Delta'>`."""
         # Normalize
         # . years
         value: cython.double = self._years + o
@@ -909,7 +923,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _radd_relativedelta(self, o: relativedelta) -> Delta:
-        """(cfunc) Right operand addition with dateutil.relativedelta,
+        """(internal) Right operand addition with dateutil.relativedelta,
         (i.e., relativedelta + Delta), returns `<'cytimes.Delta'>`.
         """
         # Normalize
@@ -1022,7 +1036,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _sub_delta(self, o: Delta) -> Delta:
-        """(cfunc) Subtraction with another cytimes.Delta,
+        """(internal) Subtraction with another cytimes.Delta,
         returns `<'cytimes.Delta'>`.
         """
         # fmt: off
@@ -1052,7 +1066,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _sub_timedelta(self, o: object) -> Delta:
-        """(cfunc) Left operand subtraction with datetime.timedelta
+        """(internal) Left operand subtraction with datetime.timedelta
         (i.e., Delta - timedelta), returns `<'cytimes.Delta'>`.
         """
         return Delta(
@@ -1080,7 +1094,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _sub_relativedelta(self, o: relativedelta) -> Delta:
-        """(cfunc) Left operand subtraction with dateutil.relativedelta,
+        """(internal) Left operand subtraction with dateutil.relativedelta,
         (i.e., Delta - relativedelta), returns `<'cytimes.Delta'>`."""
         # Normalize
         o = o.normalized()
@@ -1159,7 +1173,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _sub_int(self, o: cython.int) -> Delta:
-        """(cfunc) Left operand subtraction with int
+        """(internal) Left operand subtraction with int
         (i.e., Delta - int), returns `<'cytimes.Delta'>`.
         """
         return Delta(
@@ -1187,7 +1201,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _sub_float(self, o: cython.double) -> Delta:
-        """(cfunc) Left operand subtraction with float
+        """(internal) Left operand subtraction with float
         (i.e., Delta - float), returns `<'cytimes.Delta'>`.
         """
         # Normalize
@@ -1282,7 +1296,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _rsub_date(self, o: object) -> object:
-        """(cfunc) Right operand subtraction with datetime.date instance
+        """(internal) Right operand subtraction with datetime.date instance
         or subclass (i.e., date - Delta), returns `<'datetime.date'>`
         or the original subclass type.
         """
@@ -1308,7 +1322,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _rsub_datetime(self, o: object) -> object:
-        """(cfunc) Right operand subtraction with datetime.datetime instance
+        """(internal) Right operand subtraction with datetime.datetime instance
         or subclass (i.e., datetime - Delta), returns `<'datetime.datetime'>`
         or the original subclass type.
         """
@@ -1334,7 +1348,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _rsub_timedelta(self, o: object) -> Delta:
-        """(cfunc) Right operand subtraction with datetime.timedelta
+        """(internal) Right operand subtraction with datetime.timedelta
         (i.e., timedelta - Delta), returns `<'cytimes.Delta'>`.
         """
         return Delta(
@@ -1362,7 +1376,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _rsub_relativedelta(self, o: relativedelta) -> Delta:
-        """(cfunc) Right operand subtraction with dateutil.relativedelta,
+        """(internal) Right operand subtraction with dateutil.relativedelta,
         (i.e., relativedelta - Delta), returns `<'cytimes.Delta'>`.
         """
         # Normalize
@@ -1410,7 +1424,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _rsub_int(self, o: cython.int) -> Delta:
-        """(cfunc) Right operand subtraction with int
+        """(internal) Right operand subtraction with int
         (i.e., int - Delta), returns `<'cytimes.Delta'>`.
         """
         return Delta(
@@ -1438,7 +1452,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _rsub_float(self, o: cython.double) -> Delta:
-        """(cfunc) Right operand subtraction with float
+        """(internal) Right operand subtraction with float
         (i.e., float - Delta), returns `<'cytimes.Delta'>`.
         """
         # Normalize
@@ -1524,7 +1538,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _mul_int(self, i: cython.int) -> Delta:
-        """(cfunc) Multiplication with int, returns `<'cytimes.Delta'>`."""
+        """(internal) Multiplication with int, returns `<'cytimes.Delta'>`."""
         return Delta(
             self._years * i,
             0,
@@ -1550,7 +1564,7 @@ class Delta:
     @cython.cfunc
     @cython.inline(True)
     def _mul_float(self, f: cython.double) -> Delta:
-        """(cfunc) Multiplication with float, returns `<'cytimes.Delta'>`."""
+        """(internal) Multiplication with float, returns `<'cytimes.Delta'>`."""
         # Normalize
         # . years
         value: cython.double = self._years * f
@@ -1696,7 +1710,7 @@ class Delta:
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _eq_delta(self, o: Delta) -> cython.bint:
-        """(cfunc) Check if equals to another cytimes.Delta `<'bool'>`."""
+        """(internal) Check if equals to another cytimes.Delta `<'bool'>`."""
         return (
             self._years == o._years
             and self._months == o._months
@@ -1719,7 +1733,7 @@ class Delta:
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _eq_timedelta(self, o: object) -> cython.bint:
-        """(cfunc) Check if equals to datetimetimedelta
+        """(internal) Check if equals to datetimetimedelta
         instance or subclass `<'bool'>`.
         """
         # Assure no extra delta
@@ -1757,7 +1771,7 @@ class Delta:
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _eq_relativedelta(self, o: relativedelta) -> cython.bint:
-        """(cfunc) Check if equals to dateutils.relativedelta `<'bool'>`."""
+        """(internal) Check if equals to dateutils.relativedelta `<'bool'>`."""
         # Normalize
         o = o.normalized()
         # Absolute weekday
