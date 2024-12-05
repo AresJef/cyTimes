@@ -1040,10 +1040,10 @@ class Result:
 
         :param value `<'int'>`: One of the Y/M/D value.
         :param label `<'int'>`: The label for the value:
-            1. label=0: unknown
-            2. label=1: year
-            3. label=2: month
-            4. label=3: day
+            - label=0: unknown
+            - label=1: year
+            - label=2: month
+            - label=3: day
         :returns `<'bool'`>: `False` if all slots (max 3) are fully populated.
         """
         # Y/M/D slots already fully populated
@@ -1071,10 +1071,10 @@ class Result:
 
         :param value `<'str'>`: One of the Y/M/D value.
         :param label `<'int'>`: The label for the value:
-            1. label=0: unknown
-            2. label=1: year
-            3. label=2: month
-            4. label=3: day
+            - label=0: unknown
+            - label=1: year
+            - label=2: month
+            - label=3: day
         :returns `<'bool'`>: `False` if all slots (max 3) are fully populated.
         """
         # Y/M/D slots already fully populated
@@ -1111,10 +1111,10 @@ class Result:
 
         :param value `<'int'>`: One of the Y/M/D value.
         :param label `<'int'>`: The label for the value:
-            1. label=0: unknown
-            2. label=1: year
-            3. label=2: month
-            4. label=3: day
+            - label=0: unknown
+            - label=1: year
+            - label=2: month
+            - label=3: day
         """
         # Set Y/M/D value
         self._idx += 1
@@ -1480,51 +1480,43 @@ class Parser:
 
         :param dtstr `<'str'>`: The string that contains datetime information.
 
-        :param default `<'datetime/date'>`: The default to fill-in missing datetime values, defaults to `None`.
-            1. `<'date/datetime'>`: If parser failed to extract Y/M/D values from the string,
-              the give 'default' will be used to fill-in the missing Y/M/D values.
-            2. `None`: raise `PaserBuildError` if any Y/M/D values are missing.
+        :param default `<'datetime/date/None'>`: Default value to fill in missing date fields, defaults to `None`.
+            - `<'date/datetime'>` If the parser fails to extract Y/M/D from the string,
+               use the passed-in 'default' to fill in the missing fields.
+            - If `None`, raises `PaserBuildError` if any Y/M/D fields is missing.
 
         :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
-            When 'year1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
+            If 'year1st=None', use `cfg.year1st` if 'cfg' is specified; otherwise, defaults to `False`.
 
         :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `None`.
-            When 'day1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
+            If 'day1st=None', use `cfg.day1st` if 'cfg' is specified; otherwise, defaults to `False`.
 
         :param ignoretz `<'bool'>`: Whether to ignore timezone information, defaults to `False`.
-            1. `True`: Parser ignores any timezone information and only returns
-              timezone-naive datetime. Setting to `True` can increase parser
-              performance.
-            2. `False`: Parser will try to process the timzone information in
-              the string, and generate a timezone-aware datetime if timezone
-              has been matched by 'cfg.utc' & 'cfg.tz'.
+            - `True`: Ignores any timezone information and returns a timezone-naive datetime (increases parser performance).
+            - `False`: Processes timezone information and generates a timezone-aware datetime if matched by `cfg.utc` & `cfg.tz`.
 
-        :param isoformat `<'bool'>`: Whether to parser 'dtstr' as ISO format, defaults to `True`.
-            1. `True`: Parser will first try to process the 'dtstr' as ISO format.
-              If failed, fallback to process the 'dtstr' through timelex tokens.
-              For most datetime strings, this approach yields the best performance.
-            2. `False`: Parser will only process the 'dtstr' through timelex tokens.
-              If the 'dtstr' is confirmed not an ISO format, setting to `False`
-              can increase parser performance.
+        :param isoformat `<'bool'>`: Whether try to parse 'dtstr' as ISO format, defaults to `True`.
+            - `True`: First tries to process 'dtstr' as ISO format; if failed, falls back
+                to token parsing (best performance for most strings).
+            - `False`: Only processes 'dtstr' through token parsing (increases performance
+                if 'dtstr' is not ISO format).
 
-        ### Ambiguous Y/M/D
-        Both the 'year1st' & 'day1st' arguments works together to determine how
-        to interpret ambiguous Y/M/D values. The 'year1st' argument has higher
-        priority than the 'day1st' argument.
+        ## Ambiguous Y/M/D
+        Both 'year1st' and 'day1st' determine how to interpret ambiguous
+        Y/M/D values. 'year1st' has higher priority.
 
-        #### In case when all three values are ambiguous (e.g. `01/05/09`):
-        - If 'year1st=False' & 'day1st=False', interprets as: `2009-01-05` (M/D/Y).
-        - If 'year1st=False' & 'day1st=True', interprets as: `2009-05-01` (D/M/Y).
-        - If 'year1st=True' & 'day1st=False', interprets as: `2001-05-09` (Y/M/D).
-        - If 'year1st=True' & 'day1st=True', interprets as: `2001-09-05` (Y/D/M).
+        #### When all three values are ambiguous (e.g. `01/05/09`):
+        - If 'year1st=False' & 'day1st=False': interprets as `2009-01-05` (M/D/Y).
+        - If 'year1st=False' & 'day1st=True': interprets as `2009-05-01` (D/M/Y).
+        - If 'year1st=True' & 'day1st=False': interprets as `2001-05-09` (Y/M/D).
+        - If 'year1st=True' & 'day1st=True': interprets as `2001-09-05` (Y/D/M).
 
-        #### In case when the 'year' value is known (e.g. `32/01/05`):
-        - If 'day1st=False', interpretes as: `2032-01-05` (Y/M/D).
-        - If 'day1st=True', interpretes as: `2032-05-01` (Y/D/M).
+        #### When the 'year' value is known (e.g. `32/01/05`):
+        - If 'day1st=False': interpretes as `2032-01-05` (Y/M/D).
+        - If 'day1st=True': interpretes as `2032-05-01` (Y/D/M).
 
-        #### In case when only one value is ambiguous (e.g. `32/01/20`):
-        - The Parser should automatically figure out the correct Y/M/D order,
-          and both 'year1st' & 'day1st' arguments are ignored.
+        #### When only one value is ambiguous (e.g. `32/01/20`):
+        - The parser automatically determines the correct order; 'year1st' and 'day1st' are ignored.
         """
         # Settings
         self._ignoretz = ignoretz
@@ -2718,60 +2710,49 @@ def parse(
 
     :param dtstr `<'str'>`: The string that contains datetime information.
 
-    :param default `<'datetime/date'>`: The default to fill-in missing datetime values, defaults to `None`.
-        1. `<'date/datetime'>`: If parser failed to extract Y/M/D values from the string,
-          the give 'default' will be used to fill-in the missing Y/M/D values.
-        2. `None`: raise `PaserBuildError` if any Y/M/D values are missing.
+    :param default `<'datetime/date/None'>`: Default value to fill in missing date fields, defaults to `None`.
+        - `<'date/datetime'>` If the parser fails to extract Y/M/D from the string,
+            use the passed-in 'default' to fill in the missing fields.
+        - If `None`, raises `PaserBuildError` if any Y/M/D fields is missing.
 
     :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
-        When 'year1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
+        If 'year1st=None', use `cfg.year1st` if 'cfg' is specified; otherwise, defaults to `False`.
 
     :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `None`.
-        When 'day1st=None', use `çfg.day1st` if 'cfg' is specified, else `False` as default.
+        If 'day1st=None', use `cfg.day1st` if 'cfg' is specified; otherwise, defaults to `False`.
 
     :param ignoretz `<'bool'>`: Whether to ignore timezone information, defaults to `False`.
-        1. `True`: Parser ignores any timezone information and only returns
-          timezone-naive datetime. Setting to `True` can increase parser
-          performance.
-        2. `False`: Parser will try to process the timzone information in
-          the string, and generate a timezone-aware datetime if timezone
-          has been matched by 'cfg.utc' & 'cfg.tz'.
+        - `True`: Ignores any timezone information and returns a timezone-naive datetime (increases parser performance).
+        - `False`: Processes timezone information and generates a timezone-aware datetime if matched by `cfg.utc` & `cfg.tz`.
 
-    :param isoformat `<'bool'>`: Whether to parse 'dtstr' as ISO format, defaults to `True`.
-        1. `True`: Parser will first try to process the 'dtstr' as ISO format.
-          If failed, fallback to process the 'dtstr' through timelex tokens.
-          For most datetime strings, this approach yields the best performance.
-        2. `False`: Parser will only process the 'dtstr' through timelex tokens.
-          If the 'dtstr' is confirmed not an ISO format, setting to `False`
-          can increase parser performance.
+    :param isoformat `<'bool'>`: Whether try to parse 'dtstr' as ISO format, defaults to `True`.
+        - `True`: First tries to process 'dtstr' as ISO format; if failed, falls back
+            to token parsing (best performance for most strings).
+        - `False`: Only processes 'dtstr' through token parsing (increases performance
+            if 'dtstr' is not ISO format).
 
-    :param cfg `<'Configs/None'>`: The custom Parser configurations, defaults to `None`.
+    ## Ambiguous Y/M/D
+    Both 'year1st' and 'day1st' determine how to interpret ambiguous
+    Y/M/D values. 'year1st' has higher priority.
 
-    ### Ambiguous Y/M/D
-    Both the 'year1st' & 'day1st' arguments works together to determine how
-    to interpret ambiguous Y/M/D values. The 'year1st' argument has higher
-    priority than the 'day1st' argument.
+    #### When all three values are ambiguous (e.g. `01/05/09`):
+    - If 'year1st=False' & 'day1st=False': interprets as `2009-01-05` (M/D/Y).
+    - If 'year1st=False' & 'day1st=True': interprets as `2009-05-01` (D/M/Y).
+    - If 'year1st=True' & 'day1st=False': interprets as `2001-05-09` (Y/M/D).
+    - If 'year1st=True' & 'day1st=True': interprets as `2001-09-05` (Y/D/M).
 
-    #### In case when all three values are ambiguous (e.g. `01/05/09`):
-    - If 'year1st=False' & 'day1st=False', interprets as: `2009-01-05` (M/D/Y).
-    - If 'year1st=False' & 'day1st=True', interprets as: `2009-05-01` (D/M/Y).
-    - If 'year1st=True' & 'day1st=False', interprets as: `2001-05-09` (Y/M/D).
-    - If 'year1st=True' & 'day1st=True', interprets as: `2001-09-05` (Y/D/M).
+    #### When the 'year' value is known (e.g. `32/01/05`):
+    - If 'day1st=False': interpretes as `2032-01-05` (Y/M/D).
+    - If 'day1st=True': interpretes as `2032-05-01` (Y/D/M).
 
-    #### In case when the 'year' value is known (e.g. `32/01/05`):
-    - If 'day1st=False', interpretes as: `2032-01-05` (Y/M/D).
-    - If 'day1st=True', interpretes as: `2032-05-01` (Y/D/M).
-
-    #### In case when only one value is ambiguous (e.g. `32/01/20`):
-    - The Parser should automatically figure out the correct Y/M/D order,
-      and both 'year1st' & 'day1st' arguments are ignored.
+    #### When only one value is ambiguous (e.g. `32/01/20`):
+    - The parser automatically determines the correct order; 'year1st' and 'day1st' are ignored.
     """
     if cfg is None:
         return _default_parser.parse(
             dtstr, default, year1st, day1st, ignoretz, isoformat
         )
-    else:
-        return Parser(cfg).parse(dtstr, default, year1st, day1st, ignoretz, isoformat)
+    return Parser(cfg).parse(dtstr, default, year1st, day1st, ignoretz, isoformat)
 
 
 @cython.ccall
@@ -2784,65 +2765,58 @@ def parse_dtobj(
     isoformat: cython.bint = True,
     cfg: Configs = None,
 ) -> datetime.datetime:
-    """Parse datetime object into `<'datetime.datetime'>.
+    """Parse from a datetime-like object in to datetime `<'datetime.datetime'>`.
 
-    :param dtobj `<'object'>`: Supported datetime related objects:
-        1. `<'str'>` datetime string that contains datetime information.
-        2. `<'datetime.datetime'>` instance or subclass of datetime.datetime, return directly.
-        3. `<'datetime.date'>` instance or subclass of datetime.date, converts to datetime and time values set to 0.
-        4. `<'int/float'>` numeric values, treated as total seconds since Unix Epoch.
-        5. `<'np.datetime64'>` converts to datetime, resolution above 'us' will be discarded.
-        6. `<'NoneType'>` passing 'None' returns current local datetime.
+    :param dtobj `<'object'>`: Datetime-like object:
+        - `<'str'>` A datetime string containing datetime information.
+        - `<'datetime.datetime'>` An instance of `datetime.datetime`.
+        - `<'datetime.date'>` An instance of `datetime.date` (time fields set to 0).
+        - `<'int/float'>` Numeric value treated as total seconds since Unix Epoch.
+        - `<'np.datetime64'>` Resolution above microseconds ('us') will be discarded.
+        - `<'None'>` Return the current local datetime.
 
-    ## Arguments below only take effects when 'dtobj' is type of `<'str'>`.
+    ## Praser Parameters
+    #### Parameters below only take effect when 'dtobj' is of type `<'str'>`.
 
-    :param default `<'datetime/date'>`: The default to fill-in missing datetime values, defaults to `None`.
-        1. `<'date/datetime'>`: If parser failed to extract Y/M/D values from the string,
-          the give 'default' will be used to fill-in the missing Y/M/D values.
-        2. `None`: raise `PaserBuildError` if any Y/M/D values are missing.
+    :param default `<'datetime/date/None'>`: Default value to fill in missing date fields, defaults to `None`.
+        - `<'date/datetime'>` If the parser fails to extract Y/M/D from the string,
+          use the passed-in 'default' to fill in the missing fields.
+        - If `None`, raises `PaserBuildError` if any Y/M/D fields is missing.
 
     :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
-        When 'year1st=None', use `çfg.year1st` if 'cfg' is specified, else `False` as default.
+        If 'year1st=None', use `cfg.year1st` if 'cfg' is specified; otherwise, defaults to `False`.
 
     :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `None`.
-        When 'day1st=None', use `çfg.day1st` if 'cfg' is specified, else `False` as default.
+        If 'day1st=None', use `cfg.day1st` if 'cfg' is specified; otherwise, defaults to `False`.
 
     :param ignoretz `<'bool'>`: Whether to ignore timezone information, defaults to `False`.
-        1. `True`: Parser ignores any timezone information and only returns
-          timezone-naive datetime. Setting to `True` can increase parser
-          performance.
-        2. `False`: Parser will try to process the timzone information in
-          the string, and generate a timezone-aware datetime if timezone
-          has been matched by 'cfg.utc' & 'cfg.tz'.
+        - `True`: Ignores any timezone information and returns a timezone-naive datetime (increases parser performance).
+        - `False`: Processes timezone information and generates a timezone-aware datetime if matched by `cfg.utc` & `cfg.tz`.
 
-    :param isoformat `<'bool'>`: Whether to parse 'dtstr' as ISO format, defaults to `True`.
-        1. `True`: Parser will first try to process the 'dtstr' as ISO format.
-          If failed, fallback to process the 'dtstr' through timelex tokens.
-          For most datetime strings, this approach yields the best performance.
-        2. `False`: Parser will only process the 'dtstr' through timelex tokens.
-          If the 'dtstr' is confirmed not an ISO format, setting to `False`
-          can increase parser performance.
+    :param isoformat `<'bool'>`: Whether try to parse 'dtstr' as ISO format, defaults to `True`.
+        - `True`: First tries to process 'dtstr' as ISO format; if failed, falls back
+          to token parsing (best performance for most strings).
+        - `False`: Only processes 'dtstr' through token parsing (increases performance
+          if 'dtstr' is not ISO format).
 
-    :param cfg `<'Configs/None'>`: The custom Parser configurations, defaults to `None`.
+    :param cfg `<'Configs/None'>`: Custom parser configurations, defaults to `None`.
 
-    ### Ambiguous Y/M/D
-    Both the 'year1st' & 'day1st' arguments works together to determine how
-    to interpret ambiguous Y/M/D values. The 'year1st' argument has higher
-    priority than the 'day1st' argument.
+    ## Ambiguous Y/M/D
+    Both 'year1st' and 'day1st' determine how to interpret ambiguous
+    Y/M/D values. 'year1st' has higher priority.
 
-    #### In case when all three values are ambiguous (e.g. `01/05/09`):
-    - If 'year1st=False' & 'day1st=False', interprets as: `2009-01-05` (M/D/Y).
-    - If 'year1st=False' & 'day1st=True', interprets as: `2009-05-01` (D/M/Y).
-    - If 'year1st=True' & 'day1st=False', interprets as: `2001-05-09` (Y/M/D).
-    - If 'year1st=True' & 'day1st=True', interprets as: `2001-09-05` (Y/D/M).
+    #### When all three values are ambiguous (e.g. `01/05/09`):
+    - If 'year1st=False' & 'day1st=False': interprets as `2009-01-05` (M/D/Y).
+    - If 'year1st=False' & 'day1st=True': interprets as `2009-05-01` (D/M/Y).
+    - If 'year1st=True' & 'day1st=False': interprets as `2001-05-09` (Y/M/D).
+    - If 'year1st=True' & 'day1st=True': interprets as `2001-09-05` (Y/D/M).
 
-    #### In case when the 'year' value is known (e.g. `32/01/05`):
-    - If 'day1st=False', interpretes as: `2032-01-05` (Y/M/D).
-    - If 'day1st=True', interpretes as: `2032-05-01` (Y/D/M).
+    #### When the 'year' value is known (e.g. `32/01/05`):
+    - If 'day1st=False': interpretes as `2032-01-05` (Y/M/D).
+    - If 'day1st=True': interpretes as `2032-05-01` (Y/D/M).
 
-    #### In case when only one value is ambiguous (e.g. `32/01/20`):
-    - The Parser should automatically figure out the correct Y/M/D order,
-      and both 'year1st' & 'day1st' arguments are ignored.
+    #### When only one value is ambiguous (e.g. `32/01/20`):
+    - The parser automatically determines the correct order; 'year1st' and 'day1st' are ignored.
     """
     # . datetime string
     if isinstance(dtobj, str):
