@@ -37,7 +37,7 @@ import datetime
 from dateutil.parser._parser import parserinfo
 from cytimes import typeref, utils, errors
 
-__all__ = ["Configs", "timelex", "Parser", "parse"]
+__all__ = ["timelex", "parse", "parse_dtobj", "Configs", "Parser"]
 
 # Constants -----------------------------------------------------------------------------------
 # . default configs

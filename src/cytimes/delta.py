@@ -20,7 +20,7 @@ import datetime
 from dateutil.relativedelta import relativedelta
 from cytimes import typeref, utils
 
-__all__ = ["is_delta", "Delta"]
+__all__ = ["Delta"]
 
 
 # Contants ------------------------------------------------------------------------------------
