@@ -424,9 +424,7 @@ class _Pydt(datetime.datetime):
         ## Praser Parameters
         #### Parameters below only take effect when 'dtobj' is of type `<'str'>`.
 
-        :param default `<'datetime/date/None'>`: Default value to fill in missing date fields, defaults to `None`.
-            - `<'date/datetime'>` If the parser fails to extract Y/M/D from the string,
-               use the passed-in 'default' to fill in the missing fields.
+        :param default `<'object'>`: Datetime-like object to fill in missing date fields, defaults to `None`.
             - If `None`, raises `InvalidArgumentError` if any Y/M/D fields is missing.
 
         :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
