@@ -2354,7 +2354,10 @@ class _Pydt(datetime.datetime):
         """
         if locale is None:
             locale = "en_US"
-        return _format_date(self, format="MMMM", locale=locale)
+        try:
+            return _format_date(self, format="MMMM", locale=locale)
+        except Exception as err:
+            raise errors.InvalidArgumentError(err) from err
 
     # . weekday
     @property
@@ -2418,7 +2421,10 @@ class _Pydt(datetime.datetime):
         """
         if locale is None:
             locale = "en_US"
-        return _format_date(self, format="EEEE", locale=locale)
+        try:
+            return _format_date(self, format="EEEE", locale=locale)
+        except Exception as err:
+            raise errors.InvalidArgumentError(err) from err
 
     # . time
     @property
