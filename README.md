@@ -1,286 +1,383 @@
-## Easy management of python datetime & pandas time Series.
+# Make working with datetimes in Python simpler and more powerful.
 
-Created to be used in a project, this package is published to github  for ease of management and installation across different modules.
+Created to be used in a project, this package is published to github for ease of management and installation across different modules.
 
-### Installation
+## Installation
+
 Install from `PyPi`
-``` bash
+
+```bash
 pip install cytimes
 ```
 
 Install from `github`
-``` bash
+
+```bash
 pip install git+https://github.com/AresJef/cyTimes.git
 ```
 
-### Compatibility
+## Compatibility
+
 Supports Python 3.10 and above.
 
-### Features
-Provides two classes to make working with datetime easier in Python.
-- `pydt` (Python Datetime)
-- `pddt` (Pandas Series / DatetimeIndex)
+## Features
+
+`cyTimes` introduces two classes that simplify and enhance working with datetimes:
+
+- `Pydt` (Python datetime.datetime)
+- `Pddt` (Pandas DatetimeIndex)
 
 Both provide similar functionalities:
-- Parse datetime strings or datetime objects.
-- Access in different data types.
-- Conversion to numeric values (ordinal, total_seconds, timestamp, etc.)
-- Calender properties (days_in_month, weekday, etc.)
-- Year manipulation (to_next_year, to_year, etc.)
-- Quarter manipulation (to_next_quarter, to_quarter, etc.)
-- Month manipulation (to_next_month, to_to_month, etc.)
-- Day manipulation (to_next_week, to_week, etc.)
-- Time manipulation (to_time_start, to_time, etc.)
-- Timezone manipulation (tz_localize, tz_convert, etc.)
-- Frequency manipulation (freq_round, freq_ceil, freq_floor, etc.)
-- Delta adjustment (Equivalent to adding `relativedelta` or `pandas.DateOffset`)
-- Delta difference (Calcualte the absolute delta between two datetimes)
-- Supports addition / substruction / comparision.
 
-### Parser Performance
-A major focus of this package is to optimize the datetime string parsing speed (through Cython), meanwhile maintains the maximum support for different datetime string formats. The following results are tested on an Apple M1 Pro:
+- Direct drop-in replacements (subclasses) for standard Python `datetime` and Pandas `DatetimeIndex`.
+- Cython-optimized for high-performance parsing, creation, and manipulation.
+- Well-documented methods with type annotations.
+- Flexible constructors accepting multiple input formats (strings, datetime objects, timestamps, etc.).
+- Rich conversion options (ISO strings, ordinals, timestamps, and more).
+- Comprehensive manipulation for precise datetime fields adjustments (years, quarters, months, days, time).
+- Direct calendar information insights (e.g., days in month, leap years).
+- Extended timezone-related capabilities.
+- Supports adding or subtracting deltas, and compute deltas against datetime-like object(s).
 
-##### Strict Isoformat without Timezone
-```
------------------------- Strict Isoformat w/o Timezone -------------------------
-Text:   '2023-08-01 12:00:00.000001'        Rounds: 100,000
-- pydt():                   0.056599s
-- direct create:            0.013991s       Perf Diff: -3.045365x
-- dt.fromisoformat():	    0.010218s       Perf Diff: -4.539231x
-- pendulum.parse():         0.406704s       Perf Diff: +6.185740x
-- dateutil.isoparse():	    0.301066s       Perf Diff: +4.319307x
-- dateutil.parse():         2.122079s       Perf Diff: +36.493413x
+## `Pydt` Usage
 
-##### Strict Isoformat with Timezone
-```
+The `Pydt` class operates similarly to Python’s native `datetime.datetime`, with added methods and improvements.
 
-##### Strict Isoformat with Timezone
-```
------------------------- Strict Isoformat w/t Timezone -------------------------
-Text:   '2023-08-01 12:00:00.000001+02:00'  Rounds: 100,000
-- pydt():                   0.065986s
-- direct create:            0.014609s       Perf Diff: -3.516726x
-- dt.fromisoformat():       0.013402s       Perf Diff: -3.923484x
-- pendulum.parse():         0.412670s       Perf Diff: +5.253882x
-- dateutil.isoparse():      0.457038s       Perf Diff: +5.926272x
-- dateutil.parse():         2.611803s       Perf Diff: +38.581074x
-```
+### Construction
 
-##### Loose Isoformat without Timezone
-```
-------------------------- Loose Isoformat w/o Timezone -------------------------
-Text:   '2023/08/01 12:00:00.000001'        Rounds: 100,000
-- pydt():                   0.057039s
-- pendulum.parse():         0.838589s       Perf Diff: +13.701917x
-- dateutil.parse():         2.062576s       Perf Diff: +35.160516x
-```
-
-##### Loose Isoformat with Timezone
-```
-------------------------- Loose Isoformat w/t Timezone -------------------------
-Text:   '2023/08/01 12:00:00.000001+02:00'  Rounds: 100,000
-- pydt():                   0.066949s
-- dateutil.parse():         2.612083s       Perf Diff: +38.016035x
-```
-
-##### Parse Datetime Strings
-```
----------------------------- Parse Datetime Strings ----------------------------
-Total datetime strings: #378                Rounds: 1,000
-- pydt():                   0.587047s
-- dateutil.parse():         7.182461s       Perf Diff: +11.234897x
-```
-
-### Usage for <'pydt'>
-For more detail information, please refer to class methods' documentation.
-``` python
-from cytimes import pydt, cytimedelta
-import datetime, numpy as np, pandas as pd
-
-# Create
-pt = pydt('2021-01-01 00:00:00')  # ISO format string
-pt = pydt("2021 Jan 1 11:11 AM")  # datetime string
-pt = pydt(datetime.datetime(2021, 1, 1, 0, 0, 0))  # <'datetime.datetime'>
-pt = pydt(datetime.date(2021, 1, 1))  # <'datetime.date'>
-pt = pydt(pd.Timestamp("2021-01-01 00:00:00"))  # <'pandas.Timestamp'>
-pt = pydt(np.datetime64("2021-01-01 00:00:00"))  # <'numpy.datetime64'>
-pt = pydt.now()  # current time
-pt = pydt.from_ordinal(1)
-pt = pydt.from_timestamp(1)
-...
-
-# . multi-language support
-# . common month / weekday / ampm
-# . EN / DE / FR / IT / ES / PT / NL / SE / PL / TR / CN
-pt = pydt("februar 23, 2023")  # DE
-pt = pydt("martes mayo 23, 2023")  # ES
-pt = pydt("2023年3月15日 12时15分50秒")  # CN
-...
-
-# Access in different data types
-pt.dt  # <'datetime.datetime'>
-pt.date  # <'datetime.date'>
-pt.time  # <'datetime.time'>
-pt.timetz  # <'datetime.time'> (with timezone)
-pt.ts  # <'pandas.Timestamp'>
-pt.dt64  # <'numpy.datetime64'>
-...
-
-# Conversion
-pt.dt_iso  # <'str'> ISO format
-pt.ordinal  # <'int'> ordinal of the date
-pt.timestamp  # <'float'> timestamp
-...
-
-# Calender
-pt.is_leapyear()  # <'bool'>
-pt.days_bf_year  # <'int'>
-pt.days_in_month  # <'int'>
-pt.weekday  # <'int'>
-pt.isocalendar  # <'dict'>
-...
-
-# Year manipulation
-pt.to_year_lst()  # Go to the last day of the current year.
-pt.to_curr_year("Feb", 30)  # Go to the last day in February of the current year.
-pt.to_year(-3, "Mar", 15)  # Go to the 15th day in March of the current year(-3).
-...
-
-# Quarter manipulation
-pt.to_quarter_1st()  # Go to the first day of the current quarter.
-pt.to_curr_quarter(2, 0)  # Go the the 2nd month of the current quarter with the same day.
-pt.to_quarter(3, 2, 31)  # Go the the last day of the 2nd month of the current quarter(+3).
-...
-
-# Month manipulation
-pt.to_month_lst()  # Go to the last day of the current month.
-pt.to_next_month(31)  # Go to the last day of the next month.
-pt.to_month(3, 15)  # Go the the 15th day of the current month(+3).
-...
-
-# Weekday manipulation
-pt.to_monday()  # Go to Monday of the current week.
-pt.to_curr_weekday("Sun")  # Go to Sunday of the current week.
-pt.to_weekday(-2, "Sat")  # Go to Saturday of the current week(-2).
-...
-
-# Day manipulation
-pt.to_tomorrow() # Go to Tomorrow.
-pt.to_yesterday() # Go to Yesterday.
-pt.to_day(-2) # Go to today(-2).
-...
-
-# Time manipulation
-pt.to_time_start() # Go to the start of the time (00:00:00).
-pt.to_time_end() # Go to the end of the time (23:59:59.999999).
-pt.to_time(1, 1, 1, 1, 1) # Go to specific time (01:01:01.001001).
-...
-
-# Timezone manipulation
-pt.tz_localize("UTC")  # Equivalent to 'datetime.replace(tzinfo=UTC).
-pt.tz_convert("CET")  # Convert to "CET" timezone.
-pt.tz_switch(targ_tz="CET", base_tz="UTC")  # Localize to "UTC" & convert to "CET".
-
-# Frequency manipulation
-pt.freq_round("D")  # Round datetime to the resolution of hour.
-pt.freq_ceil("s")  # Ceil datetime to the resolution of second.
-pt.freq_floor("us")  # Floor datetime to the resolution of microsecond.
-
-# Delta
-pt.add_delta(years=1, months=1, days=1, milliseconds=1)  # Add Y/M/D & ms.
-pt.cal_delta("2023-01-01 12:00:00", unit="D", inclusive="both")  # Calcualte the absolute delta in days.
-...
-
-# Addition Support
-# <'datetime.timedelta>, <'pandas.Timedelta'>, <'numpy.timedelta64'>
-# <'dateutil.relativedelta'>, <'cytimes.cytimedelta'>
-pt = pt + datetime.timedelta(1)
-pt = pt + cytimedelta(years=1, months=1)
-...
-
-# Substraction Support
-# <'datetime.datetime'>, <'pandas.Timestamp'>, <'numpy.datetime64'>, <'str'>, <'pydt'>
-# <'datetime.timedelta>, <'pandas.Timedelta'>, <'numpy.timedelta64'>
-# <'dateutil.relativedelta'>, <'cytimes.cytimedelta'>
-delta = pt - datetime.datetime(1970, 1, 1)
-delta = pt - "1970-01-01"
-pt = pt - datetime.timedelta(1)
-...
-
-# Comparison Support
-# <'datetime.datetime'>, <'pandas.Timestamp'>, <'str'>, <'pydt'>
-res = pt == datetime.datetime(1970, 1, 1)
-res = pt == "1970-01-01"
-...
-```
-
-### Usage for <'pddt'>
-Class `pddt` provides similar functionality to `pydt` (methods and properties, see examples for `pydt`), but is designed to work with `<'pandas.Series'>` and `<'pandas.DatetimeIndex>`. 
-
-##### Out of bounds for nanoseconds
-When encountering datetime values that are out of bounds for nanoseconds `datetime64[ns]`, `pddt` will automatically try to parse the value into microseconds `datetime64[us]` for greater compatibility.
 ```python
-from cytimes import pddt
+from cytimes import Pydt
+import datetime, numpy as np
 
-dts = [
-    "2000-01-02 03:04:05.000006",
-    "2100-01-02 03:04:05.000006",
-    "2200-01-02 03:04:05.000006",
-    "2300-01-02 03:04:05.000006",  # out of bounds
-]
-pt = pddt(dts)
-print(pt)
-```
-```
-0   2000-01-02 03:04:05.000006
-1   2100-01-02 03:04:05.000006
-2   2200-01-02 03:04:05.000006
-3   2300-01-02 03:04:05.000006
-dtype: datetime64[us]
+Pydt(1970, 1, 1, tzinfo="UTC")
+>>> 1970-01-01 00:00:00+0000
+Pydt.parse("1970 Jan 1 00:00:01 PM")
+>>> 1970-01-01 12:00:01
+Pydt.now()
+>>> 2024-12-06 10:37:25.619593
+Pydt.utcnow()
+>>> 2024-12-06 09:37:36.743159+0000
+Pydt.combine("1970-01-01", "00:00:01")
+>>> 1970-01-01 00:00:01
+Pydt.fromordinal(1)
+>>> 0001-01-01 00:00:00
+Pydt.fromseconds(1)
+>>> 1970-01-01 00:00:01
+Pydt.fromicroseconds(1)
+>>> 1970-01-01 00:00:00.000001
+Pydt.fromtimestamp(1, datetime.UTC)
+>>> 1970-01-01 00:00:01+0000
+Pydt.utcfromtimestamp(1)
+>>> 1970-01-01 00:00:01+0000
+Pydt.fromisoformat("1970-01-01T00:00:01")
+>>> 1970-01-01 00:00:01
+Pydt.fromisocalendar(1970, 1, 4)
+>>> 1970-01-01 00:00:00
+Pydt.fromdate(datetime.date(1970, 1, 1))
+>>> 1970-01-01 00:00:00
+Pydt.fromdatetime(datetime.datetime(1970, 1, 1))
+>>> 1970-01-01 00:00:00
+Pydt.fromdatetime64(np.datetime64(1, "s"))
+>>> 1970-01-01 00:00:01
+Pydt.strptime("00:00:01 1970-01-01", "%H:%M:%S %Y-%m-%d")
+>>> 1970-01-01 00:00:01
 ```
 
-##### Specify desired time unit resolution
-Sometimes the initial data is alreay a <'pandas.Series'> but defaults to `datetime64[ns]`, <'pddt'> supports specifing the the desired time 'unit' so adding `delta` or manipulating `year` can be within bounds.
+### Conversion
+
 ```python
-from pandas import Series
-from datetime import datetime
+from cytimes import Pydt
 
-dts = [
-    datetime(2000, 1, 2),
-    datetime(2100, 1, 2),
-    datetime(2200, 1, 2),
-]
-ser = Series(dts)  # Series defaults to 'datetime64[ns]'
-pt = pddt(ser, unit="us")
-```
-```
-0   2000-01-02
-1   2100-01-02
-2   2200-01-02
-dtype: datetime64[us]
+dt = Pydt(1970, 1, 1, tzinfo="CET")
+
+dt.ctime()
+>>>  "Thu Jan  1 00:00:00 1970"
+dt.strftime("%Y-%m-%d %H:%M:%S %Z")
+>>>  "1970-01-01 00:00:00 CET"
+dt.isoformat()
+>>>  "1970-01-01T00:00:00+01:00"
+dt.timetuple()
+>>> (1970, 1, 1, 0, 0, 0, 3, 1, 0)
+dt.toordinal()
+>>>  719163
+dt.seconds()
+>>>  0.0
+dt.microseconds()
+>>>  0
+dt.timestamp()
+>>>  -3600.0
+dt.date()
+>>>  1970-01-01
+dt.time()
+>>>  00:00:00
+dt.timetz()
+>>>  00:00:00
 ```
 
-##### Direct assignment to DataFrame
+### Manipulation
+
 ```python
-from pandas import DataFrame
+from cytimes import Pydt
 
-df = DataFrame()
-df["pddt"] = pt
-print(df)
+dt = Pydt(1970, 2, 2, 2, 2, 2, 2, "CET")
+
+# . replace
+dt.replace(year=2007, microsecond=1, tzinfo="UTC")
+>>> 2007-02-02 02:02:02.000001+0000
+
+# . year
+dt.to_curr_year(3, 15)
+>>> 1970-03-15 02:02:02.000002+0100
+dt.to_prev_year("Feb", 30)
+>>> 1969-02-28 02:02:02.000002+0100
+dt.to_next_year("十二月", 31)
+>>> 1971-12-31 02:02:02.000002+0100
+dt.to_year(100, "noviembre", 30)
+>>> 2070-11-30 02:02:02.000002+0100
+
+# . quarter
+dt.to_curr_quarter(3, 15)
+>>> 1970-03-15 02:02:02.000002+0100
+dt.to_prev_quarter(3, 15)
+>>> 1969-12-15 02:02:02.000002+0100
+dt.to_next_quarter(3, 15)
+>>> 1970-06-15 02:02:02.000002+0100
+dt.to_quarter(100, 3, 15)
+>>> 1995-03-15 02:02:02.000002+0100
+
+# . month
+dt.to_curr_month(15)
+>>> 1970-02-15 02:02:02.000002+0100
+dt.to_prev_month(15)
+>>> 1970-01-15 02:02:02.000002+0100
+dt.to_next_month(15)
+>>> 1970-03-15 02:02:02.000002+0100
+dt.to_month(100, 15)
+>>> 1978-06-15 02:02:02.000002+0200
+
+# . weekday
+dt.to_monday()
+>>> 1970-02-02 02:02:02.000002+0100
+dt.to_sunday()
+>>> 1970-02-08 02:02:02.000002+0100
+dt.to_curr_weekday(4)
+>>> 1970-02-06 02:02:02.000002+0100
+dt.to_prev_weekday(4)
+>>> 1970-01-30 02:02:02.000002+0100
+dt.to_next_weekday(4)
+>>> 1970-02-13 02:02:02.000002+0100
+dt.to_weekday(100, 4)
+>>> 1972-01-07 02:02:02.000002+0100
+
+# . day
+dt.to_yesterday()
+>>> 1970-02-01 02:02:02.000002+0100
+dt.to_tomorrow()
+>>> 1970-02-03 02:02:02.000002+0100
+dt.to_day(100)
+>>> 1970-05-13 02:02:02.000002+0100
+
+# . date&time
+dt.to_first_of("Y")
+>>> 1970-01-01 02:02:02.000002+0100
+dt.to_last_of("Q")
+>>> 1970-03-31 02:02:02.000002+0100
+dt.to_start_of("M")
+>>> 1970-02-01 00:00:00+0100
+dt.to_end_of("W")
+>>> 1970-02-08 23:59:59.999999+0100
+
+# . round / ceil / floor
+dt.round("h")
+>>> 1970-02-02 02:00:00+0100
+dt.ceil("m")
+>>> 1970-02-02 02:03:00+0100
+dt.floor("s")
+>>> 1970-02-02 02:02:02+0100
 ```
+
+### Calendar Information
+
+```python
+from cytimes import Pydt
+
+dt = Pydt(1970, 2, 2, tzinfo="UTC")
+
+# . iso
+dt.isocalendar()
+>>> {'year': 1970, 'week': 6, 'weekday': 1}
+dt.isoyear()
+>>> 1970
+dt.isoweek()
+>>> 6
+dt.isoweekday()
+>>> 1
+
+# . year
+dt.is_leap_year()
+>>> False
+dt.is_long_year()
+>>> True
+dt.leap_bt_year(2007)
+>>> 9
+dt.days_in_year()
+>>> 365
+dt.days_bf_year()
+>>> 719162
+dt.days_of_year()
+>>> 33
+dt.is_year(1970)
+>>> True
+
+# . quarter
+dt.days_in_quarter()
+>>> 90
+dt.days_bf_quarter()
+>>> 0
+dt.days_of_quarter()
+>>> 33
+dt.is_quarter(1)
+>>> True
+
+# . month
+dt.days_in_month()
+>>> 28
+dt.days_bf_month()
+>>> 31
+dt.days_of_month()
+>>> 2
+dt.is_month("Feb")
+>>> True
+dt.month_name("es")
+>>> "febrero"
+
+# . weekday
+dt.is_weekday("Monday")
+>>> True
+
+# . day
+dt.is_day(2)
+>>> True
+dt.day_name("fr")
+>>> "lundi"
+
+# . date&time
+dt.is_first_of("Y")
+>>> False
+dt.is_last_of("Q")
+>>> False
+dt.is_start_of("M")
+>>> False
+dt.is_end_of("W")
+>>> False
 ```
-                        pddt
-0 2000-01-02 03:04:05.000006
-1 2100-01-02 03:04:05.000006
-2 2200-01-02 03:04:05.000006
-3 2300-01-02 03:04:05.000006
+
+### Timezone Operation
+
+```python
+from cytimes import Pydt
+
+dt = Pydt(1970, 1, 1, tzinfo="UTC")
+
+dt.is_local()
+>>> False
+dt.is_utc()
+>>> True
+dt.is_dst()
+>>> False
+dt.tzname()
+>>> "UTC"
+dt.utcoffset()
+>>> 0:00:00
+dt.utcoffset_seconds()
+>>> 0
+dt.dst()
+>>> None
+dt.astimezone("CET")
+>>> 1970-01-01 01:00:00+0100
+dt.tz_localize(None)
+>>> 1970-01-01 00:00:00
+dt.tz_convert("CET")
+>>> 1970-01-01 01:00:00+0100
+dt.tz_switch("CET")
+>>> 1970-01-01 01:00:00+0100
+```
+
+### Arithmetic
+
+```python
+from cytimes import Pydt
+
+dt = Pydt(1970, 1, 1, tzinfo="UTC")
+
+dt.add(years=1, weeks=1, microseconds=1)
+>>> 1971-01-08 00:00:00.000001+0000
+dt.sub(quarters=1, days=1, seconds=1)
+>>> 1969-09-29 23:59:59+0000
+dt.diff("2007-01-01 01:01:01+01:00", "s")
+>>> -1167609662
+```
+
+### Comparison
+
+```python
+from cytimes import Pydt
+
+dt = Pydt(1970, 1, 1)
+
+dt.is_past()
+>>> True
+dt.is_future()
+>>> False
+dt.closest("1970-01-02", "2007-01-01")
+>>> 1970-01-02 00:00:00
+dt.farthest("1970-01-02", "2007-01-01")
+>>> 2007-01-01 00:00:00
+```
+
+## `Pddt` Usage
+
+`Pddt` extends similar functionalities to Pandas `DatetimeIndex`, making it behave more like native Python `datetime.datetime`, but for arrays of datetime values. It supports:
+
+- Vectorized parsing, creation, and manipulation.
+- Most of the same methods and properties as `Pydt` (see examples above), adapted for datetime-arrays.
+- Automatic handling of out-of-range datetimes in nanoseconds by downcasting to microsecond precision `'us'` to avoid overflow.
+
+### Handling Nanosecond Overflow
+
+By default, `DatetimeIndex` uses nanosecond precision `'ns'`, which cannot represent datetimes outside the range 1677-09-21 to 2262-04-11. Pddt automatically downcasts to microseconds `us` when encountering out-of-range datetimes, sacrificing nanosecond precision to allow a broader range support.
+
+```python
+from cytimes import Pddt
+
+Pddt(["9999-01-01 00:00:00+00:00", "9999-01-02 00:00:00+00:00"])
+>>> Pddt(['9999-01-01 00:00:00+00:00', '9999-01-02 00:00:00+00:00'],
+        dtype='datetime64[us, UTC]', freq=None)
+```
+
+Downcasting mechanism also automacially applies to all methods that modify the datetimes, resulting values out of the `'ns'` range:
+
+```python
+from cytimes import Pddt
+
+pt = Pddt(["1970-01-01 00:00:00+00:00", "1970-01-02 00:00:00+00:00"])
+# Pddt(['1970-01-01 00:00:00+00:00', '1970-01-02 00:00:00+00:00'],
+#       dtype='datetime64[ns, UTC]', freq=None)
+pt.to_year(1000, "Feb", 30)
+>>> Pddt(['2970-02-28 00:00:00+00:00', '2970-02-28 00:00:00+00:00'],
+        dtype='datetime64[us, UTC]', freq=None)
 ```
 
 ### Acknowledgements
+
 cyTimes is based on several open-source repositories.
+
+- [babel](https://github.com/python-babel/babel)
 - [numpy](https://github.com/numpy/numpy)
 - [pandas](https://github.com/pandas-dev/pandas)
 
-cyTimes makes modification of the following open-source repositories:
+cyTimes is built on the following open-source repositories:
+
 - [dateutil](https://github.com/dateutil/dateutil)
-    The class <'Parser'> and <'cytimedelta'> in this package is basically a cythonized version of <'dateutil.parser'> and <'dateutil.relativedelta'>. All credits go to the original authors and contributors of the `dateutil` library.
+
+  Class <'Parser'> and <'Delta'> in this package are the cythonized version of <'dateutil.parser'> and <'dateutil.relativedelta'>. Credit and thanks go to the original authors and contributors of the `dateutil` library.
