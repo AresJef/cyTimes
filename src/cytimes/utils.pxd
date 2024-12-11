@@ -2577,7 +2577,7 @@ cdef inline np.npy_int64 dt64_as_int64_us(object dt64, np.npy_int64 offset=0):
 
     # Conversion
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
-        return math_floor_div(val, NS_MICROSECOND, offset)
+        return val // 1_000 + offset
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
         return val + offset
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
@@ -2685,7 +2685,7 @@ cdef inline np.npy_int64 td64_as_int64_us(object td64, np.npy_int64 offset=0):
 
     # Conversion
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
-        return math_floor_div(val, NS_MICROSECOND, offset)
+        return val // 1_000 + offset
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:  # microsecond
         return val + offset
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:  # millisecond
