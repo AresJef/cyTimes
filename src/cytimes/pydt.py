@@ -3667,6 +3667,9 @@ class _Pydt(datetime.datetime):
     def __format__(self, fmt: str) -> str:
         return str(self) if str_len(fmt) == 0 else self.strftime(fmt)
 
+    def __hash__(self) -> int:
+        return datetime.datetime.__hash__(self)
+
     def __copy__(self) -> _Pydt:
         return pydt_new(
             datetime.datetime_year(self),
@@ -3692,6 +3695,13 @@ class _Pydt(datetime.datetime):
             datetime.datetime_tzinfo(self),
             datetime.datetime_fold(self),
         )
+
+    # Pickle -------------------------------------------------------------------------------
+    def __reduce__(self) -> str | tuple:
+        return datetime.datetime.__reduce__(self)
+
+    def __reduce_ex__(self, protocol: object, /) -> str | tuple:
+        return datetime.datetime.__reduce_ex__(self, protocol)
 
 
 class Pydt(_Pydt):
