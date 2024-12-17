@@ -1575,7 +1575,7 @@ class Pddt(DatetimeIndex):
 
         #### Alias of `to_pydatetime()`.
         """
-        return super(Pddt, self).to_pydatetime()
+        return DatetimeIndex.to_pydatetime(self)
 
     def date(self) -> np.ndarray[datetime.date]:
         """Convert to array of datetime.date `<'ndarray[date]'>`."""
@@ -2378,7 +2378,7 @@ class Pddt(DatetimeIndex):
         DatetimeIndex(['2023-01-01', '2023-01-01', '2023-02-01', '2023-02-01'],
         dtype='datetime64[ns]', freq=None)
         """
-        return pddt_new_simple(super(Pddt, self).snap(freq))
+        return pddt_new_simple(DatetimeIndex.snap(self, freq))
 
     def to_datetime(
         self,
