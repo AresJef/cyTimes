@@ -1044,6 +1044,7 @@ class Result:
             - label=1: year
             - label=2: month
             - label=3: day
+
         :returns `<'bool'`>: `False` if all slots (max 3) are fully populated.
         """
         # Y/M/D slots already fully populated
@@ -1075,6 +1076,7 @@ class Result:
             - label=1: year
             - label=2: month
             - label=3: day
+            
         :returns `<'bool'`>: `False` if all slots (max 3) are fully populated.
         """
         # Y/M/D slots already fully populated
@@ -1544,7 +1546,7 @@ class Parser:
     def _process(self, dtstr: str, isoformat: cython.bint) -> cython.bint:
         """(cfunc) Process the datetime string.
 
-        :raise `ParserFailedError`: if any error occurs during the process.
+        :raises `<'ParserFailedError'>`: if any error occurs during the process.
         """
         # Reset result & index & size
         self._res.reset()
@@ -1570,7 +1572,7 @@ class Parser:
     def _build(self, dtstr: str, default: object) -> datetime.datetime:
         """(cfunc) Build datetime from the processed result `<'datetime.datetime'>`.
 
-        :raise `ParserBuildError`: if failed to build datetime with the parsed result.
+        :raises `<'ParserBuildError'>`: if failed to build datetime with the parsed result.
         """
         try:
             # Ignore timezone
