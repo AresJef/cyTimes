@@ -3203,6 +3203,48 @@ class Pddt(DatetimeIndex):
             return self
         return pddt_new_simple(res, self.tzinfo, None, self.name)
 
+    # . fsp (fractional seconds precision)
+    def fsp(self, precision: cython.int) -> Self:
+        """Adjust to the specified fractional seconds precision `<'Pddt'>`.
+
+        :param precision `<'int'>`: The fractional seconds precision (0-9).
+        """
+        # No change
+        if precision >= 9:
+            return self  # exit: same value
+        if precision < 0:
+            raise errors.InvalidFspError(
+                "invalid fractional seconds precision '%d'.\n"
+                "Must be between 0 and 6." % precision
+            )
+
+        # Calcualte factor
+        my_unit: str = self.unit
+        my_unit_ch: cython.Py_UCS4 = str_read(my_unit, 0)
+        f: cython.longlong  # fsp factor
+        # . nanosecond
+        if my_unit_ch == "n":
+            f = int(10 ** (9 - precision))
+        # . microsecond
+        elif my_unit_ch == "u":
+            if precision >= 6:
+                return self  # exit: same value
+            f = int(10 ** (6 - precision))
+        # . millisecond
+        elif my_unit_ch == "m":
+            if precision >= 3:
+                return self  # exit: same value
+            f = int(10 ** (3 - precision))
+        # . second
+        else:
+            return self  # exit: same value
+
+        # Perform operation
+        arr: np.ndarray = self.values_naive
+        res = utils.arr_floor_to_mul(arr, f, f, 0)
+        res = res.astype("datetime64[%s]" % my_unit)
+        return pddt_new_simple(res, self.tzinfo, None, self.name)
+
     # Calendar -----------------------------------------------------------------------------
     # . iso
     def isocalendar(self) -> DataFrame:
