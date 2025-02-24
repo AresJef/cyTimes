@@ -656,6 +656,28 @@ class Test_Pydt(TestCase):
                     self.assertEqual(ts.ceil(ts_freq), pt.ceil(freq))
                     self.assertEqual(ts.floor(ts_freq), pt.floor(freq))
 
+        # fsp()
+        for tz in (None, datetime.UTC, ZoneInfo("CET")):
+            for dt in (
+                datetime.datetime(2000, 1, 1, 0, 0, 0, 666666, tz),
+                datetime.datetime(1970, 1, 1, 0, 0, 0, 666666, tz),
+                datetime.datetime(1800, 1, 1, 0, 0, 0, 666666, tz),
+                datetime.datetime(2000, 1, 1, 0, 0, 0, 444444, tz),
+                datetime.datetime(1970, 1, 1, 0, 0, 0, 444444, tz),
+                datetime.datetime(1800, 1, 1, 0, 0, 0, 444444, tz),
+                datetime.datetime(2000, 1, 1, 0, 0, 0, 500000, tz),
+                datetime.datetime(1970, 1, 1, 0, 0, 0, 500000, tz),
+                datetime.datetime(1800, 1, 1, 0, 0, 0, 500000, tz),
+            ):
+                for precision in range(8):
+                    pt = Pydt.fromdatetime(dt).fsp(precision)
+                    self.assertEqual(dt.date(), pt.date())
+                    self.assertEqual(dt.hour, pt.hour)
+                    self.assertEqual(dt.minute, pt.minute)
+                    self.assertEqual(dt.second, pt.second)
+                    f = 10 ** (6 - min(precision, 6))
+                    self.assertEqual(dt.microsecond // f * f, pt.microsecond)
+
         self.log_ended(test)
 
     def test_calendar(self) -> None:

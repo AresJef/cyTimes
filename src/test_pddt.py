@@ -733,6 +733,37 @@ class Test_Pddt(TestCase):
                     pt_res = pt.floor(to_unit)
                     self.assertEqual(dt_res[0], pt_res[0])
 
+        # fsp()
+        base_dts = [
+            # fmt: off
+            pd.Timestamp(year=2023, month=8, day=17, hour=13, minute=31, second=31, microsecond=666666, nanosecond=666),
+            pd.Timestamp(year=2023, month=5, day=14, hour=11, minute=29, second=28, microsecond=444444, nanosecond=444),
+            pd.Timestamp(year=1800, month=8, day=17, hour=13, minute=31, second=31, microsecond=666666, nanosecond=666),
+            pd.Timestamp(year=1800, month=5, day=14, hour=11, minute=29, second=28, microsecond=444444, nanosecond=444),
+            pd.Timestamp(year=2023, month=5, day=14, hour=11, minute=29, second=28, microsecond=444444, nanosecond=444, tzinfo=ZoneInfo("CET")),
+            pd.Timestamp(year=1800, month=6, day=15, hour=12, minute=30, second=30, microsecond=500000, nanosecond=000, tzinfo=datetime.UTC),
+            # fmt: on
+        ]
+        for base_dt in base_dts:
+            for unit in my_units:
+                for precision in range(10):
+                    dt: pd.DatetimeIndex = pd.DatetimeIndex([base_dt]).as_unit(unit)
+                    pt = Pddt.fromdatetime(base_dt, unit=unit).fsp(precision)
+                    self.assertEqual(dt.date, pt.date())
+                    self.assertEqual(dt.hour, pt.hour)
+                    self.assertEqual(dt.minute, pt.minute)
+                    self.assertEqual(dt.second, pt.second)
+                    if precision <= 6:
+                        f = 10 ** (6 - precision)
+                        self.assertEqual(dt.microsecond // f * f, pt.microsecond)
+                        self.assertTrue(np.all(pt.nanosecond == 0))
+                    else:
+                        if unit == "ns":
+                            f = 10 ** (9 - min(precision, 9))
+                            self.assertEqual(dt.nanosecond // f * f, pt.nanosecond)
+                        else:
+                            self.assertTrue(np.all(pt.nanosecond == 0))
+
         self.log_ended(test)
 
     def test_calendar(self) -> None:
