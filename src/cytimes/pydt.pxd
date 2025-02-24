@@ -84,6 +84,8 @@ cdef class _Pydt(datetime.datetime):
     cpdef _Pydt round(self, str unit)
     cpdef _Pydt ceil(self, str unit)
     cpdef _Pydt floor(self, str unit)
+    # . fsp (fractional seconds precision)
+    cpdef _Pydt fsp(self, int precision)
     # Calendar
     # . iso
     cpdef dict isocalendar(self)

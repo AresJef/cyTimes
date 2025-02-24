@@ -2111,6 +2111,32 @@ class _Pydt(datetime.datetime):
         # New instance
         return _pydt_fr_dt(utils.dt_fr_us(us_f, datetime.datetime_tzinfo(self)))
 
+    # . fsp (fractional seconds precision)
+    @cython.ccall
+    def fsp(self, precision: cython.int) -> _Pydt:
+        """Adjust to the specified fractional seconds precision `<'Pydt'>`.
+
+        :param precision `<'int'>`: The fractional seconds precision (0-6).
+        """
+        # No change
+        if precision >= 6:
+            return self  # exit: same value
+        if precision < 0:
+            raise errors.InvalidFspError(
+                "invalid fractional seconds precision '%d'.\n"
+                "Must be between 0 and 6." % precision
+            )
+
+        # Adjust precision
+        us: cython.longlong = utils.dt_to_us(self, False)
+        f: cython.longlong = int(10 ** (6 - precision))  # fsp factor
+        us_f: cython.longlong = utils.math_floor_div(us, f) * f
+        if us_f == us:
+            return self  # exit: same value
+
+        # New instance
+        return _pydt_fr_dt(utils.dt_fr_us(us_f, datetime.datetime_tzinfo(self)))
+
     # Calendar -----------------------------------------------------------------------------
     # . iso
     @cython.ccall
