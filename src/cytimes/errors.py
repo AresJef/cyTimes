@@ -78,6 +78,10 @@ class InvalidTimeUnitError(InvalidArgumentError):
     """Error for invalid time unit value."""
 
 
+class InvalidFspError(InvalidArgumentError):
+    """Error for invalid fractional seconds precision value."""
+
+
 class InvalidMonthError(InvalidArgumentError):
     """Error for invalid month value."""
 
