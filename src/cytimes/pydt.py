@@ -3505,7 +3505,10 @@ class _Pydt(datetime.datetime):
         elif utils.is_date(o):
             o = utils.dt_fr_date(o)
         elif isinstance(o, str):
-            o = _pydt_fr_dtobj(o)
+            try:
+                o = _pydt_fr_dtobj(o)
+            except Exception:
+                return NotImplemented
         elif utils.is_dt64(o):
             o = utils.dt64_to_dt(o)
         else:
@@ -3624,7 +3627,11 @@ class _Pydt(datetime.datetime):
         if utils.is_date(o):
             return _compare_dts(self, utils.dt_fr_date(o), True) == 0
         if isinstance(o, str):
-            return _compare_dts(self, _pydt_fr_dtobj(o), True) == 0
+            try:
+                _o: datetime.datetime = _pydt_fr_dtobj(o)
+            except Exception:
+                return NotImplemented
+            return _compare_dts(self, _o, True) == 0
         return NotImplemented
 
     def __le__(self, o: object) -> bool:
@@ -3633,7 +3640,11 @@ class _Pydt(datetime.datetime):
         if utils.is_date(o):
             return _compare_dts(self, utils.dt_fr_date(o)) <= 0
         if isinstance(o, str):
-            return _compare_dts(self, _pydt_fr_dtobj(o)) <= 0
+            try:
+                _o: datetime.datetime = _pydt_fr_dtobj(o)
+            except Exception:
+                return NotImplemented
+            return _compare_dts(self, _o) <= 0
         return NotImplemented
 
     def __lt__(self, o: object) -> bool:
@@ -3642,7 +3653,11 @@ class _Pydt(datetime.datetime):
         if utils.is_date(o):
             return _compare_dts(self, utils.dt_fr_date(o)) < 0
         if isinstance(o, str):
-            return _compare_dts(self, _pydt_fr_dtobj(o)) < 0
+            try:
+                _o: datetime.datetime = _pydt_fr_dtobj(o)
+            except Exception:
+                return NotImplemented
+            return _compare_dts(self, _o) < 0
         return NotImplemented
 
     def __ge__(self, o: object) -> bool:
@@ -3651,7 +3666,11 @@ class _Pydt(datetime.datetime):
         if utils.is_date(o):
             return _compare_dts(self, utils.dt_fr_date(o)) >= 0
         if isinstance(o, str):
-            return _compare_dts(self, _pydt_fr_dtobj(o)) >= 0
+            try:
+                _o: datetime.datetime = _pydt_fr_dtobj(o)
+            except Exception:
+                return NotImplemented
+            return _compare_dts(self, _o) >= 0
         return NotImplemented
 
     def __gt__(self, o: object) -> bool:
@@ -3660,7 +3679,11 @@ class _Pydt(datetime.datetime):
         if utils.is_date(o):
             return _compare_dts(self, utils.dt_fr_date(o)) > 0
         if isinstance(o, str):
-            return _compare_dts(self, _pydt_fr_dtobj(o)) > 0
+            try:
+                _o: datetime.datetime = _pydt_fr_dtobj(o)
+            except Exception:
+                return NotImplemented
+            return _compare_dts(self, _o) > 0
         return NotImplemented
 
     # Representation -----------------------------------------------------------------------
