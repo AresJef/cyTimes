@@ -2707,11 +2707,11 @@ class Pddt(DatetimeIndex):
         """Adjust the date to the first day of the specified datetime unit `<'Pddt'>`.
 
         :param unit `<'str'>`: The datetime unit.
-            - `'Y'`: Sets to the first day of the current year.
-            - `'Q'`: Sets to the first day of the current quarter.
-            - `'M'`: Sets to the first day of the current month.
-            - `'W'`: Sets to the first day (Monday) of the current week.
-            - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Sets to the first day of that month.
+        - `'Y'`: Sets to the first day of the current year.
+        - `'Q'`: Sets to the first day of the current quarter.
+        - `'M'`: Sets to the first day of the current month.
+        - `'W'`: Sets to the first day (Monday) of the current week.
+        - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Sets to the first day of that month.
         """
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
@@ -2774,11 +2774,11 @@ class Pddt(DatetimeIndex):
         """Adjust the date to the last day of the specified datetime unit `<'Pddt'>`.
 
         :param unit `<'str'>`: The datetime unit.
-            - `'Y'`: Sets to the last day of the current year.
-            - `'Q'`: Sets to the last day of the current quarter.
-            - `'M'`: Sets to the last day of the current month.
-            - `'W'`: Sets to the last day (Sunday) of the current week.
-            - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Sets to the last day of that month.
+        - `'Y'`: Sets to the last day of the current year.
+        - `'Q'`: Sets to the last day of the current quarter.
+        - `'M'`: Sets to the last day of the current month.
+        - `'W'`: Sets to the last day (Sunday) of the current week.
+        - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Sets to the last day of that month.
         """
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
@@ -2841,18 +2841,18 @@ class Pddt(DatetimeIndex):
         """Adjust the datetime to the start of the specified datetime unit `<'Pddt'>`.
 
         :param unit `<'str'>`: The datetime unit.
-            - `'Y'`: Sets date to the first day of the current year & time to '00:00:00.000000'.
-            - `'Q'`: Sets date to the first day of the current quarter & time to '00:00:00.000000'.
-            - `'M'`: Sets date to the first day of the current month & time to '00:00:00.000000'.
-            - `'W'`: Sets date to the first day (Monday) of the current week & time to '00:00:00.000000'.
-            - `'D'`: Retains the original date & sets time to '00:00:00.000000'.
-            - `'h'`: Retains the original date & sets time to 'XX:00:00.000000'.
-            - `'m'`: Retains the original date & sets time to 'XX:XX:00.000000'.
-            - `'s'`: Retains the original date & sets time to 'XX:XX:XX.000000'.
-            - `'ms'`: Retains the original date & sets time to 'XX:XX:XX.XXX000'.
-            - `'us'`: Return the instance itself.
-            - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Sets date to first day of that month & time to '00:00:00.000000'.
-            - Weekday name (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`): Sets date to that weekday & time to '00:00:00.000000'.
+        - `'Y'`: Sets date to the first day of the current year & time to '00:00:00.000000'.
+        - `'Q'`: Sets date to the first day of the current quarter & time to '00:00:00.000000'.
+        - `'M'`: Sets date to the first day of the current month & time to '00:00:00.000000'.
+        - `'W'`: Sets date to the first day (Monday) of the current week & time to '00:00:00.000000'.
+        - `'D'`: Retains the original date & sets time to '00:00:00.000000'.
+        - `'h'`: Retains the original date & sets time to 'XX:00:00.000000'.
+        - `'m'`: Retains the original date & sets time to 'XX:XX:00.000000'.
+        - `'s'`: Retains the original date & sets time to 'XX:XX:XX.000000'.
+        - `'ms'`: Retains the original date & sets time to 'XX:XX:XX.XXX000'.
+        - `'us'`: Return the instance itself.
+        - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Sets date to first day of that month & time to '00:00:00.000000'.
+        - Weekday name (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`): Sets date to that weekday & time to '00:00:00.000000'.
         """
         # Fast-path
         if unit is None:
@@ -2920,18 +2920,18 @@ class Pddt(DatetimeIndex):
         """Adjust the datetime to the end of the specified datetime unit `<'Pddt'>`.
 
         :param unit `<'str'>`: The datetime unit.
-            - `'Y'`: Sets date to the last day of the current year & time to '23:59:59.999999'.
-            - `'Q'`: Sets date to the last day of the current quarter & time to '23:59:59.999999'.
-            - `'M'`: Sets date to the last day of the current month & time to '23:59:59.999999'.
-            - `'W'`: Sets date to the last day (Sunday) of the current week & time to '23:59:59.999999'.
-            - `'D'`: Retains the original date & sets time to '23:59:59.999999'.
-            - `'h'`: Retains the original date & sets time to 'XX:59:59.999999'.
-            - `'m'`: Retains the original date & sets time to 'XX:XX:59.999999'.
-            - `'s'`: Retains the original date & sets time to 'XX:XX:XX.999999'.
-            - `'ms'`: Retains the original date & sets time to 'XX:XX:XX.XXX999'.
-            - `'us'`: Return the instance itself.
-            - `'Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Sets date to last day of that month & time to '23:59:59.999999'.
-            - `'Weekday name (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`): Sets date to that weekday & time to '23:59:59.999999'.
+        - `'Y'`: Sets date to the last day of the current year & time to '23:59:59.999999'.
+        - `'Q'`: Sets date to the last day of the current quarter & time to '23:59:59.999999'.
+        - `'M'`: Sets date to the last day of the current month & time to '23:59:59.999999'.
+        - `'W'`: Sets date to the last day (Sunday) of the current week & time to '23:59:59.999999'.
+        - `'D'`: Retains the original date & sets time to '23:59:59.999999'.
+        - `'h'`: Retains the original date & sets time to 'XX:59:59.999999'.
+        - `'m'`: Retains the original date & sets time to 'XX:XX:59.999999'.
+        - `'s'`: Retains the original date & sets time to 'XX:XX:XX.999999'.
+        - `'ms'`: Retains the original date & sets time to 'XX:XX:XX.XXX999'.
+        - `'us'`: Return the instance itself.
+        - `'Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Sets date to last day of that month & time to '23:59:59.999999'.
+        - `'Weekday name (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`): Sets date to that weekday & time to '23:59:59.999999'.
         """
         # Fast-path
         if unit is None:
@@ -3473,11 +3473,11 @@ class Pddt(DatetimeIndex):
         the specified datetime unit `<'Index[bool]'>`.
 
         :param unit `<'str'>`: The datetime unit.
-            - `'Y'`: Is on the first day of the current year.
-            - `'Q'`: Is on the first day of the current quarter.
-            - `'M'`: Is on the first day of the current month.
-            - `'W'`: Is on the first day (Monday) of the current week.
-            - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Is the first day of that month.
+        - `'Y'`: Is on the first day of the current year.
+        - `'Q'`: Is on the first day of the current quarter.
+        - `'M'`: Is on the first day of the current month.
+        - `'W'`: Is on the first day (Monday) of the current week.
+        - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Is the first day of that month.
         """
         # To start of
         pt_1st = self.to_first_of(unit)
@@ -3493,11 +3493,11 @@ class Pddt(DatetimeIndex):
         the specified datetime unit `<'Index[bool]'>`.
 
         :param unit `<'str'>`: The datetime unit.
-            - `'Y'`: Is on the last day of the current year.
-            - `'Q'`: Is on the last day of the current quarter.
-            - `'M'`: Is on the last day of the current month.
-            - `'W'`: Is on the last day (Sunday) of the current week.
-            - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Is the last day of that month.
+        - `'Y'`: Is on the last day of the current year.
+        - `'Q'`: Is on the last day of the current quarter.
+        - `'M'`: Is on the last day of the current month.
+        - `'W'`: Is on the last day (Sunday) of the current week.
+        - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Is the last day of that month.
         """
         # To last of
         pt_lst = self.to_last_of(unit)
@@ -3513,18 +3513,18 @@ class Pddt(DatetimeIndex):
         the specified datetime unit `<'Index[bool]'>`.
 
         :param unit `<'str'>`: The datetime unit.
-            - `'Y'`: Is on the first day of the current year at time '00:00:00.000000'.
-            - `'Q'`: Is on the first day of the current quarter at time '00:00:00.000000'.
-            - `'M'`: Is on the first day of the current month at time '00:00:00.000000'.
-            - `'W'`: Is on the first day (Monday) of the current week at time '00:00:00.000000'.
-            - `'D'`: Is at time '00:00:00.000000'.
-            - `'h'`: Is at time 'XX:00:00.000000'.
-            - `'m'`: Is at time 'XX:XX:00.000000'.
-            - `'s'`: Is at time 'XX:XX:XX.000000'.
-            - `'ms'`: Is at time 'XX:XX:XX.XXX000'.
-            - `'us'`: Always return `True`.
-            - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Is on the first day of that month at time '00:00:00.000000'.
-            - Weekday name (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`): Is on that weekday at time '00:00:00.000000'.
+        - `'Y'`: Is on the first day of the current year at time '00:00:00.000000'.
+        - `'Q'`: Is on the first day of the current quarter at time '00:00:00.000000'.
+        - `'M'`: Is on the first day of the current month at time '00:00:00.000000'.
+        - `'W'`: Is on the first day (Monday) of the current week at time '00:00:00.000000'.
+        - `'D'`: Is at time '00:00:00.000000'.
+        - `'h'`: Is at time 'XX:00:00.000000'.
+        - `'m'`: Is at time 'XX:XX:00.000000'.
+        - `'s'`: Is at time 'XX:XX:XX.000000'.
+        - `'ms'`: Is at time 'XX:XX:XX.XXX000'.
+        - `'us'`: Always return `True`.
+        - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Is on the first day of that month at time '00:00:00.000000'.
+        - Weekday name (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`): Is on that weekday at time '00:00:00.000000'.
         """
         # To start of
         pt_stt = self.to_start_of(unit)
@@ -3544,18 +3544,18 @@ class Pddt(DatetimeIndex):
         the specified datetime unit `<'Index[bool]'>`.
 
         :param unit `<'str'>`: The datetime unit.
-            - `'Y'`: Is on the last day of the current year at time '23:59:59.999999'.
-            - `'Q'`: Is on the last day of the current quarter at time '23:59:59.999999'.
-            - `'M'`: Is on the last day of the current month at time '23:59:59.999999'.
-            - `'W'`: Is on the last day (Sunday) of the current week at time '23:59:59.999999'.
-            - `'D'`: Is at time '23:59:59.999999'.
-            - `'h'`: Is at time 'XX:59:59.999999'.
-            - `'m'`: Is at time 'XX:XX:59.999999'.
-            - `'s'`: Is at time 'XX:XX:XX.999999'.
-            - `'ms'`: Is at time 'XX:XX:XX.XXX999'.
-            - `'us'`: Always return `True`.
-            - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Is on the last day of that month at time '23:59:59.999999'.
-            - Weekday name (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`): Is on that weekday at time '23:59:59.999999'.
+        - `'Y'`: Is on the last day of the current year at time '23:59:59.999999'.
+        - `'Q'`: Is on the last day of the current quarter at time '23:59:59.999999'.
+        - `'M'`: Is on the last day of the current month at time '23:59:59.999999'.
+        - `'W'`: Is on the last day (Sunday) of the current week at time '23:59:59.999999'.
+        - `'D'`: Is at time '23:59:59.999999'.
+        - `'h'`: Is at time 'XX:59:59.999999'.
+        - `'m'`: Is at time 'XX:XX:59.999999'.
+        - `'s'`: Is at time 'XX:XX:XX.999999'.
+        - `'ms'`: Is at time 'XX:XX:XX.XXX999'.
+        - `'us'`: Always return `True`.
+        - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Is on the last day of that month at time '23:59:59.999999'.
+        - Weekday name (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`): Is on that weekday at time '23:59:59.999999'.
         """
         # To end of
         pt_end = self.to_end_of(unit)
