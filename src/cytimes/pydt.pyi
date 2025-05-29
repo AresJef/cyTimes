@@ -9,20 +9,7 @@ _DatetimeT = TypeVar("_DatetimeT", bound=datetime.datetime)
 _TimedeltaT = TypeVar("_TimedeltaT", bound=datetime.timedelta)
 
 # Pydt
-class Pydt(datetime.datetime):
-    def __new__(
-        cls,
-        year: int = 1,
-        month: int = 1,
-        day: int = 1,
-        hour: int = 0,
-        minute: int = 0,
-        second: int = 0,
-        microsecond: int = 0,
-        tzinfo: datetime.tzinfo | str | None = None,
-        *,
-        fold: int = 0,
-    ) -> Self: ...
+class _Pydt(datetime.datetime):
     # Constructor ------------------------------------------------------
     @classmethod
     def parse(
@@ -362,3 +349,18 @@ class Pydt(datetime.datetime):
     # Pickle -----------------------------------------------------------
     def __reduce__(self) -> str | tuple: ...
     def __reduce_ex__(self, protocol: SupportsIndex, /) -> str | tuple: ...
+
+class Pydt(_Pydt):
+    def __new__(
+        cls,
+        year: int = 1,
+        month: int = 1,
+        day: int = 1,
+        hour: int = 0,
+        minute: int = 0,
+        second: int = 0,
+        microsecond: int = 0,
+        tzinfo: datetime.tzinfo | str | None = None,
+        *,
+        fold: int = 0,
+    ) -> Self: ...
