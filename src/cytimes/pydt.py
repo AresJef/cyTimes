@@ -2369,7 +2369,7 @@ class _Pydt(datetime.datetime):
         return _parse_month(month, True) == datetime.datetime_month(self)
 
     @cython.ccall
-    def month_name(self, locale: str | None = None) -> str:
+    def month_name(self, locale: object = None) -> str:
         """Return the month name with specified locale `<'str'>`.
 
         :param locale `<'str/None'>`: The locale to use for month name, defaults to `None`.
@@ -2436,7 +2436,7 @@ class _Pydt(datetime.datetime):
         return datetime.datetime_day(self) == day
 
     @cython.ccall
-    def day_name(self, locale: str | None = None) -> str:
+    def day_name(self, locale: object = None) -> str:
         """Return the weekday name with specified locale `<'str'>`.
 
         :param locale `<'str/None'>`: The locale to use for weekday name, defaults to `None`.
@@ -3633,6 +3633,12 @@ class _Pydt(datetime.datetime):
                 return NotImplemented
             return _compare_dts(self, _o, True) == 0
         return NotImplemented
+
+    def __ne__(self, o: object) -> bool:
+        eq = self.__eq__(o)
+        if eq is NotImplemented:
+            return NotImplemented
+        return not eq
 
     def __le__(self, o: object) -> bool:
         if utils.is_dt(o):
