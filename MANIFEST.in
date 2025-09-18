@@ -1,7 +1,4 @@
 include LICENSE
 include README.md
 
-include src/cytimes/*.pxd
-include src/cytimes/*.py
-include src/cytimes/*.pyi
-include src/cytimes/*.pyx
+recursive-include src/cytimes *.py *.pxd *.pyx *.pyi
