@@ -1110,6 +1110,10 @@ class _Pydt(datetime.datetime):
             If `-1`, retains the original day. The final day
             value is clamped to the maximum days in the month.
 
+        ### Notice:
+        Overflow and underflow of the year value out of the range [1, 9999],
+        the date will be clamped to `0001-01-01` and `9999-12-31`.
+
         ### Example:
         >>> dt.to_year(-2, "Feb", 31)  # The last day of February, two years ago
         >>> dt.to_year(2, 11)          # The same day of November, two years later
@@ -1119,19 +1123,21 @@ class _Pydt(datetime.datetime):
         if offset == 0:
             return self.to_curr_year(month, day)  # exit
 
-        # Compute new year
+        # Compute new year & month & day
         yy: cython.int = datetime.datetime_year(self) + offset
-        yy = min(max(yy, 1), 9999)
-
-        # Parse month
-        mm: cython.int = _parse_month(month, True)
-        if mm == -1:
-            mm = datetime.datetime_month(self)
-
-        # Clamp to max days
-        dd: cython.int = datetime.datetime_day(self) if day < 1 else day
-        if dd > 28:
-            dd = min(dd, utils.days_in_month(yy, mm))
+        mm: cython.int
+        dd: cython.int
+        if yy < 1:
+            yy, mm, dd = 1, 1, 1
+        elif yy > 9999:
+            yy, mm, dd = 9999, 12, 31
+        else:
+            mm = _parse_month(month, True)
+            if mm == -1:
+                mm = datetime.datetime_month(self)
+            dd = datetime.datetime_day(self) if day < 1 else day
+            if dd > 28:
+                dd = min(dd, utils.days_in_month(yy, mm))
 
         # New instance
         return pydt_new(
@@ -1246,6 +1252,10 @@ class _Pydt(datetime.datetime):
             If `-1`, retains the original day. The final day
             value is clamped to the maximum days in the month.
 
+        ### Notice:
+        Overflow and underflow of the year value out of the range [1, 9999],
+        the date will be clamped to `0001-01-01` and `9999-12-31`.
+
         ### Example:
         >>> dt.to_quarter(-2, 1, 31)  # The last day of the first quarter month, two quarters ago
         >>> dt.to_quarter(2, 2)       # The same day of the second quarter month, two quarters later
@@ -1255,25 +1265,23 @@ class _Pydt(datetime.datetime):
         if offset == 0:
             return self.to_curr_quarter(month, day)  # exit
 
-        # Compute new year & month
+        # Compute new year & month & day
         yy: cython.int = datetime.datetime_year(self)
         mm: cython.int = datetime.datetime_month(self)
+        dd: cython.int
         if month >= 1:
             mm = utils.quarter_of_month(mm) * 3 + (min(month, 3) - 3)
-        mm += offset * 3
-        if mm > 12:
-            yy += mm // 12
-            mm %= 12
-        elif mm < 1:
-            mm = 12 - mm
-            yy -= mm // 12
-            mm = 12 - mm % 12
-        yy = min(max(yy, 1), 9999)
-
-        # Clamp to max days
-        dd: cython.int = datetime.datetime_day(self) if day < 1 else day
-        if dd > 28:
-            dd = min(dd, utils.days_in_month(yy, mm))
+        m0: cython.int = mm + offset * 3
+        yy = yy + (m0 - 1) // 12
+        if yy < 1:
+            yy, mm, dd = 1, 1, 1
+        elif yy > 9999:
+            yy, mm, dd = 9999, 12, 31
+        else:
+            mm = ((m0 - 1) % 12) + 1
+            dd = datetime.datetime_day(self) if day < 1 else day
+            if dd > 28:
+                dd = min(dd, utils.days_in_month(yy, mm))
 
         # New instance
         return pydt_new(
@@ -1356,12 +1364,16 @@ class _Pydt(datetime.datetime):
 
     @cython.ccall
     def to_month(self, offset: cython.int, day: cython.int = -1) -> _Pydt:
-        """Adjust the date to the specified day of the month (+/-) offest `<'Pydt'>`.
+        """Adjust the date to the specified day of the month (+/-) offset `<'Pydt'>`.
 
         :param offset `<'int'>`: The month offset (+/-).
         :param day `<'int'>`: The day value (1-31), defaults to `-1`.
             If `-1`, retains the original day. The final day
             value is clamped to the maximum days in the month.
+
+        ### Notice:
+        Overflow and underflow of the year value out of the range [1, 9999],
+        the date will be clamped to `0001-01-01` and `9999-12-31`.
 
         ### Example:
         >>> dt.to_month(-2, 31)  # The last day of the month, two months ago
@@ -1371,22 +1383,21 @@ class _Pydt(datetime.datetime):
         if offset == 0:
             return self.to_curr_month(day)  # exit
 
-        # Compute new year & month
+        # Compute new year & month & day
         yy: cython.int = datetime.datetime_year(self)
-        mm: cython.int = datetime.datetime_month(self) + offset
-        if mm > 12:
-            yy += mm // 12
-            mm %= 12
-        elif mm < 1:
-            mm = 12 - mm
-            yy -= mm // 12
-            mm = 12 - mm % 12
-        yy = min(max(yy, 1), 9999)
-
-        # Clamp to max days
-        dd: cython.int = datetime.datetime_day(self) if day < 1 else day
-        if dd > 28:
-            dd = min(dd, utils.days_in_month(yy, mm))
+        mm: cython.int = datetime.datetime_month(self)
+        dd: cython.int
+        m0: cython.int = mm + offset
+        yy = yy + (m0 - 1) // 12
+        if yy < 1:
+            yy, mm, dd = 1, 1, 1
+        elif yy > 9999:
+            yy, mm, dd = 9999, 12, 31
+        else:
+            mm = ((m0 - 1) % 12) + 1
+            dd: cython.int = datetime.datetime_day(self) if day < 1 else day
+            if dd > 28:
+                dd = min(dd, utils.days_in_month(yy, mm))
 
         # New instance
         return pydt_new(
@@ -3211,70 +3222,68 @@ class _Pydt(datetime.datetime):
         :param seconds `<'int'>`: Relative delta of seconds, defaults to `0`.
         :param milliseconds `<'int'>`: Relative delta of milliseconds, defaults to `0`.
         :param microseconds `<'int'>`: Relative delta of microseconds, defaults to `0`.
+
+        ### Notice:
+        Overflow and underflow of the year value out of the range [1, 9999],
+        the date will be clamped to `0001-01-01 00:00:00` and `9999-12-31 23:59:59.999999`.
         """
         # Compute delta
-        # . year
+        # ----------------------------------------------------
         my_yy: cython.int = datetime.datetime_year(self)
-        yy: cython.int = my_yy + years
-        ymd_eq: cython.bint = yy == my_yy
-        # . month
         my_mm: cython.int = datetime.datetime_month(self)
+        yy: cython.int = my_yy + years
         mm: cython.int = my_mm + months + quarters * 3
-        if mm != my_mm:
-            if mm > 12:
-                yy += mm // 12
-                mm %= 12
-            elif mm < 1:
-                mm = 12 - mm
-                yy -= mm // 12
-                mm = 12 - mm % 12
-            if ymd_eq:
-                ymd_eq = mm == my_mm
-        # . day
         dd: cython.int = datetime.datetime_day(self)
-        # . microseconds
+        # ----------------------------------------------------
+        # . month
+        if mm != my_mm:
+            yy = yy + (mm - 1) // 12
+            mm = ((mm - 1) % 12) + 1
+        # ----------------------------------------------------
         my_us: cython.int = datetime.datetime_microsecond(self)
+        my_ss: cython.int = datetime.datetime_second(self)
+        my_mi: cython.int = datetime.datetime_minute(self)
+        my_hh: cython.int = datetime.datetime_hour(self)
         us: cython.longlong = my_us + microseconds + milliseconds * 1000
+        ss: cython.longlong = my_ss + seconds
+        mi: cython.longlong = my_mi + minutes
+        hh: cython.longlong = my_hh + hours
+        # ----------------------------------------------------
+        hmsf_eq: cython.bint = True
+        # . microseconds
         if us != my_us:
             if us > 999_999:
-                seconds += us // 1_000_000
+                ss += us // 1_000_000
                 us %= 1_000_000
             elif us < 0:
                 us = 999_999 - us
-                seconds -= us // 1_000_000
+                ss -= us // 1_000_000
                 us = 999_999 - us % 1_000_000
-            hmsf_eq: cython.bint = us == my_us
-        else:
-            hmsf_eq: cython.bint = True
+            if us != my_us:
+                hmsf_eq = False
         # . seconds
-        my_ss: cython.int = datetime.datetime_second(self)
-        ss: cython.longlong = my_ss + seconds
         if ss != my_ss:
             if ss > 59:
-                minutes += ss // 60
+                mi += ss // 60
                 ss %= 60
             elif ss < 0:
                 ss = 59 - ss
-                minutes -= ss // 60
+                mi -= ss // 60
                 ss = 59 - ss % 60
-            if hmsf_eq:
-                hmsf_eq = ss == my_ss
+            if ss != my_ss:
+                hmsf_eq = False
         # . minutes
-        my_mi: cython.int = datetime.datetime_minute(self)
-        mi: cython.longlong = my_mi + minutes
         if mi != my_mi:
             if mi > 59:
-                hours += mi // 60
+                hh += mi // 60
                 mi %= 60
             elif mi < 0:
                 mi = 59 - mi
-                hours -= mi // 60
+                hh -= mi // 60
                 mi = 59 - mi % 60
-            if hmsf_eq:
-                hmsf_eq = mi == my_mi
+            if mi != my_mi:
+                hmsf_eq = False
         # . hours
-        my_hh: cython.int = datetime.datetime_hour(self)
-        hh: cython.longlong = my_hh + hours
         if hh != my_hh:
             if hh > 23:
                 days += hh // 24
@@ -3283,8 +3292,8 @@ class _Pydt(datetime.datetime):
                 hh = 23 - hh
                 days -= hh // 24
                 hh = 23 - hh % 24
-            if hmsf_eq:
-                hmsf_eq = hh == my_hh
+            if hh != my_hh:
+                hmsf_eq = False
         # . days
         days += weeks * 7
 
@@ -3292,20 +3301,20 @@ class _Pydt(datetime.datetime):
         if days != 0:
             _ymd = utils.ymd_fr_ordinal(utils.ymd_to_ordinal(yy, mm, dd) + days)
             yy, mm, dd = _ymd.year, _ymd.month, _ymd.day
-        elif ymd_eq:
+        elif yy == my_yy and mm == my_mm:
             if hmsf_eq:
                 return self  # exit: no change
         elif dd > 28:
             dd = min(dd, utils.days_in_month(yy, mm))
 
-        # Create Pydt
-        # fmt: off
-        return pydt_new(
-            min(max(yy, 1), 9999), mm, dd, hh, mi, ss, us, 
-            datetime.datetime_tzinfo(self), 
-            datetime.datetime_fold(self),
-        )
-        # fmt: on
+        # New Pydt
+        if yy < 1:
+            yy, mm, dd, hh, mi, ss, us = 1, 1, 1, 0, 0, 0, 0
+        elif yy > 9999:
+            yy, mm, dd, hh, mi, ss, us = 9999, 12, 31, 23, 59, 59, 999_999
+        tz = datetime.datetime_tzinfo(self)
+        fold: cython.int = datetime.datetime_fold(self)
+        return pydt_new(yy, mm, dd, hh, mi, ss, us, tz, fold)
 
     @cython.ccall
     def sub(
@@ -3333,6 +3342,10 @@ class _Pydt(datetime.datetime):
         :param seconds `<'int'>`: Relative delta of seconds, defaults to `0`.
         :param milliseconds `<'int'>`: Relative delta of milliseconds, defaults to `0`.
         :param microseconds `<'int'>`: Relative delta of microseconds, defaults to `0`.
+
+        ### Notice:
+        Overflow and underflow of the year value out of the range [1, 9999],
+        the date will be clamped to `0001-01-01 00:00:00` and `9999-12-31 23:59:59.999999`.
         """
         # fmt: off
         return self.add(
@@ -3429,9 +3442,9 @@ class _Pydt(datetime.datetime):
         :param seconds `<'int'>`: Relative seconds of the timedelta.
         :param microseconds `<'int'>`: Relative microseconds of the timedelta.
         """
-        dd_: cython.longlong = days
-        ss_: cython.longlong = seconds
-        us: cython.longlong = (dd_ * 86_400 + ss_) * 1_000_000 + microseconds
+        dd: cython.longlong = days
+        ss: cython.longlong = seconds
+        us: cython.longlong = (dd * 86_400 + ss) * 1_000_000 + microseconds
         if us == 0:
             return self  # no change
 
