@@ -13,7 +13,7 @@ cdef class Delta:
     cdef:
         int _years
         int _months
-        int _days
+        long long _days
         int _hours
         int _minutes
         int _seconds
