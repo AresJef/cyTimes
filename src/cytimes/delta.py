@@ -73,77 +73,72 @@ def _date_add_delta(
       field, or set to `-1` to retain the original value.
     """
     # Calculate delta
-    # . year
-    dt_yy: cython.int = datetime.date_year(date)
-    yy: cython.int = (year if year != -1 else dt_yy) + years
-    ymd_eq: cython.bint = yy == dt_yy
-    # . month
-    dt_mm: cython.int = datetime.date_month(date)
-    mm: cython.int = (month if month != -1 else dt_mm) + months
-    if mm != dt_mm:
-        if mm > 12:
-            yy += 1
-            mm -= 12
-        elif mm < 1:
-            yy -= 1
-            mm += 12
-        if ymd_eq:
-            ymd_eq = mm == dt_mm
-    # . day
-    dt_dd: cython.int = datetime.date_day(date)
-    dd: cython.int = day if day != -1 else dt_dd
-    if dd != dt_dd:
-        ymd_eq = False
     # ----------------------------------------------------
-    us: cython.int = (microsecond if microsecond != -1 else 0) + microseconds
-    ss: cython.int = (second if second != -1 else 0) + seconds
-    mi: cython.int = (minute if minute != -1 else 0) + minutes
-    hh: cython.int = (hour if hour != -1 else 0) + hours
+    dt_yy: cython.int = datetime.date_year(date)
+    dt_mm: cython.int = datetime.date_month(date)
+    dt_dd: cython.int = datetime.date_day(date)
+    yy: cython.int = (year if year != -1 else dt_yy) + years
+    mm: cython.int = (month if month != -1 else dt_mm) + months
+    dd: cython.int = day if day != -1 else dt_dd
+    # ----------------------------------------------------
+    # . month
+    if mm != dt_mm:
+        yy = yy + (mm - 1) // 12
+        mm = ((mm - 1) % 12) + 1
+    # ----------------------------------------------------
+    us: cython.longlong = (microsecond if microsecond != -1 else 0) + microseconds
+    ss: cython.longlong = (second if second != -1 else 0) + seconds
+    mi: cython.longlong = (minute if minute != -1 else 0) + minutes
+    hh: cython.longlong = (hour if hour != -1 else 0) + hours
     # ----------------------------------------------------
     # . microseconds
     if us != 0:
         if us > 999_999:
-            ss += 1
+            ss += us // 1_000_000
         elif us < 0:
-            ss -= 1
+            us = 999_999 - us
+            ss -= us // 1_000_000
     # . seconds
     if ss != 0:
         if ss > 59:
-            mi += 1
+            mi += ss // 60
         elif ss < 0:
-            mi -= 1
+            ss = 59 - ss
+            mi -= ss // 60
     # . minutes
     if mi != 0:
         if mi > 59:
-            hh += 1
+            hh += mi // 60
         elif mi < 0:
-            hh -= 1
+            mi = 59 - mi
+            hh -= mi // 60
     # . hours & days
     if hh != 0:
         if hh > 23:
-            days += 1
+            days += hh // 24
         elif hh < 0:
-            days -= 1
+            hh = 23 - hh
+            days -= hh // 24
 
     # Add delta
-    if days != 0:
-        _ymd = utils.ymd_fr_ordinal(utils.ymd_to_ordinal(yy, mm, dd) + days)
-        yy, mm, dd = _ymd.year, _ymd.month, _ymd.day
-    elif ymd_eq:
+    if days != 0 or weekday != -1:
+        old_ordinal: cython.int = utils.ymd_to_ordinal(yy, mm, dd)
+        new_ordinal: cython.int = old_ordinal + days
+        if weekday != -1:
+            new_ordinal += weekday - (new_ordinal + 6) % 7
+        if old_ordinal != new_ordinal:
+            _ymd = utils.ymd_fr_ordinal(new_ordinal)
+            yy, mm, dd = _ymd.year, _ymd.month, _ymd.day
+    if yy == dt_yy and mm == dt_mm and dd == dt_dd:
         return date  # exit: no change
     elif dd > 28:
         dd = min(dd, utils.days_in_month(yy, mm))
 
-    # Adjust weekday
-    if weekday != -1:
-        wkd: cython.int = utils.ymd_weekday(yy, mm, dd)
-        if wkd != weekday:
-            _ymd = utils.ymd_fr_ordinal(
-                utils.ymd_to_ordinal(yy, mm, dd) + weekday - wkd
-            )
-            yy, mm, dd = _ymd.year, _ymd.month, _ymd.day
-
     # New date
+    if yy < 1:
+        yy, mm, dd = 1, 1, 1
+    elif yy > 9_999:
+        yy, mm, dd = 9_999, 12, 31
     # . subclass of datetime.date
     if not utils.is_date_exact(date):
         try:
@@ -186,99 +181,94 @@ def _dt_add_delta(
       field, or set to `-1` to retain the original value.
     """
     # Calculate delta
-    # . year
+    # ----------------------------------------------------
     dt_yy: cython.int = datetime.datetime_year(dt)
-    yy: cython.int = (year if year != -1 else dt_yy) + years
-    ymd_eq: cython.bint = yy == dt_yy
-    # . month
     dt_mm: cython.int = datetime.datetime_month(dt)
-    mm: cython.int = (month if month != -1 else dt_mm) + months
-    if mm != dt_mm:
-        if mm > 12:
-            yy += 1
-            mm -= 12
-        elif mm < 1:
-            yy -= 1
-            mm += 12
-        if ymd_eq:
-            ymd_eq = mm == dt_mm
-    # . day
     dt_dd: cython.int = datetime.datetime_day(dt)
+    yy: cython.int = (year if year != -1 else dt_yy) + years
+    mm: cython.int = (month if month != -1 else dt_mm) + months
     dd: cython.int = day if day != -1 else dt_dd
-    if dd != dt_dd:
-        ymd_eq = False
+    # ----------------------------------------------------
+    # . month
+    if mm != dt_mm:
+        yy = yy + (mm - 1) // 12
+        mm = ((mm - 1) % 12) + 1
     # ----------------------------------------------------
     dt_us: cython.int = datetime.datetime_microsecond(dt)
-    us: cython.int = (microsecond if microsecond != -1 else dt_us) + microseconds
     dt_ss: cython.int = datetime.datetime_second(dt)
-    ss: cython.int = (second if second != -1 else dt_ss) + seconds
     dt_mi: cython.int = datetime.datetime_minute(dt)
-    mi: cython.int = (minute if minute != -1 else dt_mi) + minutes
     dt_hh: cython.int = datetime.datetime_hour(dt)
-    hh: cython.int = (hour if hour != -1 else dt_hh) + hours
+    us: cython.longlong = (microsecond if microsecond != -1 else dt_us) + microseconds
+    ss: cython.longlong = (second if second != -1 else dt_ss) + seconds
+    mi: cython.longlong = (minute if minute != -1 else dt_mi) + minutes
+    hh: cython.longlong = (hour if hour != -1 else dt_hh) + hours
     # ----------------------------------------------------
+    hmsf_eq: cython.bint = True
     # . microseconds
     if us != dt_us:
         if us > 999_999:
-            ss += 1
-            us -= 1_000_000
+            ss += us // 1_000_000
+            us %= 1_000_000
         elif us < 0:
-            ss -= 1
-            us += 1_000_000
-        hmsf_eq: cython.bint = us == dt_us
-    else:
-        hmsf_eq: cython.bint = True
+            us = 999_999 - us
+            ss -= us // 1_000_000
+            us = 999_999 - us % 1_000_000
+        if us != dt_us:
+            hmsf_eq = False
     # . seconds
     if ss != dt_ss:
         if ss > 59:
-            mi += 1
-            ss -= 60
+            mi += ss // 60
+            ss %= 60
         elif ss < 0:
-            mi -= 1
-            ss += 60
-        if hmsf_eq:
-            hmsf_eq = ss == dt_ss
+            ss = 59 - ss
+            mi -= ss // 60
+            ss = 59 - ss % 60
+        if ss != dt_ss:
+            hmsf_eq = False
     # . minutes
     if mi != dt_mi:
         if mi > 59:
-            hh += 1
-            mi -= 60
+            hh += mi // 60
+            mi %= 60
         elif mi < 0:
-            hh -= 1
-            mi += 60
-        if hmsf_eq:
-            hmsf_eq = mi == dt_mi
+            mi = 59 - mi
+            hh -= mi // 60
+            mi = 59 - mi % 60
+        if mi != dt_mi:
+            hmsf_eq = False
     # . hours & days
     if hh != dt_hh:
         if hh > 23:
-            days += 1
-            hh -= 24
+            days += hh // 24
+            hh %= 24
         elif hh < 0:
-            days -= 1
-            hh += 24
-        if hmsf_eq:
-            hmsf_eq = hh == dt_hh
+            hh = 23 - hh
+            days -= hh // 24
+            hh = 23 - hh % 24
+        if hh != dt_hh:
+            hmsf_eq = False
 
     # Add delta
-    if days != 0:
-        _ymd = utils.ymd_fr_ordinal(utils.ymd_to_ordinal(yy, mm, dd) + days)
-        yy, mm, dd = _ymd.year, _ymd.month, _ymd.day
-    elif ymd_eq:
+    if days != 0 or weekday != -1:
+        old_ordinal: cython.int = utils.ymd_to_ordinal(yy, mm, dd)
+        new_ordinal: cython.int = old_ordinal + days
+        if weekday != -1:
+            new_ordinal += weekday - (new_ordinal + 6) % 7
+        if old_ordinal != new_ordinal:
+            _ymd = utils.ymd_fr_ordinal(new_ordinal)
+            yy, mm, dd = _ymd.year, _ymd.month, _ymd.day
+    if yy == dt_yy and mm == dt_mm and dd == dt_dd:
         if hmsf_eq:
             return dt  # exit: no change
     elif dd > 28:
         dd = min(dd, utils.days_in_month(yy, mm))
 
-    # Adjust weekday
-    if weekday != -1:
-        wkd: cython.int = utils.ymd_weekday(yy, mm, dd)
-        if wkd != weekday:
-            _ymd = utils.ymd_fr_ordinal(
-                utils.ymd_to_ordinal(yy, mm, dd) + weekday - wkd
-            )
-            yy, mm, dd = _ymd.year, _ymd.month, _ymd.day
-
     # New datetime
+    if yy < 1:
+        yy, mm, dd, hh, mi, ss, us = 1, 1, 1, 0, 0, 0, 0
+    elif yy > 9_999:
+        yy, mm, dd, hh, mi, ss, us = 9_999, 12, 31, 23, 59, 59, 999_999
     tz = datetime.datetime_tzinfo(dt)
     fold: cython.int = datetime.datetime_fold(dt)
     # . subclass of datetime.datetime
@@ -298,13 +288,13 @@ def _dt_add_delta(
 @cython.cclass
 class Delta:
     """Represent the difference between two datetime objects at both relative
-    and absolute levels. The `<'Delta'>`class supports arithmetic operations
+    and absolute levels. The `<'Delta'>` class supports arithmetic operations
     and is compatible with various datetime and timedelta types.
     """
 
     _years: cython.int
     _months: cython.int
-    _days: cython.int
+    _days: cython.longlong
     _hours: cython.int
     _minutes: cython.int
     _seconds: cython.int
@@ -324,13 +314,13 @@ class Delta:
         years: cython.int = 0,
         quarters: cython.int = 0,
         months: cython.int = 0,
-        weeks: cython.int = 0,
-        days: cython.int = 0,
-        hours: cython.int = 0,
-        minutes: cython.int = 0,
-        seconds: cython.int = 0,
-        milliseconds: cython.int = 0,
-        microseconds: cython.int = 0,
+        weeks: cython.longlong = 0,
+        days: cython.longlong = 0,
+        hours: cython.longlong = 0,
+        minutes: cython.longlong = 0,
+        seconds: cython.longlong = 0,
+        milliseconds: cython.longlong = 0,
+        microseconds: cython.longlong = 0,
         year: cython.int = -1,
         month: cython.int = -1,
         day: cython.int = -1,
@@ -513,7 +503,7 @@ class Delta:
         else:
             self._microsecond = -1
 
-        # Initial hashcode
+        # Initiate hashcode
         self._hashcode = -1
 
     # Property: relative delta -----------------------------------------------
