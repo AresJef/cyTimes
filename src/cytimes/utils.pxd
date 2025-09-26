@@ -3,7 +3,7 @@
 # Cython imports
 cimport cython
 cimport numpy as np
-from libc.stdlib cimport malloc, free, strtoll
+from libc.limits cimport LLONG_MIN
 from libc.time cimport (
     strftime, time_t,
     gmtime as libc_gmtime,
@@ -103,6 +103,8 @@ cdef:
     long long DT64_NS_MS_MAX
     long long DT64_NS_US_MAX
     long long DT64_NS_NS_MAX
+    #: numpy 
+    np.npy_int64 NP_NAT = LLONG_MIN
 
 # Struct -----------------------------------------------------------------------------------------------
 ctypedef struct ymd:
@@ -136,13 +138,16 @@ cdef extern from "<time.h>" nogil:
 # Math -------------------------------------------------------------------------------------------------
 cdef inline long long math_mod(long long num, long long factor, long long offset=0):
     """Computes the modulo of a number by the factor, handling
-    negative numbers accoring to Python's modulo semantics `<'int'>`.
+    negative numbers according to Python's modulo semantics `<'int'>`.
 
     Equivalent to:
     >>> (num % factor) + offset
     """
     if factor == 0:
         raise ZeroDivisionError("division by zero for 'utils.math_mod()'.")
+    if factor == -1 and num == LLONG_MIN:
+        # (LLONG_MIN % -1) == 0 in Python semantics; avoid UB by skipping '%'
+        return offset
 
     cdef:
         bint neg_f = factor < 0
@@ -162,13 +167,15 @@ cdef inline long long math_mod(long long num, long long factor, long long offset
 cdef inline long long math_round_div(long long num, long long factor, long long offset=0):
     """Divides a number by the factor and rounds the result to
     the nearest integer (half away from zero), handling negative
-    numbers accoring to Python's division semantics `<'int'>`.
+    numbers according to Python's division semantics `<'int'>`.
 
     Equivalent to:
     >>> round(num / factor, 0) + offset
     """
     if factor == 0:
         raise ZeroDivisionError("division by zero for 'utils.math_round_div()'.")
+    if factor == -1 and num == LLONG_MIN:
+        raise OverflowError("math_round_div: result does not fit in signed 64-bit")
 
     cdef:
         bint neg_f = factor < 0
@@ -188,7 +195,7 @@ cdef inline long long math_round_div(long long num, long long factor, long long 
 
 cdef inline long long math_ceil_div(long long num, long long factor, long long offset=0):
     """Divides a number by the factor and rounds the result up
-    to the nearest integer, handling negative numbers accoring
+    to the nearest integer, handling negative numbers according
     to Python's division semantics `<'int'>`.
 
     Equivalent to:
@@ -196,6 +203,8 @@ cdef inline long long math_ceil_div(long long num, long long factor, long long o
     """
     if factor == 0:
         raise ZeroDivisionError("division by zero for 'utils.math_ceil_div()'.")
+    if factor == -1 and num == LLONG_MIN:
+        raise OverflowError("math_ceil_div: result does not fit in signed 64-bit")
 
     cdef long long q, r
     with cython.cdivision(True):
@@ -213,13 +222,15 @@ cdef inline long long math_ceil_div(long long num, long long factor, long long o
 cdef inline long long math_floor_div(long long num, long long factor, long long offset=0):
     """Divides a number by the factor and rounds the result
     down to the nearest integer, handling negative numbers
-    accoring to Python's division semantics `<'int'>`.
+    according to Python's division semantics `<'int'>`.
 
     Equivalent to:
     >>> math.floor(num / factor) + offset
     """
     if factor == 0:
         raise ZeroDivisionError("division by zero for 'utils.math_floor_div()'.")
+    if factor == -1 and num == LLONG_MIN:
+        raise OverflowError("math_floor_div: result does not fit in signed 64-bit")
 
     cdef long long q, r
     with cython.cdivision(True):
@@ -284,7 +295,7 @@ cdef inline int parse_isoyear(str data, Py_ssize_t pos, Py_ssize_t size) except 
     This function extracts and parses the year component from an ISO date string.
     It reads four characters starting at the specified position and converts them
     into an integer representing the year. The function ensures that the parsed
-    year is valid (i.e., between '0001' and '9999'').
+    year is valid (i.e., between '0001' and '9999').
 
     :param data `<'str'>`: The input string containing the ISO year to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO year.
@@ -297,21 +308,26 @@ cdef inline int parse_isoyear(str data, Py_ssize_t pos, Py_ssize_t size) except 
     if size - pos < 4:
         return -1  # exit: invalid
 
-    # Parse values
-    cdef char buffer[5]
-    cdef Py_UCS4 ch
-    cdef Py_ssize_t i
-    for i in range(4):
-        ch = str_read(data, pos + i)
-        if not is_ascii_digit(ch):
-            return -1  # exit: invalid
-        buffer[i] = ch
-    # . null-terminate
-    buffer[4] = 0  # null-term
+    # Parse value
+    cdef Py_UCS4 c0 = str_read(data, pos)
+    if not is_ascii_digit(c0):
+        return -1  # exit: invalid
+    cdef Py_UCS4 c1 = str_read(data, pos + 1)
+    if not is_ascii_digit(c1):
+        return -1  # exit: invalid
+    cdef Py_UCS4 c2 = str_read(data, pos + 2)
+    if not is_ascii_digit(c2):
+        return -1  # exit: invalid
+    cdef Py_UCS4 c3 = str_read(data, pos + 3)
+    if not is_ascii_digit(c3):
+        return -1  # exit: invalid
 
     # Convert to integer
-    cdef int year = strtoll(buffer, NULL, 10)
-    return year if year != 0 else -1
+    cdef int year = (ord(c0) - 48) * 1000 \
+                  + (ord(c1) - 48) *  100 \
+                  + (ord(c2) - 48) *   10 \
+                  + (ord(c3) - 48)
+    return year if year > 0 else -1
 
 cdef inline int parse_isomonth(str data, Py_ssize_t pos, Py_ssize_t size)  except -2:
     """Parse ISO format month component (MM) from a string,
@@ -333,25 +349,18 @@ cdef inline int parse_isomonth(str data, Py_ssize_t pos, Py_ssize_t size)  excep
     if size - pos < 2:
         return -1  # exit: invalid
 
-    # Parse values
-    cdef char buffer[3]
-    cdef Py_UCS4 ch1 = str_read(data, pos)
-    cdef Py_UCS4 ch2 = str_read(data, pos + 1)
-    if ch1 == "0":
-        if not "1" <= ch2 <= "9":
-            return -1  # exit: invalid
-    elif ch1 == "1":
-        if not "0" <= ch2 <= "2":
-            return -1  # exit: invalid
-    else:
+    # Parse value
+    cdef Py_UCS4 c0 = str_read(data, pos)
+    if not is_ascii_digit(c0):
         return -1  # exit: invalid
-    # . assign values
-    buffer[0], buffer[1] = ch1, ch2
-    buffer[2] = 0  # null-term
+    cdef Py_UCS4 c1 = str_read(data, pos + 1)
+    if not is_ascii_digit(c1):
+        return -1  # exit: invalid
 
     # Convert to integer
-    return strtoll(buffer, NULL, 10)
-
+    cdef int month = (ord(c0) - 48) * 10 + (ord(c1) - 48)
+    return month if 1 <= month <= 12 else -1
+    
 cdef inline int parse_isoday(str data, Py_ssize_t pos, Py_ssize_t size) except -2:
     """Parse ISO format day component (DD) from a string,
     returns `-1` for invalid ISO days `<'int'>`.
@@ -372,30 +381,20 @@ cdef inline int parse_isoday(str data, Py_ssize_t pos, Py_ssize_t size) except -
     if size - pos < 2:
         return -1  # exit: invalid
 
-    # Parse values
-    cdef char buffer[3]
-    cdef Py_UCS4 ch1 = str_read(data, pos)
-    cdef Py_UCS4 ch2 = str_read(data, pos + 1)
-    if ch1 in ("1", "2"):
-        if not is_ascii_digit(ch2):
-            return -1  # exit: invalid
-    elif ch1 == "0":
-        if not "1" <= ch2 <= "9":
-            return -1  # exit: invalid
-    elif ch1 == "3":
-        if not ch2 in ("0", "1"):
-            return -1  # exit: invalid
-    else:
+    # Parse value
+    cdef Py_UCS4 c0 = str_read(data, pos)
+    if not is_ascii_digit(c0):
         return -1  # exit: invalid
-    # . assign values
-    buffer[0], buffer[1] = ch1, ch2
-    buffer[2] = 0  # null-term
+    cdef Py_UCS4 c1 = str_read(data, pos + 1)
+    if not is_ascii_digit(c1):
+        return -1  # exit: invalid
 
     # Convert to integer
-    return strtoll(buffer, NULL, 10)
+    cdef int day = (ord(c0) - 48) * 10 + (ord(c1) - 48)
+    return day if 1 <= day <= 31 else -1
 
 cdef inline int parse_isoweek(str data, Py_ssize_t pos, Py_ssize_t size) except -2:
-    """Prase an ISO format week number component (WW) from a string,
+    """Parse an ISO format week number component (WW) from a string,
     returns `-1` for invalid ISO week number `<'int'>`.
 
     This function extracts and parses the week number from an ISO date string.
@@ -414,30 +413,20 @@ cdef inline int parse_isoweek(str data, Py_ssize_t pos, Py_ssize_t size) except 
     if size - pos < 2:
         return -1  # exit: invalid
 
-    # Parse values
-    cdef char buffer[3]
-    cdef Py_UCS4 ch1 = str_read(data, pos)
-    cdef Py_UCS4 ch2 = str_read(data, pos + 1)
-    if "1" <= ch1 <= "4":
-        if not is_ascii_digit(ch2):
-            return -1  # exit: invalid
-    elif ch1 == "0":
-        if not "1" <= ch2 <= "9":
-            return -1  # exit: invalid
-    elif ch1 == "5":
-        if not "0" <= ch2 <= "3":
-            return -1  # exit: invalid
-    else:
+    # Parse value
+    cdef Py_UCS4 c0 = str_read(data, pos)
+    if not is_ascii_digit(c0):
         return -1  # exit: invalid
-    # . assign values
-    buffer[0], buffer[1] = ch1, ch2
-    buffer[2] = 0  # null-term
+    cdef Py_UCS4 c1 = str_read(data, pos + 1)
+    if not is_ascii_digit(c1):
+        return -1  # exit: invalid
 
     # Convert to integer
-    return strtoll(buffer, NULL, 10)
+    cdef int week = (ord(c0) - 48) * 10 + (ord(c1) - 48)
+    return week if 1 <= week <= 53 else -1
 
 cdef inline int parse_isoweekday(str data, Py_ssize_t pos, Py_ssize_t size) except -2:
-    """Prase an ISO format weekday component (D) from a string,
+    """Parse an ISO format weekday component (D) from a string,
     returns `-1` for invalid ISO weekdays `<'int'>`.
 
     This function extracts and parses the weekday component from an ISO date string.
@@ -455,14 +444,16 @@ cdef inline int parse_isoweekday(str data, Py_ssize_t pos, Py_ssize_t size) exce
     if size - pos < 1:
         return -1  # exit: invalid
 
-    # Parse values
+    # Parse value
     cdef Py_UCS4 ch = str_read(data, pos)
     if not "1" <= ch <= "7":
         return -1  # exit: invalid
+
+    # Convert to integer
     return ord(ch) - 48
 
 cdef inline int parse_isoyearday(str data, Py_ssize_t pos, Py_ssize_t size) except -2:
-    """Prase an ISO format day of the year component (DDD) from a string,
+    """Parse an ISO format day of the year component (DDD) from a string,
     returns `-1` for invalid ISO day of the year `<'int'>`.
 
     This function extracts and parses the day of the year from an ISO date string.
@@ -481,21 +472,22 @@ cdef inline int parse_isoyearday(str data, Py_ssize_t pos, Py_ssize_t size) exce
     if size - pos < 3:
         return -1  # exit: invalid
 
-    # Parse values
-    cdef char buffer[4]
-    cdef Py_UCS4 ch
-    cdef Py_ssize_t i
-    for i in range(3):
-        ch = str_read(data, pos + i)
-        if not is_ascii_digit(ch):
-            return -1  # exit: invalid
-        buffer[i] = ch
-    # . null-terminate
-    buffer[3] = 0
+    # Parse value
+    cdef Py_UCS4 c0 = str_read(data, pos)
+    if not is_ascii_digit(c0):
+        return -1  # exit: invalid
+    cdef Py_UCS4 c1 = str_read(data, pos + 1)
+    if not is_ascii_digit(c1):
+        return -1  # exit: invalid
+    cdef Py_UCS4 c2 = str_read(data, pos + 2)
+    if not is_ascii_digit(c2):
+        return -1  # exit: invalid
 
     # Convert to integer
-    cdef int days = strtoll(buffer, NULL, 10)
-    return days if 1 <= days <= 366 else -1
+    cdef int days = (ord(c0) - 48) * 100 \
+                    + (ord(c1) - 48) * 10 \
+                    + (ord(c2) - 48)
+    return days if 1 <= days <= 366 else -1    
 
 cdef inline int parse_isohour(str data, Py_ssize_t pos, Py_ssize_t size) except -2:
     """Parse an ISO format hour (HH) component from a string,
@@ -517,24 +509,17 @@ cdef inline int parse_isohour(str data, Py_ssize_t pos, Py_ssize_t size) except 
     if size - pos < 2:
         return -1  # exit: invalid
 
-    # Parse values
-    cdef char buffer[3]
-    cdef Py_UCS4 ch1 = str_read(data, pos)
-    cdef Py_UCS4 ch2 = str_read(data, pos + 1)
-    if ch1 in ("0", "1"):
-        if not is_ascii_digit(ch2):
-            return -1  # exit: invalid
-    elif ch1 == "2":
-        if not "0" <= ch2 <= "3":
-            return -1  # exit: invalid
-    else:
+    # Parse value
+    cdef Py_UCS4 c0 = str_read(data, pos)
+    if not is_ascii_digit(c0):
         return -1  # exit: invalid
-    # . assign values
-    buffer[0], buffer[1] = ch1, ch2
-    buffer[2] = 0  # null-term
+    cdef Py_UCS4 c1 = str_read(data, pos + 1)
+    if not is_ascii_digit(c1):
+        return -1  # exit: invalid
 
     # Convert to integer
-    return strtoll(buffer, NULL, 10)
+    cdef int hour = (ord(c0) - 48) * 10 + (ord(c1) - 48)
+    return hour if 0 <= hour <= 23 else -1
 
 cdef inline int parse_isominute(str data, Py_ssize_t pos, Py_ssize_t size) except -2:
     """Parse an ISO format minute (MM) component from a string,
@@ -556,20 +541,17 @@ cdef inline int parse_isominute(str data, Py_ssize_t pos, Py_ssize_t size) excep
     if size - pos < 2:
         return -1  # exit: invalid
 
-    # Parse values
-    cdef char buffer[3]
-    cdef Py_UCS4 ch1 = str_read(data, pos)
-    cdef Py_UCS4 ch2 = str_read(data, pos + 1)
-    if not "0" <= ch1 <= "5":
+    # Parse value
+    cdef Py_UCS4 c0 = str_read(data, pos)
+    if not is_ascii_digit(c0):
         return -1  # exit: invalid
-    if not is_ascii_digit(ch2):
+    cdef Py_UCS4 c1 = str_read(data, pos + 1)
+    if not is_ascii_digit(c1):
         return -1  # exit: invalid
-    # . assign values
-    buffer[0], buffer[1] = ch1, ch2
-    buffer[2] = 0  # null-term
 
     # Convert to integer
-    return strtoll(buffer, NULL, 10)
+    cdef int minute = (ord(c0) - 48) * 10 + (ord(c1) - 48)
+    return minute if 0 <= minute <= 59 else -1
 
 cdef inline int parse_isosecond(str data, Py_ssize_t pos, Py_ssize_t size) except -2:
     """Parse an ISO format second (SS) component from a string,
@@ -606,29 +588,33 @@ cdef inline int parse_isofraction(str data, Py_ssize_t pos, Py_ssize_t size) exc
         size = str_len(data)
 
     # Parse value
-    cdef char buffer[7]
-    cdef Py_UCS4 ch
     cdef Py_ssize_t idx = 0
+    cdef int val = 0
+    cdef Py_UCS4 ch
     while pos < size and idx < 6:
         ch = str_read(data, pos)
         if not is_ascii_digit(ch):
             break
-        buffer[idx], pos, idx = ch, pos + 1, idx + 1
-    # . invalid
-    if idx == 0:
-        return -1  # exit:
-    # . compensate missing digits
-    if idx < 6:
-        ch = "0"
-        for i in range(idx, 6):
-            buffer[i] = ch
-    # . null-terminate
-    buffer[6] = 0
-    
-    # Convert to integer
-    return strtoll(buffer, NULL, 10)
+        val = val * 10 + (ord(ch) - 48)
+        pos += 1
+        idx += 1
 
-cdef inline long long slice_to_uint(str data, Py_ssize_t start, Py_ssize_t size) except -2:
+    # Pad with trailing zeros
+    if idx == 0:
+        return -1  # exit: invalid
+    if idx == 6:
+        return val
+    if idx == 5:
+        return val * 10
+    if idx == 4:
+        return val * 100
+    if idx == 3:
+        return val * 1000
+    if idx == 2:
+        return val * 10000
+    return val * 100000
+    
+cdef inline unsigned long long slice_to_uint(str data, Py_ssize_t start, Py_ssize_t size) except -2:
     """Slice a substring from a string and convert to an unsigned integer `<'int'>`.
 
     This function slices a portion of the input string 'data' starting
@@ -640,27 +626,26 @@ cdef inline long long slice_to_uint(str data, Py_ssize_t start, Py_ssize_t size)
     :param start `<'int'>`: The starting index for slicing the string.
     :param size `<'int'>`: The number of characters to slice from 'start'.
     """
-    # Allocate memory
-    cdef char* buffer = <char*> malloc(size + 1)
-    if buffer == NULL:
-        raise MemoryError("failed to allocate memory for string slice.")
-    
+    # Validate
+    if size <= 0:
+        raise ValueError("size must be >= 1, got %d" % size)
+    cdef Py_ssize_t length = str_len(data)
+    if start < 0 or start + size > length:
+        raise ValueError("slice_to_uint out of range (start=%d size=%d len=%d)" % (start, size, length))
+
+    # Parse value
+    cdef unsigned long long val = 0
     cdef Py_ssize_t i
     cdef Py_UCS4 ch
-    try:
-        # Parse value
-        for i in range(size):
-            ch = str_read(data, start + i)
-            if not is_ascii_digit(ch):
-                raise ValueError("invalid character '%s' as an integer." % str_chr(ch))
-            buffer[i] = ch
-        # . null-terminate
-        buffer[size] = 0
-        
-        # Convert to integer
-        return strtoll(buffer, NULL, 10)
-    finally:
-        free(buffer)
+    cdef unsigned long long digit
+
+    for i in range(size):
+        ch = str_read(data, start + i)
+        if not is_ascii_digit(ch):
+            raise ValueError("invalid character '%s' as an integer." % str_chr(ch))
+        digit = ord(ch) - 48
+        val = val * 10 + digit
+    return val
 
 # Time -------------------------------------------------------------------------------------------------
 cdef inline tm tm_gmtime(double ts) except * nogil:
@@ -678,7 +663,8 @@ cdef inline tm tm_gmtime(double ts) except * nogil:
     # See tmtotuple() in https://github.com/python/cpython/blob/master/Modules/timemodule.c
     t.tm_year += 1900
     t.tm_mon += 1
-    t.tm_sec = min(t.tm_sec, 59)  # clamp leap seconds
+    if t.tm_sec > 59:  # clamp leap seconds
+        t.tm_sec = 59
     t.tm_wday = (t.tm_wday + 6) % 7
     t.tm_yday += 1
     return t[0]
@@ -698,12 +684,13 @@ cdef inline tm tm_localtime(double ts) except * nogil:
     # See tmtotuple() in https://github.com/python/cpython/blob/master/Modules/timemodule.c
     t.tm_year += 1900
     t.tm_mon += 1
-    t.tm_sec = min(t.tm_sec, 59)  # clamp leap seconds
+    if t.tm_sec > 59:  # clamp leap seconds
+        t.tm_sec = 59
     t.tm_wday = (t.tm_wday + 6) % 7
     t.tm_yday += 1
     return t[0]
 
-cdef inline long long ts_gmtime(double ts):
+cdef inline long long ts_gmtime(double ts) except *:
     """Convert a timestamp to UTC seconds since the Unix Epoch `<'int'>`.
 
     This function converts a Unix timestamp 'ts' to integer in
@@ -718,7 +705,7 @@ cdef inline long long ts_gmtime(double ts):
         + _tm.tm_sec
     )
 
-cdef inline long long ts_localtime(double ts):
+cdef inline long long ts_localtime(double ts) except *:
     """Convert a timestamp to local seconds since the Unix Epoch `<'int'>`.
 
     This function converts a Unix timestamp 'ts' to integer in
@@ -742,7 +729,7 @@ cdef inline int _raise_from_errno() except -1 with gil:
 cdef inline str tm_strftime(tm t, str fmt):
     """Convert 'struct:tm' to string according to the given format `<'str'>`."""
     # Revert fields to 0-based
-    t.tm_year -= 1_900
+    t.tm_year -= 1900
     t.tm_mon -= 1
     t.tm_wday = (t.tm_wday + 1) % 7
     t.tm_yday -= 1
@@ -758,18 +745,20 @@ cdef inline tm tm_fr_us(long long val) except *:
     """Create 'struct:tm' from `EPOCH` microseconds (int) `<'struct:tm'>`."""
     # Compute ymd & hmsf
     val += EPOCH_MICROSECOND
-    _ymd = ymd_fr_ordinal(math_floor_div(val, US_DAY))
-    _hmsf = hmsf_fr_us(val)
+    cdef:
+        ymd _ymd = ymd_fr_ordinal(math_floor_div(val, US_DAY))
+        hmsf _hmsf = hmsf_fr_us(val)
 
     # New 'struct:tm'
-    cdef int yy, mm, dd
-    yy, mm, dd = _ymd.year, _ymd.month, _ymd.day
+    cdef int yy = _ymd.year
+    cdef int mm = _ymd.month
+    cdef int dd = _ymd.day
+    cdef int wday = ymd_weekday(yy, mm, dd)
+    cdef int yday = days_bf_month(yy, mm) + dd
     return tm(
         _hmsf.second, _hmsf.minute, _hmsf.hour,  # sec, min, hour
-        dd, mm, dd,  # day, mon, year
-        ymd_weekday(dd, mm, dd),  # wday
-        days_bf_month(yy, mm) + dd,  # yday
-        -1,  # isdst
+        dd, mm, yy,  # day, mon, year
+        wday, yday, -1,# wday, yday, isdst
     )
 
 cdef inline tm tm_fr_seconds(double val) except *:
@@ -803,49 +792,72 @@ cdef inline hmsf hmsf_fr_seconds(double val) except *:
 
 # Calendar ---------------------------------------------------------------------------------------------
 # . year
-cdef inline bint is_leap_year(int year) except -1:
+cdef inline bint is_leap_year(int year) except -1 nogil: 
     """Check if the passed in 'year' is a leap year `<'bool'>`."""
     if year < 1:
         return False
-    if year % 4 == 0:
-        if year % 400 == 0:
-            return True
-        if year % 100 != 0:
-            return True
-    return False
+    # Fast path: if not divisible by 4, it's not a leap year
+    if year & 3:       # bitwise AND, much cheaper than division
+        return False
+    # Divisible by 4; centuries are not leap years unless divisible by 400
+    if year % 100:
+        return True
+    return year % 400 == 0
 
-cdef inline bint is_long_year(int year) except -1:
+cdef inline bint is_long_year(int year) except -1 nogil:
     """Check if the passed in 'year' is a long year `<'bool'>`.
 
     #### Long year: maximum ISO week number equal 53.
     """
-    return ymd_isoweek(year, 12, 28) == 53
+    if year < 1 or year > 9999:
+        return False
 
-cdef inline int leap_bt_year(int year1, int year2) except -1:
+    # 0=Mon..6=Sun
+    cdef int jan1 = ymd_weekday(year, 1, 1)
+    if jan1 == 3:  # Thursday
+        return 1
+
+    cdef int dec31 = ymd_weekday(year, 12, 31)
+    return dec31 == 3  # Thursday
+
+cdef inline int leap_bt_year(int year1, int year2) except -1 nogil:
     """Compute the number of leap years between 'year1' & 'year2' `<'int'>`."""
-    cdef int y1, y2
-    if year1 < year2:
-        y1, y2 = max(year1, 1) - 1, max(year2, 1) - 1
-    else:
-        y1, y2 = max(year2, 1) - 1, max(year1, 1) - 1
-    return (
-        (y2 // 4 - y1 // 4) 
-        - (y2 // 100 - y1 // 100) 
-        + (y2 // 400 - y1 // 400)
-    )
+    # Normalize order
+    if year1 > year2:
+        year1, year2 = year2, year1
 
-cdef inline int days_in_year(int year) except -1:
+    # Fast exits
+    if year2 <= 0 or year1 == year2:
+        return 0
+
+    # Count difference; negative/zero years are treated as 0 by _leaps_upto
+    return leap_years(year2, False) - leap_years(year1, False)
+
+cdef inline int leap_years(int y, bint inclusive) except -1 nogil:
+    """Count leap years in the range [1 .. y] `<'int'>`.
+    
+    If inclusive == False, exclusive of y itself.
+    I.e., _leaps_upto(1) == 0; _leaps_upto(5) counts only year 4.
+    """
+    if y <= 1:
+        return 0
+    if not inclusive:
+        y -= 1
+    return y // 4 - y // 100 + y // 400
+
+cdef inline int days_in_year(int year) except -1 nogil:
     """Compute the maximum days (365, 366) in the 'year' `<'int'>`."""
     return 366 if is_leap_year(year) else 365
 
-cdef inline int days_bf_year(int year) except -1:
-    """Compute the number of days between the 1st day of 1AD and the 'year' `<'int'>`."""
+cdef inline int days_bf_year(int year) except -1 nogil:
+    """Compute days from 0001-01-01 up to the start of 'year' `<'int'>`."""
     if year <= 1:
         return 0
-    cdef int y_1 = year - 1
-    return y_1 * 365 + y_1 // 4 - y_1 // 100 + y_1 // 400
+    cdef int y = year - 1
+    # Every year contributes 365 days, plus 1 day per leap year
+    return y * 365 + (y // 4) - (y // 100) + (y // 400)
 
-cdef inline int days_of_year(int year, int month, int day) except -1:
+cdef inline int days_of_year(int year, int month, int day) except -1 nogil:
     """Compute the number of days between the 1st day of
     the 'year' and the current Y/M/D `<'int'>`.
     """
@@ -856,7 +868,7 @@ cdef inline int days_of_year(int year, int month, int day) except -1:
     return days_bf_month(year, month) + day
 
 # . quarter
-cdef inline int quarter_of_month(int month) except -1:
+cdef inline int quarter_of_month(int month) except -1 nogil:
     """Compute the quarter (1-4) of the passed in 'month' `<'int'>`."""
     # Jan - Mar
     if month <= 3:
@@ -864,10 +876,10 @@ cdef inline int quarter_of_month(int month) except -1:
     # Oct - Dec
     if month >= 10:
         return 4
-    # Rest
-    return (month - 1) // 3 + 1
+    # Apr - Sep
+    return (month + 2) // 3
 
-cdef inline int days_in_quarter(int year, int month) except -1:
+cdef inline int days_in_quarter(int year, int month) except -1 nogil:
     """Compute the maximum days in the quarter `<'int'>`."""
     cdef:
         int quarter = quarter_of_month(month)
@@ -876,7 +888,7 @@ cdef inline int days_in_quarter(int year, int month) except -1:
         days += 1
     return days
 
-cdef inline int days_bf_quarter(int year, int month) except -1:
+cdef inline int days_bf_quarter(int year, int month) except -1 nogil:
     """Compute the number of days between the 1st day of the
     'year' and the 1st day of the quarter `<'int'>`.
     """
@@ -887,25 +899,21 @@ cdef inline int days_bf_quarter(int year, int month) except -1:
         days += 1
     return days
 
-cdef inline int days_of_quarter(int year, int month, int day) except -1:
+cdef inline int days_of_quarter(int year, int month, int day) except -1 nogil:
     """Compute the number of days between the 1st day 
     of the quarter and the current Y/M/D `<'int'>`.
     """
     return days_of_year(year, month, day) - days_bf_quarter(year, month)
 
 # . month
-cdef inline int days_in_month(int year, int month) except -1:
+cdef inline int days_in_month(int year, int month) except -1 nogil:
     """Compute the maximum days in the month `<'int'>`."""
-    # January & December
     if not 1 < month < 12:
         return 31
-    # Rest
     cdef int days = DAYS_IN_MONTH[month]
-    if month == 2 and is_leap_year(year):
-        days += 1
-    return days
+    return days + 1 if month == 2 and is_leap_year(year) else days
 
-cdef inline int days_bf_month(int year, int month) except -1:
+cdef inline int days_bf_month(int year, int month) except -1 nogil:
     """Compute the number of days between the 1st day of the
     'year' and the 1st day of the 'month' `<'int'>`.
     """
@@ -922,68 +930,75 @@ cdef inline int days_bf_month(int year, int month) except -1:
     return days
 
 # . week
-cdef inline int ymd_weekday(int year, int month, int day) except -1:
+cdef inline int ymd_weekday(int year, int month, int day) except -1 nogil:
     """Compute the weekday (0=Mon...6=Sun) `<'int'>`."""
     return (ymd_to_ordinal(year, month, day) + 6) % 7
 
 # . iso
-cdef inline iso ymd_isocalendar(int year, int month, int day) except *:
+cdef inline iso ymd_isocalendar(int year, int month, int day) noexcept nogil:
     """Compute the ISO calendar `<'struct:iso'>`."""
-    year = min(max(year, 1), 9_999)
+    cdef iso out
+    # Fast saturation for invalid lower bound (avoid probing year-1)
+    if year < 1:
+        out.year, out.week, out.weekday = 1, 1, 1
+        return out
+
+    # Core values (helpers are inline/nogil)
     cdef:
         int ordinal = ymd_to_ordinal(year, month, day)
-        int mon_1st = _iso_1st_monday(year)
-        int days = ordinal - mon_1st
-        int weeks = days // 7
+        int ord_1st = iso_week1_monday_ordinal(year)
+        int days = ordinal - ord_1st
+        int weeks, weekday, next_1st
 
+    # Floor division for potential negative 'days' (divisor > 0)
+    if days >= 0:
+        weeks = days // 7
+    else:
+        weeks = - ((-days + 6) // 7)
+
+    # Resolve ISO year/week without ever probing out-of-range years
     if weeks < 0:
-        year -= 1
-        weeks = (ordinal - _iso_1st_monday(year)) // 7 + 1
-    elif weeks >= 52 and ordinal >= _iso_1st_monday(year + 1):
-        year += 1
-        weeks = 1
+        if year > 1:
+            year -= 1
+            weeks = (ordinal - iso_week1_monday_ordinal(year)) // 7 + 1
+        else:
+            # Can't go before year 1; pin to ISO week 1
+            weeks = 1
+    elif weeks >= 52:
+        if year < 9999:
+            next_1st = iso_week1_monday_ordinal(year + 1)
+            if ordinal >= next_1st:
+                year += 1
+                weeks = 1
+            else:
+                weeks += 1
+        else:
+            # No look-ahead beyond 9999
+            weeks += 1
     else:
         weeks += 1
-    return iso(year, weeks, days % 7 + 1)
 
-cdef inline int ymd_isoyear(int year, int month, int day) except -1:
+    # ISO weekday: 1..7 (Mon..Sun) — compute from 'ordinal' to avoid negative modulo
+    weekday = ((ordinal + 6) % 7) + 1
+    out.year, out.week, out.weekday = year, weeks, weekday
+    return out
+
+cdef inline int ymd_isoyear(int year, int month, int day) except -1 nogil:
     """Compute the ISO calendar year (0-10000) `<'int'>`."""
-    year = min(max(year, 1), 9_999)
-    cdef:
-        int ordinal = ymd_to_ordinal(year, month, day)
-        int mon_1st = _iso_1st_monday(year)
-        int days = ordinal - mon_1st
-        int weeks = days // 7
+    cdef iso _iso = ymd_isocalendar(year, month, day)
+    return _iso.year
 
-    if weeks < 0:
-        return year - 1
-    elif weeks >= 52 and ordinal >= _iso_1st_monday(year + 1):
-        return year + 1
-    else:
-        return year
-
-cdef inline int ymd_isoweek(int year, int month, int day) except -1:
+cdef inline int ymd_isoweek(int year, int month, int day) except -1 nogil:
     """Compute the ISO calendar week number (1-53) `<'int'>`."""
-    year = min(max(year, 1), 9_999)
-    cdef:
-        int ordinal = ymd_to_ordinal(year, month, day)
-        int mon_1st = _iso_1st_monday(year)
-        int days = ordinal - mon_1st
-        int weeks = days // 7
+    cdef iso _iso = ymd_isocalendar(year, month, day)
+    return _iso.week
 
-    if weeks < 0:
-        return (ordinal - _iso_1st_monday(year - 1)) // 7 + 1
-    elif weeks >= 52 and ordinal >= _iso_1st_monday(year + 1):
-        return 1
-    else:
-        return weeks + 1
-
-cdef inline int ymd_isoweekday(int year, int month, int day) except -1:
+cdef inline int ymd_isoweekday(int year, int month, int day) except -1 nogil:
     """Compute the ISO weekday (1=Mon...7=Sun) `<'int'>`."""
     return ymd_weekday(year, month, day) + 1
 
 # . Y/M/D
-cdef inline int ymd_to_ordinal(int year, int month, int day) except -1:
+cdef inline int ymd_to_ordinal(int year, int month, int day) except -1 nogil:
     """Convert 'Y/M/D' to Gregorian ordinal days `<'int'>`."""
     if day > 28:
         day = min(day, days_in_month(year, month))
@@ -991,119 +1006,149 @@ cdef inline int ymd_to_ordinal(int year, int month, int day) except -1:
         day = 1
     return days_bf_year(year) + days_bf_month(year, month) + day
 
-cdef inline ymd ymd_fr_ordinal(int val) except *:
-    """Create 'struct:ymd' from Gregorian ordinal days `<'struct:ymd'>`."""
-    # n is a 1-based index, starting at 1-Jan-1.  The pattern of leap years
-    # repeats exactly every 400 years.  The basic strategy is to find the
-    # closest 400-year boundary at or before n, then work with the offset
-    # from that boundary to n.  Life is much clearer if we subtract 1 from
-    # n first -- then the values of n at 400-year boundaries are exactly
-    # those divisible by _DI400Y:
-    cdef:
-        int n, n400, n100, n4, n1
-        int yy, mm, days_bf
+cdef inline ymd ymd_fr_ordinal(int val) noexcept nogil:
+    """Create 'struct:ymd' from Gregorian ordinal days `<'struct:ymd'>`.
 
-    n = min(max(val, 1), ORDINAL_MAX) - 1
-    n400 = n // 146_097
-    n -= n400 * 146_097
-
-    # Now n is the (non-negative) offset, in days, from January 1 of year, to
-    # the desired date.  Now compute how many 100-year cycles precede n.
-    # Note that it's possible for n100 to equal 4!  In that case 4 full
-    # 100-year cycles precede the desired day, which implies the desired
-    # day is December 31 at the end of a 400-year cycle.
-    n100 = n // 36_524
-    n -= n100 * 36_524
-
-    # Now compute how many 4-year cycles precede it.
-    n4 = n // 1_461
-    n -= n4 * 1_461
-
-    # And now how many single years.  Again n1 can be 4, and again meaning
-    # that the desired day is December 31 at the end of the 4-year cycle.
-    n1 = n // 365
-    n -= n1 * 365
-
-    # We now know the year and the offset from January 1st.  Leap years are
-    # tricky, because they can be century years.  The basic rule is that a
-    # leap year is a year divisible by 4, unless it's a century year --
-    # unless it's divisible by 400.  So the first thing to determine is
-    # whether year is divisible by 4.  If not, then we're done -- the answer
-    # is December 31 at the end of the year.
-    yy = n400 * 400 + n100 * 100 + n4 * 4 + n1
-    if n1 == 4 or n100 == 4:
-        return ymd(yy, 12, 31)  # exit: Last day of the year
-    yy += 1
-
-    # Now the year is correct, and n is the offset from January 1.  We find
-    # the month via an estimate that's either exact or one too large.
-    mm = (n + 50) >> 5
-    days_bf = days_bf_month(yy, mm)
-    if days_bf > n:
-        mm -= 1
-        days_bf = days_bf_month(yy, mm)
-    return ymd(yy, mm, n - days_bf + 1)
-
-cdef inline ymd ymd_fr_isocalendar(int year, int week, int weekday) except *:
-    """Create 'struct:ymd' from ISO calendar values `<'struct:ymd'>`."""
-    # Clip year
-    year = min(max(year, 1), 9_999)
-
-    # 53th week adjustment
-    cdef int wkd_1st
-    if week == 53:
-        # ISO years have 53 weeks in them on years starting with a
-        # Thursday or leap years starting on a Wednesday. So for
-        # invalid weeks, we shift to the 1st week of the next year.
-        wkd_1st = ymd_to_ordinal(year, 1, 1) % 7
-        if wkd_1st != 4 and not (wkd_1st == 3 and is_leap_year(year)):
-            week = 1
-            year += 1
-    # Clip week
-    else:
-        week = min(max(week, 1), 52)
-
-    # Clip weekday
-    weekday = min(max(weekday, 1), 7)
-
-    # Compute ordinal
-    cdef int mon_1st = _iso_1st_monday(year)
-    cdef int offset = (week - 1) * 7 + weekday - 1
-    return ymd_fr_ordinal(mon_1st + offset)
-
-cdef inline ymd ymd_fr_days_of_year(int year, int days) except *:
-    """Create 'struct:ymd' from the year and days of the year `<'struct:ymd'>`."""
-    # Clip year
-    year = min(max(year, 1), 9_999)
-
-    # January
-    if days <= 31:
-        return ymd(year, 1, max(days, 1))
-
-    # February
-    cdef int leap = is_leap_year(year)
-    if days <= 59 + leap:
-        return ymd(year, 2, days - 31)
-
-    # Find month & day
-    cdef int mm, dd, days_bf
-    days -= leap
-    for mm in range(3, 13):
-        days_bf = DAYS_BR_MONTH[mm]
-        if days <= days_bf:
-            dd = days - DAYS_BR_MONTH[mm - 1]
-            return ymd(year, mm, dd)
-    return ymd(year, 12, 31)  # last day of the year
-
-cdef inline int _iso_1st_monday(int year) except -1:
-    """(internla) Compute the Gregorian ordinal days for the 
-    1st Monday of the passed in ISO 'year' `<'int'>`.
+    Faster, branch-light version using 400y cycles and 153-day month blocks.
+    Ordinal 'val' is clamped to [1..ORDINAL_MAX]; 1 -> 0001-01-01.
     """
-    cdef:
-        int day_1st = ymd_to_ordinal(year, 1, 1)  # 1st day of the year
-        int wkd_1st = (day_1st + 6) % 7  # 1st weekday of the year
-        int mon_1st = day_1st - wkd_1st  # 1st Monday of the year
-    return mon_1st + 7 if wkd_1st > 3 else mon_1st
+    cdef ymd out
+    # Clamp year
+    if val <= 1:
+        out.year, out.month, out.day = 1, 1, 1
+        return out
+    if val >= ORDINAL_MAX:
+        out.year, out.month, out.day = 9999, 12, 31
+        return out
+
+    # Hinnant-style decomposition -------------------------------------------------
+    cdef int n = val - 1
+
+    # Add 306 so that March is month 1 internally (makes month calc trivial)
+    cdef int z = n + 306
+
+    # 400-year era and day-of-era
+    cdef int era = z // 146097                    # [0, ..]
+    cdef int doe = z - era * 146097               # [0, 146096]
+
+    # years-of-era (0..399)
+    cdef int yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365
+    cdef int y    = yoe + era * 400               # provisional year base
+
+    # day-of-year (0..365)
+    cdef int doy = doe - (365 * yoe + yoe // 4 - yoe // 100 + yoe // 400)
+
+    # month partition in 153-day buckets (0..11), then convert to 1..12
+    cdef int mp = (5 * doy + 2) // 153
+    cdef int dd = doy - (153 * mp + 2) // 5 + 1
+    cdef int mm = mp + 3 if mp < 10 else mp - 9
+
+    # final year adjustment for Jan/Feb
+    cdef int yy = y + (mm <= 2)
+
+    # Output
+    out.year, out.month, out.day = yy, mm, dd
+    return out
+
+cdef inline ymd ymd_fr_isocalendar(int year, int week, int weekday) noexcept nogil:
+    """Create 'struct:ymd' from ISO calendar values (ISO year, ISO week, ISO weekday) `<'struct:ymd'>`."""
+    # Saturate ISO year
+    if year < 1:
+        return ymd_fr_ordinal(1)
+    elif year > 9999:
+        return ymd_fr_ordinal(ORDINAL_MAX)
+
+    # Clamp weekday to [1..7]
+    if weekday < 1:
+        weekday = 1
+    elif weekday > 7:
+        weekday = 7
+
+    # Clamp week to [1..53]
+    if week < 1:
+        week = 1
+    elif week > 53:
+        week = 53
+
+    # Compute Jan 1 ordinal and long-year flag
+    cdef int day1 = ymd_to_ordinal(year, 1, 1)   # Gregorian ordinal of Jan 1
+    cdef int wkd_mon0 = (day1 + 6) % 7           # 0=Mon..6=Sun
+    cdef int leap = 0
+    if year % 4 == 0:
+        if year % 400 == 0:
+            leap = 1
+        elif year % 100 != 0:
+            leap = 1
+    cdef bint long_year = (wkd_mon0 == 3) or (leap and wkd_mon0 == 2)
+
+    # Normalize week, safely handling week 53
+    if week == 53 and not long_year:
+        # Rolls into next ISO year; if out of range, saturate to max date.
+        if year == 9999:
+            return ymd_fr_ordinal(ORDINAL_MAX)
+        year += 1
+        day1 = ymd_to_ordinal(year, 1, 1)
+        week = 1
+        # recompute wkd_mon0/leap/long_year not needed further
+    elif not long_year and week > 52:
+        week = 52
+
+    # ISO week 1 Monday: Monday on/before Jan 4
+    cdef int d = day1 + 3               # ordinal(Jan 4)
+    cdef int mon1 = d - ((d + 6) % 7)   # Monday on/before d
+
+    # Target ordinal
+    cdef int ordv = mon1 + (week - 1) * 7 + (weekday - 1)
+    return ymd_fr_ordinal(ordv)
+
+cdef inline ymd ymd_fr_days_of_year(int year, int days) noexcept nogil:
+    """Create 'struct:ymd' from the year and days of the year `<'struct:ymd'>`."""
+    cdef ymd out
+    # Clamp year
+    if year < 1:
+        out.year, out.month, out.day = 1, 1, 1
+        return out
+    elif year > 9999:
+        out.year, out.month, out.day = 9999, 12, 31
+        return out
+
+    # Clamp days into valid range
+    cdef int leap = is_leap_year(year)
+    cdef int maxd = 365 + leap
+    if days < 1:
+        days = 1
+    elif days > maxd:
+        days = maxd
+
+    # Jan / Feb fast paths (no branches beyond these)
+    if days <= 31:
+        out.year, out.month, out.day = year, 1, days
+        return out
+    if days <= 59 + leap:
+        out.year, out.month, out.day = year, 2, days - 31
+        return out
+
+    # March..December: compare against non-leap cumulative table
+    # Binary search on DAYS_BR_MONTH[3..12]
+    cdef int target = days - leap
+    cdef int lo = 3
+    cdef int hi = 12
+    cdef int mid
+    while lo < hi:
+        mid = (lo + hi) >> 1
+        if target <= DAYS_BR_MONTH[mid]:
+            hi = mid
+        else:
+            lo = mid + 1
+    out.year, out.month = year, lo
+    out.day = target - DAYS_BR_MONTH[lo - 1]
+    return out
+
+cdef inline int iso_week1_monday_ordinal(int year) except -1 nogil:
+    """Gregorian ordinal for the Monday starting ISO week 1 of year `<'int'>`."""
+    cdef int d = ymd_to_ordinal(year, 1, 1) + 3  # == ordinal of Jan 4
+    # Monday on or before d:  d - ((d + 6) % 7)   (Mon=0 with ordinal 1=Mon)
+    return d - ((d + 6) % 7)
 
 # datetime.date ----------------------------------------------------------------------------------------
 # . generate
@@ -1113,12 +1158,20 @@ cdef inline datetime.date date_new(int year=1, int month=1, int day=1):
     Equivalent to:
     >>> datetime.date(year, month, day)
     """
-    year = min(max(year, 1), 9_999)
+    # Clamp year
+    if year < 1:
+        return datetime.date_new(1, 1, 1)
+    if year > 9999:
+        return datetime.date_new(9999, 12, 31)
+
+    # Clamp month & day
     month = min(max(month, 1), 12)
     if day > 28:
         day = min(day, days_in_month(year, month))
     elif day < 1:
         day = 1
+
+    # New date        
     return datetime.date_new(year, month, day)
 
 cdef inline datetime.date date_now(object tz=None):
@@ -1131,8 +1184,8 @@ cdef inline datetime.date date_now(object tz=None):
     if tz is not None:
         return date_fr_dt(datetime.datetime_from_timestamp(unix_time(), tz))
 
-    # With timezone
-    _tm = tm_localtime(unix_time())
+    # Without timezone
+    cdef tm _tm = tm_localtime(unix_time())
     return datetime.date_new(_tm.tm_year, _tm.tm_mon, _tm.tm_mday)
 
 # . type check
@@ -1158,8 +1211,10 @@ cdef inline tm date_to_tm(datetime.date date) except *:
     
     #### All time fields are set to 0.
     """
-    cdef int yy, mm, dd
-    yy, mm, dd = date.year, date.month, date.day
+    cdef:
+        int yy = date.year
+        int mm = date.month
+        int dd = date.day
     return tm(
         0, 0, 0, # sec, min, hour
         dd, mm, yy,  # day, mon, year
@@ -1199,7 +1254,7 @@ cdef inline double date_to_ts(datetime.date date):
     cdef:
         long long ordinal = date_to_ordinal(date)
         long long ss = (ordinal - EPOCH_DAY) * SS_DAY
-    return ss * 2 - ts_localtime(ss)
+    return <double> ss * 2 - ts_localtime(ss)
 
 # . conversion: from
 cdef inline datetime.date date_fr_us(long long val):
@@ -1213,7 +1268,7 @@ cdef inline datetime.date date_fr_seconds(double val):
 
 cdef inline datetime.date date_fr_ordinal(int val):
     """Create date from Gregorian ordinal days `<'datetime.date'>`."""
-    _ymd = ymd_fr_ordinal(val)
+    cdef ymd _ymd = ymd_fr_ordinal(val)
     return datetime.date_new(_ymd.year, _ymd.month, _ymd.day)
 
 cdef inline datetime.date date_fr_ts(double val):
@@ -1240,21 +1295,28 @@ cdef inline datetime.datetime dt_new(
     Equivalent to:
     >>> datetime.datetime(year, month, day, hour, minute, second, microsecond, tz, fold)
     """
-    year = min(max(year, 1), 9_999)
+    fold = 1 if fold == 1 else 0
+    # Clamp year
+    if year < 1:
+        return datetime.datetime_new(1, 1, 1, 0, 0, 0, 0, tz, fold)
+    if year > 9_999:
+        return datetime.datetime_new(9_999, 12, 31, 23, 59, 59, 999999, tz, fold)
+    
+    # Clamp month & day
     month = min(max(month, 1), 12)
     if day > 28:
         day = min(day, days_in_month(year, month))
     elif day < 1:
         day = 1
+
+    # Clamp h/m/s/f
     hour = min(max(hour, 0), 23)
     minute = min(max(minute, 0), 59)
     second = min(max(second, 0), 59)
     microsecond = min(max(microsecond, 0), 999_999)
-    return datetime.datetime_new(
-        year, month, day, 
-        hour, minute, second, microsecond,
-        tz, 1 if fold == 1 else 0,
-    )
+
+    # New datetime
+    return datetime.datetime_new(year, month, day, hour, minute, second, microsecond, tz, fold)
 
 cdef inline datetime.datetime dt_now(object tz=None):
     """Get the current datetime `<'datetime.datetime'>`.
@@ -1267,9 +1329,10 @@ cdef inline datetime.datetime dt_now(object tz=None):
         return datetime.datetime_from_timestamp(unix_time(), tz)
 
     # Without timezone
-    cdef double ts = unix_time()
-    cdef long long us = int(ts * 1_000_000)
-    _tm = tm_localtime(ts)
+    cdef: 
+        double ts = unix_time()
+        long long us = int(ts * 1_000_000)
+        tm _tm = tm_localtime(ts)
     return datetime.datetime_new(
         _tm.tm_year, _tm.tm_mon, _tm.tm_mday, 
         _tm.tm_hour, _tm.tm_min, _tm.tm_sec, 
@@ -1785,8 +1848,9 @@ cdef inline datetime.datetime dt_fr_us(long long val, object tz=None):
     """Create datetime from `EPOCH` microseconds (int) `<'datetime.datetime'>`."""
     # Compute ymd & hmsf
     val += EPOCH_MICROSECOND
-    _ymd = ymd_fr_ordinal(math_floor_div(val, US_DAY))
-    _hmsf = hmsf_fr_us(val)
+    cdef: 
+        ymd _ymd = ymd_fr_ordinal(math_floor_div(val, US_DAY))
+        hmsf _hmsf = hmsf_fr_us(val)
 
     # New datetime
     return datetime.datetime_new(
@@ -1805,7 +1869,7 @@ cdef inline datetime.datetime dt_fr_ordinal(int val, object tz=None):
     Equivalent to:
     >>> datetime.datetime.fromordinal(val).replace(tzinfo=tz)
     """
-    _ymd = ymd_fr_ordinal(val)
+    cdef ymd _ymd = ymd_fr_ordinal(val)
     return datetime.datetime_new(_ymd.year, _ymd.month, _ymd.day, 0, 0, 0, 0, tz, 0)
 
 cdef inline datetime.datetime dt_fr_ts(double val, object tz=None):
@@ -1823,6 +1887,7 @@ cdef inline datetime.datetime dt_combine(datetime.date date=None, datetime.time 
     - If 'time' is None, all time fields are set to 0.
     """
     # Date
+    cdef tm _tm
     cdef int yy, mm, dd
     if date is None:
         _tm = tm_localtime(unix_time())
@@ -1875,8 +1940,11 @@ cdef inline datetime.datetime dt_add(datetime.datetime dt, int days=0, int secon
     Equivalent to:
     >>> dt + datetime.timedelta(days, seconds, microseconds)
     """
+    cdef: 
+        long long dd, hh, mi, ss, us
+        ymd _ymd
+        hmsf _hmsf
     # Fast-path
-    cdef long long dd, hh, mi, ss, us
     if seconds == 0 and microseconds == 0:
         # No adjustment
         if days == 0:
@@ -1986,10 +2054,13 @@ cdef inline datetime.time time_new(
     Equivalent to:
     >>> datetime.time(hour, minute, second, microsecond, tz, fold)
     """
+    # Clamp h/m/s/f
     hour = min(max(hour, 0), 23)
     minute = min(max(minute, 0), 59)
     second = min(max(second, 0), 59)
     microsecond = min(max(microsecond, 0), 999_999)
+
+    # New time
     return datetime.time_new(
         hour, minute, second, microsecond,
         tz, 1 if fold == 1 else 0,
@@ -2006,9 +2077,10 @@ cdef inline datetime.time time_now(object tz=None):
         return time_fr_dt(datetime.datetime_from_timestamp(unix_time(), tz))
 
     # Without timezone
-    cdef double ts = unix_time()
-    cdef long long us = int(ts * 1_000_000)
-    _tm = tm_localtime(ts)
+    cdef: 
+        double ts = unix_time()
+        long long us = int(ts * 1_000_000)
+        tm _tm = tm_localtime(ts)
     return datetime.time_new(
         _tm.tm_hour, _tm.tm_min, _tm.tm_sec, us % 1_000_000, None, 0
     )
@@ -2115,7 +2187,7 @@ cdef inline double time_to_seconds(datetime.time time, bint utc=False):
 
 cdef inline datetime.time time_fr_us(long long val, object tz=None):
     """Create time from microseconds (int) `<'datetime.time'>`."""
-    _hmsf = hmsf_fr_us(val)
+    cdef hmsf _hmsf = hmsf_fr_us(val)
     return datetime.time_new(
         _hmsf.hour, _hmsf.minute, _hmsf.second, _hmsf.microsecond, tz, 0
     )
@@ -2171,73 +2243,65 @@ cdef inline str td_to_isoformat(datetime.timedelta td):
     cdef:
         long long days = td.day
         long long hours, minutes
-        long long seconds = days * SS_DAY + td.second
-        long long us = td.microsecond
-    
-    # Positive timedelta
-    if seconds >= 0:
-        hours = math_floor_div(seconds, SS_HOUR)
-        seconds -= hours * SS_HOUR
-        minutes = math_floor_div(seconds, SS_MINUTE)
-        seconds -= minutes * SS_MINUTE
+        long long seconds = days * SS_DAY + td.second  # total seconds (may be negative)
+        long long us = td.microsecond             # microseconds (0..999999)
+        bint neg
+
+    # Determine sign and normalize to absolute value without multiplying by 1e6.
+    if seconds < 0:
+        neg = True
         if us == 0:
-            return "%02d:%02d:%02d" % (hours, minutes, seconds)
-        return "%02d:%02d:%02d.%06d" % (hours, minutes, seconds, us)
+            # Pure second-resolution negative
+            seconds = -seconds
+        else:
+            # Borrow 1 second: |-X sec, +us| =>
+            # (|X|-1) seconds and (1_000_000 - us) microseconds
+            seconds = -seconds - 1
+            us = 1_000_000 - us
+    else:
+        neg = False
 
-    # Negative w/o microseconds
+    # Split absolute seconds into H:M:S
+    hours = math_floor_div(seconds, SS_HOUR)
+    seconds -= hours * SS_HOUR
+    minutes = math_floor_div(seconds, SS_MINUTE)
+    seconds -= minutes * SS_MINUTE
+
+    # Emit
     if us == 0:
-        seconds = -seconds
-        if seconds >= SS_HOUR:
-            hours = math_floor_div(seconds, SS_HOUR)
-            seconds -= hours * SS_HOUR
-            minutes = math_floor_div(seconds, SS_MINUTE)
-            seconds -= minutes * SS_MINUTE
-            return "-%02d:%02d:%02d" % (hours, minutes, seconds)
-        if seconds >= SS_MINUTE:
-            minutes = math_floor_div(seconds, SS_MINUTE)
-            seconds -= minutes * SS_MINUTE
-            return "-00:%02d:%02d" % (minutes, seconds)
-        return "-00:00:%02d" % seconds
-
-    # Negative w/t microseconds
-    us = -(seconds * US_SECOND + us)
-    if us >= US_HOUR:
-        hours = math_floor_div(us, US_HOUR)
-        us -= hours * US_HOUR
-        minutes = math_floor_div(us, US_MINUTE)
-        us -= minutes * US_MINUTE
-        seconds = math_floor_div(us, US_SECOND)
-        us -= seconds * US_SECOND
+        if not neg:
+            return "%02d:%02d:%02d" % (hours, minutes, seconds)
+        return "-%02d:%02d:%02d" % (hours, minutes, seconds)
+    elif not neg:
+        return "%02d:%02d:%02d.%06d" % (hours, minutes, seconds, us)
+    else:
         return "-%02d:%02d:%02d.%06d" % (hours, minutes, seconds, us)
-    if us >= US_MINUTE:
-        minutes = math_floor_div(us, US_MINUTE)
-        us -= minutes * US_MINUTE
-        seconds = math_floor_div(us, US_SECOND)
-        us -= seconds * US_SECOND
-        return "-00:%02d:%02d.%06d" % (minutes, seconds, us)
-    if us >= US_SECOND:
-        seconds = math_floor_div(us, US_SECOND)
-        us -= seconds * US_SECOND
-        return "-00:00:%02d.%06d" % (seconds, us)
-    return "-00:00:00.%06d" % us
 
 cdef inline str td_to_utcformat(datetime.timedelta td):
-    """Convert timedelta to string in UTC format ('+/-HH:MM') `<'str'>`."""
+    """Convert timedelta to string in UTC format ('+/-HHMM') `<'str'>`."""
     cdef:
         long long days = td.day
         long long hours, minutes
         long long seconds = days * SS_DAY + td.second
-    # Positive timedelta
-    if seconds >= 0:
-        hours = math_floor_div(seconds, SS_HOUR)
-        minutes = math_floor_div(seconds - hours * SS_HOUR, SS_MINUTE)
-        return "+%02d%02d" % (hours, minutes)
-    # Negative timedelta
-    else:
+        bint neg
+
+    # Determine sign
+    if seconds < 0:
+        neg = True
         seconds = -seconds
-        hours = math_floor_div(seconds, SS_HOUR)
-        minutes = math_floor_div(seconds - hours * SS_HOUR, SS_MINUTE)
+    else:
+        neg = False
+
+    # Split absolute seconds into H:M
+    hours = math_floor_div(seconds, SS_HOUR)
+    seconds -= hours * SS_HOUR
+    minutes = math_floor_div(seconds, SS_MINUTE)
+
+    # Emit
+    if neg:
         return "-%02d%02d" % (hours, minutes)
+    else:
+        return "+%02d%02d" % (hours, minutes)
 
 cdef inline long long td_to_us(datetime.timedelta td):
     """Convert timedelta to microseconds `<'int'>`."""
@@ -2298,6 +2362,7 @@ cdef inline int tz_local_seconds(datetime.datetime dt=None) except -200_000:
     cdef:
         double ts
         long long ts1, ts2
+        tm loc, gmt
 
     if dt is not None:
         if dt.tzinfo is None:
@@ -2305,9 +2370,9 @@ cdef inline int tz_local_seconds(datetime.datetime dt=None) except -200_000:
             # . detect gap
             ts2 = dt_to_posix(dt_replace_fold(dt, 1-dt.fold))
             if ts2 != ts1 and (ts2 > ts1) == dt.fold:
-                ts = ts2
+                ts = <double> ts2
             else:
-                ts = ts1
+                ts = <double> ts1
         else:
             ts = dt_to_seconds(dt, True)
     else:
@@ -2317,7 +2382,7 @@ cdef inline int tz_local_seconds(datetime.datetime dt=None) except -200_000:
     loc, gmt = tm_localtime(ts), tm_gmtime(ts)
     return (
         (loc.tm_mday - gmt.tm_mday) * SS_DAY
-        + (loc.tm_hour - gmt.tm_hour) * SS_HOUR 
+        + (loc.tm_hour - gmt.tm_hour) * SS_HOUR
         + (loc.tm_min - gmt.tm_min) * SS_MINUTE
         + (loc.tm_sec - gmt.tm_sec)
     )
@@ -2354,7 +2419,10 @@ cdef inline str tz_name(object tz, datetime.datetime dt=None):
         return tz.tzname(dt)
     except Exception as err:
         if not is_tz(tz):
-            raise TypeError("expects 'datetime.tzinfo', got %s." % type(tz)) from err
+            raise TypeError(
+                "expects instance of 'datetime.tzinfo', "
+                "instead got %s." % type(tz)
+            ) from err
         raise err
 
 cdef inline datetime.timedelta tz_dst(object tz, datetime.datetime dt=None):
@@ -2369,7 +2437,10 @@ cdef inline datetime.timedelta tz_dst(object tz, datetime.datetime dt=None):
         return tz.dst(dt)
     except Exception as err:
         if not is_tz(tz):
-            raise TypeError("expects 'datetime.tzinfo', got %s." % type(tz)) from err
+            raise TypeError(
+                "expects instance of 'datetime.tzinfo', "
+                "instead got %s." % type(tz)
+            ) from err
         raise err
 
 cdef inline datetime.timedelta tz_utcoffset(object tz, datetime.datetime dt=None):
@@ -2384,7 +2455,10 @@ cdef inline datetime.timedelta tz_utcoffset(object tz, datetime.datetime dt=None
         return tz.utcoffset(dt)
     except Exception as err:
         if not is_tz(tz):
-            raise TypeError("expects 'datetime.tzinfo', got %s." % type(tz)) from err
+            raise TypeError(
+                "expects instance of 'datetime.tzinfo', "
+                "instead got %s." % type(tz)
+            ) from err
         raise err
 
 cdef inline int tz_utcoffset_seconds(object tz, datetime.datetime dt=None) except -200_000:
@@ -2401,11 +2475,11 @@ cdef inline int tz_utcoffset_seconds(object tz, datetime.datetime dt=None) excep
     return datetime.timedelta_days(offset) * SS_DAY + datetime.timedelta_seconds(offset)
 
 cdef inline str tz_utcformat(object tz, datetime.datetime dt=None):
-    """Access tzinfo as string in UTC format ('+/-HH:MM') `<'str/None'>`."""
-    utc_off = tz_utcoffset(tz, dt)
-    if utc_off is None:
+    """Access tzinfo as string in UTC format ('+/-HHMM') `<'str/None'>`."""
+    offset = tz_utcoffset(tz, dt)
+    if offset is None:
         return None
-    return td_to_utcformat(utc_off)
+    return td_to_utcformat(offset)
 
 # NumPy: share -----------------------------------------------------------------------------------------
 # . time unit
@@ -2506,7 +2580,10 @@ cdef inline int get_arr_nptime_unit(np.ndarray arr) except -1:
     returns the unit in `<'int'>`."""
     cdef int dtype = np.PyArray_TYPE(arr)
     if dtype not in (np.NPY_TYPES.NPY_DATETIME, np.NPY_TYPES.NPY_TIMEDELTA):
-        raise TypeError("expects np.ndarray[datetime64/timedelta64], got '%s'." % arr.dtype)
+        raise TypeError(
+            "expects instance of 'np.ndarray[datetime64/timedelta64]', "
+            "instead got '%s'." % arr.dtype
+        )
 
     cdef int ndim = arr.ndim
     cdef np.NPY_DATETIMEUNIT unit
@@ -2533,10 +2610,16 @@ cdef inline int parse_arr_nptime_unit(np.ndarray arr) except -1:
     """Parse ndarray[datetime64/timedelta64] unit from the,
     returns the unit in `<'int'>`."""
     # Validate
-    if np.PyArray_TYPE(arr) not in (np.NPY_TYPES.NPY_DATETIME, np.NPY_TYPES.NPY_TIMEDELTA):
-        raise TypeError("expects 'np.ndarray[datetime64/timedelta64]', got '%s'." % arr.dtype)
+    if np.PyArray_TYPE(arr) not in (
+        np.NPY_TYPES.NPY_DATETIME,
+        np.NPY_TYPES.NPY_TIMEDELTA,
+    ):
+        raise TypeError(
+            "expects instance of 'np.ndarray[datetime64/timedelta64]', "
+            "instead got '%s'." % arr.dtype
+        )
 
-    # Prase
+    # Parse
     cdef str dtype_str = arr.dtype.str
     cdef Py_ssize_t size = str_len(dtype_str)
     if size < 6:
@@ -2560,7 +2643,10 @@ cdef inline bint validate_dt64(object obj) except -1:
     """Validate if an object is an instance of np.datetime64,
     and raises `TypeError` if not."""
     if not np.is_datetime64_object(obj):
-        raise TypeError("expects 'np.datetime64', got %s." % type(obj))
+        raise TypeError(
+            "expects instance of 'np.datetime64', "
+            "instead got %s." % type(obj)
+        )
     return True
 
 # . conversion
@@ -2602,9 +2688,8 @@ cdef inline np.npy_int64 dt64_as_int64_us(object dt64, np.npy_int64 offset=0):
 cdef inline np.npy_int64 _dt64_Y_as_int64_D(np.npy_int64 val, np.npy_int64 factor=1, np.npy_int64 offset=0):
     """(internal) Convert the value of np.datetime64[Y] to int64 under 'D' resolution `<'int'>`."""
     cdef:
-        np.npy_int64 year = val + EPOCH_YEAR
-        # Compute leap years
-        np.npy_int64 y_1 = year - 1
+        np.npy_int64 year  = val + EPOCH_YEAR
+        np.npy_int64 y_1   = year - 1
         np.npy_int64 leaps = (
             (y_1 // 4 - 1970 // 4)
             - (y_1 // 100 - 1970 // 100)
@@ -2616,11 +2701,10 @@ cdef inline np.npy_int64 _dt64_M_as_int64_D(np.npy_int64 val, np.npy_int64 facto
     """(internal) Convert the value of np.datetime64[M] to int64 under 'D' resolution `<'int'>`."""
     cdef:
         np.npy_int64 year_ep = val // 12
-        np.npy_int64 year = year_ep + EPOCH_YEAR
-        np.npy_int64 month = val % 12 + 1
-        # Compute leap years
-        np.npy_int64 y_1 = year - 1
-        np.npy_int64 leaps = (
+        np.npy_int64 year    = year_ep + EPOCH_YEAR
+        np.npy_int64 month   = val % 12 + 1
+        np.npy_int64 y_1     = year - 1
+        np.npy_int64 leaps   = (
             (y_1 // 4 - 1970 // 4)
             - (y_1 // 100 - 1970 // 100)
             + (y_1 // 400 - 1970 // 400)
@@ -2629,7 +2713,7 @@ cdef inline np.npy_int64 _dt64_M_as_int64_D(np.npy_int64 val, np.npy_int64 facto
 
 cdef inline np.npy_int64 _dt64_W_as_int64_D(np.npy_int64 val, np.npy_int64 factor=1, np.npy_int64 offset=0):
     """(internal) Convert the value of np.datetime64[W] to int64 under 'D' resolution `<'int'>`."""
-    return val * 7 * factor + offset
+    return val * (7 * factor) + offset
 
 cdef inline datetime.datetime dt64_to_dt(object dt64, tz: object=None):
     """Convert np.datetime64 to datetime `<'datetime.datetime'>`."""
@@ -2668,7 +2752,10 @@ cdef inline bint validate_td64(object obj) except -1:
     """Validate if an object is an instance of np.timedelta64,
     and raises `TypeError` if not."""
     if not np.is_timedelta64_object(obj):
-        raise TypeError("expects 'np.timedelta64', got %s." % type(obj))
+        raise TypeError(
+            "expects instance of 'np.timedelta64', "
+            "instead got %s." % type(obj)
+        )
     return True
 
 # . conversion
@@ -2676,7 +2763,7 @@ cdef inline np.npy_int64 td64_as_int64_us(object td64, np.npy_int64 offset=0):
     """Cast np.timedelta64 to int64 under 'us' (microsecond) resolution `<'int'>`.
     
     Equivalent to:
-    >>> td64.astype("timedelta64[D]").astype("int64") + offset
+    >>> td64.astype("timedelta64[us]").astype("int64") + offset
     """
     # Get unit & value
     validate_td64(td64)
@@ -2712,7 +2799,6 @@ cdef inline np.npy_int64 _td64_Y_as_int64_D(np.npy_int64 val, np.npy_int64 facto
     # Average number of days in a year: 365.2425
     # We use integer arithmetic by scaling to avoid floating-point inaccuracies.
     # Multiply by 3652425 and divide by 10000 to represent 365.2425 days/year.
-    cdef np.npy_int64 days
     if factor == 1:  # day
         return val * 3_652_425 // 10_000 + offset  # val * 365.2425
     if factor == 24:  # hour
@@ -2734,7 +2820,6 @@ cdef inline np.npy_int64 _td64_M_as_int64_D(np.npy_int64 val, np.npy_int64 facto
     # Average number of days in a month: 30.436875 (365.2425 / 12)
     # We use integer arithmetic by scaling to avoid floating-point inaccuracies.
     # Multiply by 30436875 and divide by 1000000 to represent 30.436875 days/month.
-    cdef np.npy_int64 days
     if factor == 1: #  day
         return val * 30_436_875 // 1_000_000 + offset  # val * 30.436875
     if factor == 24: #  hour
@@ -2753,7 +2838,7 @@ cdef inline np.npy_int64 _td64_M_as_int64_D(np.npy_int64 val, np.npy_int64 facto
 
 cdef inline np.npy_int64 _td64_W_as_int64_D(np.npy_int64 val, np.npy_int64 factor=1, np.npy_int64 offset=0):
     """(internal) Convert the value of np.timedelta[W] to int64 under 'D' resolution `<'int'>`."""
-    return val * 7 * factor + offset
+    return val * (7 * factor) + offset
 
 cdef inline datetime.timedelta td64_to_td(object td64):
     """Convert np.timedelta64 to timedelta `<'datetime.timedelta'>`.
@@ -2822,7 +2907,7 @@ cdef inline np.ndarray arr_zero_int64(np.npy_int64 size):
     # New array
     return np.PyArray_ZEROS(1, [size], np.NPY_TYPES.NPY_INT64, 0)
 
-cdef inline np.ndarray arr_full_int64(np.npy_int64 value, np.npy_int64 size):
+cdef inline np.ndarray arr_fill_int64(np.npy_int64 value, np.npy_int64 size):
     """Create a new 1-dimensional ndarray[int64] filled with 'value' `<'ndarray[int64]'>`.
 
     Equivalent to:
@@ -2850,7 +2935,7 @@ cdef inline np.ndarray arr_full_int64(np.npy_int64 value, np.npy_int64 size):
 cdef inline np.ndarray arr_clip(np.ndarray arr, np.npy_int64 minimum, np.npy_int64 maximum, np.npy_int64 offset=0):
     """Clip the values of an ndarray between 'minimum' and 'maximum' value `<'ndarray[int64]'>`.
 
-    Before compute, this function will cast the array to 'int64'
+    Before compute, this function will try to cast the array to 'int64',
     if it is not dtype of [int64/datetime64/timedelta64].
 
     Equivalent to:
@@ -3067,7 +3152,7 @@ cdef inline np.ndarray arr_mul(np.ndarray arr, np.npy_int64 factor, np.npy_int64
 
 cdef inline np.ndarray arr_div(np.ndarray arr, np.npy_float64 factor, np.npy_float64 offset=0):
     """Divides the values of the ndarray by the factor, handling negative
-    numbers accoring to Python's division semantics `<'ndarray[float64]'>`.
+    numbers according to Python's division semantics `<'ndarray[float64]'>`.
 
     Before compute, this function will cast the array to 'float64'
     if it is not in 'float64' dtype.
@@ -3136,7 +3221,7 @@ cdef inline np.ndarray arr_mod(np.ndarray arr, np.npy_int64 factor, np.npy_int64
 cdef inline np.ndarray arr_round_div(np.ndarray arr, np.npy_int64 factor, np.npy_int64 offset=0):
     """Divides the values of the ndarray by the factor and rounds to the
     nearest integers (half away from zero), handling negative numbers
-    accoring to Python's division semantics `<'ndarray[int64]'>`.
+    according to Python's division semantics `<'ndarray[int64]'>`.
 
     Before compute, this function will cast the array to 'int64'
     if it is not in 'int64'/'datetime64'/'timedelta64' dtype.
@@ -3179,7 +3264,7 @@ cdef inline np.ndarray arr_round_div(np.ndarray arr, np.npy_int64 factor, np.npy
 
 cdef inline np.ndarray arr_ceil_div(np.ndarray arr, np.npy_int64 factor, np.npy_int64 offset=0):
     """Divides the values of the ndarray by the factor and rounds
-    up to the nearest integers, handling negative numbers accoring
+    up to the nearest integers, handling negative numbers according
     to Python's division semantics `<'ndarray[int64]'>`.
 
     Before compute, this function will cast the array to 'int64'
@@ -3223,7 +3308,7 @@ cdef inline np.ndarray arr_ceil_div(np.ndarray arr, np.npy_int64 factor, np.npy_
 
 cdef inline np.ndarray arr_floor_div(np.ndarray arr, np.npy_int64 factor, np.npy_int64 offset=0):
     """Divides the values of the ndarray by the factor and rounds down
-    to the nearest integers, handling negative numbers accoring to
+    to the nearest integers, handling negative numbers according to
     Python's division semantics `<'ndarray[int64]'>`.
 
     Before compute, this function will cast the array to 'int64'
@@ -3267,7 +3352,7 @@ cdef inline np.ndarray arr_floor_div(np.ndarray arr, np.npy_int64 factor, np.npy
 
 cdef inline np.ndarray arr_round_to_mul(np.ndarray arr, np.npy_int64 factor, np.npy_int64 multiple = 0, np.npy_int64 offset=0):
     """Round to multiple. Divides the values of the ndarray by the factor and rounds
-    to the nearest integers (half away from zero), handling negative numbers accoring
+    to the nearest integers (half away from zero), handling negative numbers according
     to Python's division semantics. Finally multiply the the multiple. Argument
     'multiple' defaults to `0`, which means if not specified, it uses factor as
     the multiple `<'ndarray[int64]'>`.
@@ -3315,7 +3400,7 @@ cdef inline np.ndarray arr_round_to_mul(np.ndarray arr, np.npy_int64 factor, np.
 
 cdef inline np.ndarray arr_ceil_to_mul(np.ndarray arr, np.npy_int64 factor, np.npy_int64 multiple = 0, np.npy_int64 offset=0):
     """Ceil to multiple. Divides the values of the ndarray by the factor and
-    rounds up to the nearest integers, handling negative numbers accoring to
+    rounds up to the nearest integers, handling negative numbers according to
     Python's division semantics. Finally multiply the the multiple. Argument
     'multiple' defaults to `0`, which means if not specified, it uses factor
     as the multiple `<'ndarray[int64]'>`.
@@ -3363,7 +3448,7 @@ cdef inline np.ndarray arr_ceil_to_mul(np.ndarray arr, np.npy_int64 factor, np.n
 
 cdef inline np.ndarray arr_floor_to_mul(np.ndarray arr, np.npy_int64 factor, np.npy_int64 multiple = 0, np.npy_int64 offset=0):
     """Floor to multiple. Divides the values of the ndarray by the factor and
-    rounds down to the nearest integers, handling negative numbers accoring to
+    rounds down to the nearest integers, handling negative numbers according to
     Python's division semantics. Finally multiply the the multiple. Argument
     multiple defaults to '0', which means if not specified, it uses factor as
     the multiple `<'ndarray[int64]'>`.
@@ -3578,7 +3663,10 @@ cdef inline bint validate_dt64arr(np.ndarray arr) except -1:
     raises `TypeError` if dtype is incorrect.
     """
     if not is_dt64arr(arr):
-        raise TypeError("expects np.ndarray[datetime64], got '%s'." % arr.dtype)
+        raise TypeError(
+            "expects instance of 'np.ndarray[datetime64]', "
+            "instead got '%s'." % arr.dtype
+        )
     return True
 
 # . range check
@@ -3906,7 +3994,7 @@ cdef inline np.ndarray dt64arr_times(np.ndarray arr, str arr_unit=None, np.npy_i
         if offset == 0:
             return arr_zero_int64(arr.shape[0])
         else:
-            return arr_full_int64(offset, arr.shape[0])
+            return arr_fill_int64(offset, arr.shape[0])
     # . unsupported
     unit_str = map_nptime_unit_int2str(unit)
     raise ValueError(
@@ -5834,7 +5922,10 @@ cdef inline bint validate_td64arr(np.ndarray arr) except -1:
     raises `TypeError` if dtype is incorrect.
     """
     if not is_td64arr(arr):
-        raise TypeError("expects np.ndarray[timedelta64], got '%s'." % arr.dtype)
+        raise TypeError(
+            "expects instance of 'np.ndarray[timedelta64]', "
+            "instead got '%s'." % arr.dtype
+        )
     return True
 
 # . conversion
