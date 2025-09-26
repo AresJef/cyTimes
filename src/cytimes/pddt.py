@@ -2436,7 +2436,7 @@ class Pddt(DatetimeIndex):
         # . year
         if year > 0:
             months = (year - utils.EPOCH_YEAR) * 12  # year+off
-            datesM = utils.arr_full_int64(months, arr.shape[0])  # int64[M]
+            datesM = utils.arr_fill_int64(months, arr.shape[0])  # int64[M]
         else:
             datesY = utils.dt64arr_as_int64_Y(arr, my_unit)  # int64[Y]
             datesM = utils.dt64arr_as_int64_M(datesY, "Y")  # int64[M]
@@ -2559,7 +2559,7 @@ class Pddt(DatetimeIndex):
 
         # Construct dates
         months = (year - utils.EPOCH_YEAR) * 12  # year+off
-        datesM = utils.arr_full_int64(months, arr.shape[0])  # int64[M]
+        datesM = utils.arr_fill_int64(months, arr.shape[0])  # int64[M]
         if month > 0:
             datesM = utils.arr_add(datesM, min(month, 12) - 1)  # int64[M]
         else:
