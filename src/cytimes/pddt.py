@@ -3953,7 +3953,7 @@ class Pddt(DatetimeIndex):
                 (hours * 3600 + minutes * 60 + seconds) * utils.US_SECOND
                 + milliseconds * utils.US_MILLISECOND
                 + microseconds
-                + utils.math_round_div(nanoseconds, utils.NS_MICROSECOND),
+                + utils.math_div_half_even(nanoseconds, utils.NS_MICROSECOND),
             )
         # . millisecond
         elif my_unit_ch == "m":
@@ -3961,17 +3961,17 @@ class Pddt(DatetimeIndex):
                 times,
                 (hours * 3600 + minutes * 60 + seconds) * utils.MS_SECOND
                 + milliseconds
-                + utils.math_round_div(microseconds, utils.US_MILLISECOND)
-                + utils.math_round_div(nanoseconds, utils.NS_MILLISECOND),
+                + utils.math_div_half_even(microseconds, utils.US_MILLISECOND)
+                + utils.math_div_half_even(nanoseconds, utils.NS_MILLISECOND),
             )
         # . second
         elif my_unit_ch == "s":
             times = utils.arr_add(  # int64[s]
                 times,
                 (hours * 3600 + minutes * 60 + seconds)
-                + utils.math_round_div(milliseconds, utils.MS_SECOND)
-                + utils.math_round_div(microseconds, utils.US_SECOND)
-                + utils.math_round_div(nanoseconds, utils.NS_SECOND),
+                + utils.math_div_half_even(milliseconds, utils.MS_SECOND)
+                + utils.math_div_half_even(microseconds, utils.US_SECOND)
+                + utils.math_div_half_even(nanoseconds, utils.NS_SECOND),
             )
 
         # Combine dates & times
@@ -4138,9 +4138,9 @@ class Pddt(DatetimeIndex):
         if my_unit_ch == "n":
             dt_val *= utils.NS_MICROSECOND
         elif my_unit_ch == "m":
-            dt_val = utils.math_floor_div(dt_val, utils.US_MILLISECOND)
+            dt_val = utils.math_div_floor(dt_val, utils.US_MILLISECOND)
         elif my_unit_ch == "s":
-            dt_val = utils.math_floor_div(dt_val, utils.US_SECOND)
+            dt_val = utils.math_div_floor(dt_val, utils.US_SECOND)
 
         # Compare
         arr = utils.arr_less_than(arr, dt_val)
@@ -4160,9 +4160,9 @@ class Pddt(DatetimeIndex):
         if my_unit_ch == "n":
             dt_val *= utils.NS_MICROSECOND
         elif my_unit_ch == "m":
-            dt_val = utils.math_floor_div(dt_val, utils.US_MILLISECOND)
+            dt_val = utils.math_div_floor(dt_val, utils.US_MILLISECOND)
         elif my_unit_ch == "s":
-            dt_val = utils.math_floor_div(dt_val, utils.US_SECOND)
+            dt_val = utils.math_div_floor(dt_val, utils.US_SECOND)
 
         # Compare
         arr = utils.arr_greater_than(arr, dt_val)

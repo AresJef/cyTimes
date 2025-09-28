@@ -2069,7 +2069,7 @@ class _Pydt(datetime.datetime):
 
         # Round to unit
         us: cython.longlong = utils.dt_to_us(self, False)
-        us_r: cython.longlong = utils.math_round_div(us, f) * f
+        us_r: cython.longlong = utils.math_div_half_even(us, f) * f
         if us_r == us:
             return self  # exit: same value
 
@@ -2092,7 +2092,7 @@ class _Pydt(datetime.datetime):
 
         # Ceil to unit
         us: cython.longlong = utils.dt_to_us(self, False)
-        us_c: cython.longlong = utils.math_ceil_div(us, f) * f
+        us_c: cython.longlong = utils.math_div_ceil(us, f) * f
         if us_c == us:
             return self  # exit: same value
 
@@ -2115,7 +2115,7 @@ class _Pydt(datetime.datetime):
 
         # Floor to unit
         us: cython.longlong = utils.dt_to_us(self, False)
-        us_f: cython.longlong = utils.math_floor_div(us, f) * f
+        us_f: cython.longlong = utils.math_div_floor(us, f) * f
         if us_f == us:
             return self  # exit: same value
 
@@ -2141,7 +2141,7 @@ class _Pydt(datetime.datetime):
         # Adjust precision
         us: cython.longlong = utils.dt_to_us(self, False)
         f: cython.longlong = int(10 ** (6 - precision))  # fsp factor
-        us_f: cython.longlong = utils.math_floor_div(us, f) * f
+        us_f: cython.longlong = utils.math_div_floor(us, f) * f
         if us_f == us:
             return self  # exit: same value
 
