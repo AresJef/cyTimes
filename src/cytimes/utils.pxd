@@ -2604,6 +2604,81 @@ cdef inline int get_arr_nptime_unit(np.ndarray arr) except -1:
         "instead got '%s'." % arr.dtype
     )
 
+cdef inline str map_nptime_unit_int2str(int unit):
+    """Map numpy datetime64/timedelta64 unit from integer
+    to the corresponding string representation `<'str'>`."""
+    # Common units
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:
+        return "ns"
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
+        return "us"
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
+        return "ms"
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_s:
+        return "s"
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_m:
+        return "m"
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_h:
+        return "h"
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_D:
+        return "D"
+
+    # Uncommon units
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_Y:
+        return "Y"
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_M:
+        return "M"
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_W:
+        return "W"
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ps:
+        return "ps"
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_fs:
+        return "fs"
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_as:
+        return "as"
+    # if unit == np.NPY_DATETIMEUNIT.NPY_FR_B:
+    #     return "B"
+
+    # Unsupported unit
+    raise ValueError("unknown datetime unit '%d'." % unit)
+
+cdef inline object map_nptime_unit_int2dt64(int unit):
+    """Map numpy datetime64/timedelta64 unit from integer
+    to the corresponding numpy dtype `<'np.dtype'>`.
+    """
+    # Common units
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:
+        return DT64_DTYPE_NS
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
+        return DT64_DTYPE_US
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
+        return DT64_DTYPE_MS
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_s:
+        return DT64_DTYPE_SS
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_m:
+        return DT64_DTYPE_MI
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_h:
+        return DT64_DTYPE_HH
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_D:
+        return DT64_DTYPE_DD
+
+    # Uncommon units
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_Y:
+        return DT64_DTYPE_YY
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_M:
+        return DT64_DTYPE_MM
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_W:
+        return DT64_DTYPE_WW
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ps:
+        return DT64_DTYPE_PS
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_fs:
+        return DT64_DTYPE_FS
+    if unit == np.NPY_DATETIMEUNIT.NPY_FR_as:
+        return DT64_DTYPE_AS
+
+    # Unsupported unit
+    raise ValueError("unknown datetime unit '%d'." % unit)
+
 cdef inline int map_nptime_unit_str2int(str unit) except -1:
     """Map numpy datetime64/timedelta64 unit from string
     representation to the corresponding integer `<'int'>`."""
@@ -2658,101 +2733,58 @@ cdef inline int map_nptime_unit_str2int(str unit) except -1:
     # Unsupported unit
     raise ValueError("unknown datetime unit '%s'." % unit)
 
-cdef inline str map_nptime_unit_int2str(int unit):
-    """Map numpy datetime64/timedelta64 unit from integer
-    to the corresponding string representation `<'str'>`."""
-    # Common units
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-        return "ns"
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
-        return "us"
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-        return "ms"
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_s:
-        return "s"
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_m:
-        return "m"
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_h:
-        return "h"
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_D:
-        return "D"
+cdef inline object map_nptime_unit_str2dt64(str unit):
+    """Map numpy datetime64/timedelta64 unit from string
+    representation to the corresponding numpy dtype `<'np.dtype'>`.
+    """
+    cdef:
+        Py_ssize_t size = str_len(unit)
+        Py_UCS4 ch
 
-    # Uncommon units
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_Y:
-        return "Y"
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_M:
-        return "M"
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_W:
-        return "W"
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ps:
-        return "ps"
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_fs:
-        return "fs"
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_as:
-        return "as"
-    # if unit == np.NPY_DATETIMEUNIT.NPY_FR_B:
-    #     return "B"
-
-    # Unsupported unit
-    raise ValueError("unknown datetime unit '%d'." % unit)
-
-cdef inline str assure_nptime_unit_str(str unit):
-    """Assure the numpy datetime64/timedelta64 unit string is valid `<'str'>`."""
-    cdef Py_ssize_t size = str_len(unit)
     # Unit: 's', 'm', 'h', 'D', 'Y', 'M', 'W', 'B'
     if size == 1:
-        if str_read(unit, 0) in ("s", "m", "h", "D", "Y", "M", "W"):
-            return unit
+        # Common units
+        ch = str_read(unit, 0)
+        if ch == "s":
+            return DT64_DTYPE_SS
+        if ch == "m":
+            return DT64_DTYPE_MI
+        if ch == "h":
+            return DT64_DTYPE_HH
+        if ch == "D":
+            return DT64_DTYPE_DD
+        # Uncommon units
+        if ch == "Y":
+            return DT64_DTYPE_YY
+        if ch == "M":
+            return DT64_DTYPE_MM
+        if ch == "W":
+            return DT64_DTYPE_WW
 
     # Unit: 'ns', 'us', 'ms', 'ps', 'fs', 'as'
-    elif size == 2:
-        if str_read(unit, 1) == "s" and str_read(unit, 0) in ("n", "u", "m", "p", "f", "a"):
-            return unit
+    elif size == 2 and str_read(unit, 1) == "s":
+        # Common units
+        ch = str_read(unit, 0)
+        if ch == "n":
+            return DT64_DTYPE_NS
+        if ch == "u":
+            return DT64_DTYPE_US
+        if ch == "m":
+            return DT64_DTYPE_MS
+        # Uncommon units
+        if ch == "p":
+            return DT64_DTYPE_PS
+        if ch == "f":
+            return DT64_DTYPE_FS
+        if ch == "a":
+            return DT64_DTYPE_AS
 
     # Unit: 'min' for pandas compatibility
-    elif size == 3:
-        if unit == "min":
-            return "m"
+    elif size == 3 and unit == "min":
+        return DT64_DTYPE_MI
 
     # Unsupported unit
     raise ValueError("unknown datetime unit '%s'." % unit)
-
-cdef inline object map_nptime_unit_int2dt64(int unit):
-    """Map numpy datetime64/timedelta64 unit from integer
-    to the corresponding numpy dtype `<'np.dtype'>`.
-    """
-    # Common units
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-        return DT64_DTYPE_NS
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
-        return DT64_DTYPE_US
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-        return DT64_DTYPE_MS
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_s:
-        return DT64_DTYPE_SS
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_m:
-        return DT64_DTYPE_MI
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_h:
-        return DT64_DTYPE_HH
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_D:
-        return DT64_DTYPE_DD
-
-    # Uncommon units
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_Y:
-        return DT64_DTYPE_YY
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_M:
-        return DT64_DTYPE_MM
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_W:
-        return DT64_DTYPE_WW
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_ps:
-        return DT64_DTYPE_PS
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_fs:
-        return DT64_DTYPE_FS
-    if unit == np.NPY_DATETIMEUNIT.NPY_FR_as:
-        return DT64_DTYPE_AS
-
-    # Unsupported unit
-    raise ValueError("unknown datetime unit '%d'." % unit)
 
 # NumPy: datetime64 ------------------------------------------------------------------------------------
 # . type check
@@ -5605,7 +5637,7 @@ cdef inline np.ndarray dt64arr_fr_int64(np.npy_int64 val, np.npy_intp size, str 
     Equivalent to:
     >>> np.full(size, val, dtype=f"datetime64[{unit}]")
     """
-    return arr_fill_int64(val, size).astype(map_nptime_unit_int2dt64(map_nptime_unit_str2int(unit)))
+    return arr_fill_int64(val, size).astype(map_nptime_unit_str2dt64(unit))
 
 cdef inline np.ndarray dt64arr_as_int64(np.ndarray arr, str unit, str arr_unit=None, np.npy_int64 offset=0):
     """Cast np.ndarray[datetime64] to int64 according to the given

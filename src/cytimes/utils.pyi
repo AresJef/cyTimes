@@ -74,6 +74,20 @@ DT64_NS_SS_MAX: int
 DT64_NS_MS_MAX: int
 DT64_NS_US_MAX: int
 DT64_NS_NS_MAX: int
+# . datetime64 dtype
+DT64_DTYPE_YY: np.dtype
+DT64_DTYPE_MM: np.dtype
+DT64_DTYPE_WW: np.dtype
+DT64_DTYPE_DD: np.dtype
+DT64_DTYPE_HH: np.dtype
+DT64_DTYPE_MI: np.dtype
+DT64_DTYPE_SS: np.dtype
+DT64_DTYPE_MS: np.dtype
+DT64_DTYPE_US: np.dtype
+DT64_DTYPE_NS: np.dtype
+DT64_DTYPE_PS: np.dtype
+DT64_DTYPE_FS: np.dtype
+DT64_DTYPE_AS: np.dtype
 
 # Math ----------------------------------------------------------------------------------------------
 def math_mod(num: int, factor: int, offset: int = 0) -> int:
@@ -1044,20 +1058,22 @@ def get_arr_nptime_unit(arr: np.ndarray) -> int:
     """(cfunc) Get ndarray[datetime64/timedelta64] unit from the,
     returns the unit `<'int'>`."""
 
-def map_nptime_unit_str2int(unit: str) -> int:
-    """(cfunc) Map numpy datetime64/timedelta64 unit from string
-    representation to the corresponding integer `<'int'>`."""
-
 def map_nptime_unit_int2str(unit: int) -> str:
     """(cfunc) Map numpy datetime64/timedelta64 unit from integer
     to the corresponding string representation `<'str'>`."""
 
-def assure_nptime_unit_str(unit: str) -> str:
-    """(cfunc) Assure the numpy datetime64/timedelta64 unit string is valid `<'str'>`."""
-
 def map_nptime_unit_int2dt64(unit: int) -> np.dtype:
     """(cfunc) Map numpy datetime64/timedelta64 unit from integer
     to the corresponding numpy dtype `<'np.dtype'>`.
+    """
+
+def map_nptime_unit_str2int(unit: str) -> int:
+    """(cfunc) Map numpy datetime64/timedelta64 unit from string
+    representation to the corresponding integer `<'int'>`."""
+
+def map_nptime_unit_str2dt64(unit: str) -> np.dtype:
+    """(cfunc) Map numpy datetime64/timedelta64 unit from string
+    representation to the corresponding numpy dtype `<'np.dtype'>`.
     """
 
 # NumPy: datetime64 ---------------------------------------------------------------------------------
