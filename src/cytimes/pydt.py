@@ -2069,7 +2069,7 @@ class _Pydt(datetime.datetime):
 
         # Round to unit
         us: cython.longlong = utils.dt_to_us(self, False)
-        us_r: cython.longlong = utils.math_div_half_even(us, f) * f
+        us_r: cython.longlong = utils.math_div_even(us, f) * f
         if us_r == us:
             return self  # exit: same value
 
@@ -2229,7 +2229,7 @@ class _Pydt(datetime.datetime):
         """Compute the number of leap years between the
         instance and the passed-in 'year' `<'int'>`.
         """
-        return utils.leap_bt_year(datetime.datetime_year(self), year)
+        return utils.leap_bt_years(datetime.datetime_year(self), year)
 
     @cython.ccall
     @cython.exceptval(-1, check=False)

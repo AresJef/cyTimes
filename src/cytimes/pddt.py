@@ -277,7 +277,7 @@ def _pddt_fr_us(
     """(internal) Construct a new Pddt instance from
     total microseconds since Unix Epoch `<'Pddt'>`.
     """
-    arr: np.ndarray = utils.dt64arr_fr_int64(val, "us", size)
+    arr: np.ndarray = utils.dt64arr_fr_int64(val, size, "us")
     return pddt_new_simple(arr, tz, unit, name)
 
 
@@ -861,7 +861,7 @@ class Pddt(DatetimeIndex):
                 )
             # . convert to ndarray[datetime64]
             arr = utils.arr_assure_int64_like(arr)
-            arr = utils.arr_clip(arr, 1, utils.ORDINAL_MAX, -utils.EPOCH_DAY)
+            arr = utils.arr_clamp(arr, 1, utils.ORDINAL_MAX, -utils.EPOCH_DAY)
             arr = utils.arr_mul(arr, utils.US_DAY)
             arr = arr.astype("datetime64[us]")
             # . new instance
@@ -1714,7 +1714,7 @@ class Pddt(DatetimeIndex):
         my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
         if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
             dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_floor_div(times, utils.NS_MICROSECOND)  # int64[us]
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
             dtype = "datetime64[us]"
         else:
             dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
@@ -1841,7 +1841,7 @@ class Pddt(DatetimeIndex):
         my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
         if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
             dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_floor_div(times, utils.NS_MICROSECOND)  # int64[us]
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
             dtype = "datetime64[us]"
         else:
             dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
@@ -1907,7 +1907,7 @@ class Pddt(DatetimeIndex):
         my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
         if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
             dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_floor_div(times, utils.NS_MICROSECOND)  # int64[us]
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
             dtype = "datetime64[us]"
         else:
             dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
@@ -2016,7 +2016,7 @@ class Pddt(DatetimeIndex):
         my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
         if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
             dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_floor_div(times, utils.NS_MICROSECOND)  # int64[us]
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
             dtype = "datetime64[us]"
         else:
             dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
@@ -2072,7 +2072,7 @@ class Pddt(DatetimeIndex):
         my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
         if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
             dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_floor_div(times, utils.NS_MICROSECOND)  # int64[us]
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
             dtype = "datetime64[us]"
         else:
             dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
@@ -2160,7 +2160,7 @@ class Pddt(DatetimeIndex):
         my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
         if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
             dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_floor_div(times, utils.NS_MICROSECOND)  # int64[us]
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
             dtype = "datetime64[us]"
         else:
             dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
@@ -2278,7 +2278,7 @@ class Pddt(DatetimeIndex):
         my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
         if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
             dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_floor_div(times, utils.NS_MICROSECOND)  # int64[us]
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
             dtype = "datetime64[us]"
         else:
             dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
@@ -2315,7 +2315,7 @@ class Pddt(DatetimeIndex):
         my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
         if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
             dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_floor_div(times, utils.NS_MICROSECOND)  # int64[us]
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
             dtype = "datetime64[us]"
         else:
             dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
@@ -2355,7 +2355,7 @@ class Pddt(DatetimeIndex):
         my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
         if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
             dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_floor_div(times, utils.NS_MICROSECOND)  # int64[us]
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
             dtype = "datetime64[us]"
         else:
             dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
@@ -2577,7 +2577,7 @@ class Pddt(DatetimeIndex):
         my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
         if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
             dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_floor_div(times, utils.NS_MICROSECOND)  # int64[us]
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
             dtype = "datetime64[us]"
         else:
             dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
@@ -2762,7 +2762,7 @@ class Pddt(DatetimeIndex):
         my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
         if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
             dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_floor_div(times, utils.NS_MICROSECOND)  # int64[us]
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
             dtype = "datetime64[us]"
         else:
             dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
@@ -2829,7 +2829,7 @@ class Pddt(DatetimeIndex):
         my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
         if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
             dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_floor_div(times, utils.NS_MICROSECOND)  # int64[us]
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
             dtype = "datetime64[us]"
         else:
             dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
@@ -2957,10 +2957,10 @@ class Pddt(DatetimeIndex):
             # my_unit [ns] -> to_unit [us]
             fac = utils.NS_MICROSECOND
             if utils.is_dt64arr_ns_safe(arr, "ns"):
-                arr = utils.arr_floor_to_mul(arr, fac, fac, fac - 1)
+                arr = utils.arr_div_floor_mul(arr, fac, fac, fac - 1)
                 dtype = "datetime64[ns]"
             else:
-                arr = utils.arr_floor_div(arr, fac)
+                arr = utils.arr_div_floor(arr, fac)
                 dtype = "datetime64[us]"
             # back to dt64[my_unit]
             arr = arr.astype(dtype)
@@ -2985,7 +2985,7 @@ class Pddt(DatetimeIndex):
                 mul, off = fac, fac - 1
                 dtype = "datetime64[us]"
             # back to dt64[my_unit]
-            arr = utils.arr_floor_to_mul(arr, fac, mul, off).astype(dtype)
+            arr = utils.arr_div_floor_mul(arr, fac, mul, off).astype(dtype)
 
         # To second
         elif unit == "s":
@@ -3006,7 +3006,7 @@ class Pddt(DatetimeIndex):
                     fac, dtype = utils.MS_SECOND, "datetime64[ms]"
                 mul, off = fac, fac - 1
             # back to dt64[my_unit]
-            arr = utils.arr_floor_to_mul(arr, fac, mul, off).astype(dtype)
+            arr = utils.arr_div_floor_mul(arr, fac, mul, off).astype(dtype)
 
         # To minute
         elif unit == "m" or unit == "min":
@@ -3029,7 +3029,7 @@ class Pddt(DatetimeIndex):
                     fac, dtype = utils.SS_MINUTE, "datetime64[s]"
                 mul, off = fac, fac - 1
             # back to dt64[my_unit]
-            arr = utils.arr_floor_to_mul(arr, fac, mul, off).astype(dtype)
+            arr = utils.arr_div_floor_mul(arr, fac, mul, off).astype(dtype)
 
         # To hour
         elif unit == "h":
@@ -3052,7 +3052,7 @@ class Pddt(DatetimeIndex):
                     fac, dtype = utils.SS_HOUR, "datetime64[s]"
                 mul, off = fac, fac - 1
             # back to dt64[my_unit]
-            arr = utils.arr_floor_to_mul(arr, fac, mul, off).astype(dtype)
+            arr = utils.arr_div_floor_mul(arr, fac, mul, off).astype(dtype)
 
         # To day
         elif unit == "D":
@@ -3075,7 +3075,7 @@ class Pddt(DatetimeIndex):
                     fac, dtype = utils.SS_DAY, "datetime64[s]"
                 mul, off = fac, fac - 1
             # back to dt64[my_unit]
-            arr = utils.arr_floor_to_mul(arr, fac, mul, off).astype(dtype)
+            arr = utils.arr_div_floor_mul(arr, fac, mul, off).astype(dtype)
 
         # To weekday
         elif unit == "W":
@@ -3241,7 +3241,7 @@ class Pddt(DatetimeIndex):
 
         # Perform operation
         arr: np.ndarray = self.values_naive
-        res = utils.arr_floor_to_mul(arr, f, f, 0)
+        res = utils.arr_div_floor_mul(arr, f, f, 0)
         res = res.astype("datetime64[%s]" % my_unit)
         return pddt_new_simple(res, self.tzinfo, None, self.name)
 
@@ -3289,7 +3289,7 @@ class Pddt(DatetimeIndex):
         years and the passed-in 'year' `<'Index[int64]'>`.
         """
         return Index(
-            utils.dt64arr_leap_bt_year(self.values_naive, year),
+            utils.dt64arr_leap_bt_years(self.values_naive, year),
             name="leap_bt_year",
         )
 
@@ -3316,7 +3316,7 @@ class Pddt(DatetimeIndex):
         the passed-in 'year' `<'Index[bool]'>`.
         """
         return Index(
-            utils.arr_equal_to(utils.dt64arr_year(self.values_naive), year),
+            utils.arr_eq(utils.dt64arr_year(self.values_naive), year),
             name="is_year",
         )
 
@@ -3358,7 +3358,7 @@ class Pddt(DatetimeIndex):
         the passed-in 'quarter' `<'Index[bool]'>`.
         """
         return Index(
-            utils.arr_equal_to(utils.dt64arr_quarter(self.values_naive), quarter),
+            utils.arr_eq(utils.dt64arr_quarter(self.values_naive), quarter),
             name="is_quarter",
         )
 
@@ -3401,7 +3401,7 @@ class Pddt(DatetimeIndex):
         """
         mm: cython.int = _parse_month(month, True)
         return Index(
-            utils.arr_equal_to(utils.dt64arr_month(self.values_naive), mm),
+            utils.arr_eq(utils.dt64arr_month(self.values_naive), mm),
             name="is_month",
         )
 
@@ -3417,7 +3417,7 @@ class Pddt(DatetimeIndex):
         """
         wd: cython.int = _parse_weekday(weekday, True)
         return Index(
-            utils.arr_equal_to(utils.dt64arr_weekday(self.values_naive), wd),
+            utils.arr_eq(utils.dt64arr_weekday(self.values_naive), wd),
             name="is_weekday",
         )
 
@@ -3432,7 +3432,7 @@ class Pddt(DatetimeIndex):
         the passed-in 'day' `<'Index[bool]'>`.
         """
         return Index(
-            utils.arr_equal_to(utils.dt64arr_day(self.values_naive), day),
+            utils.arr_eq(utils.dt64arr_day(self.values_naive), day),
             name="is_day",
         )
 
@@ -3485,7 +3485,7 @@ class Pddt(DatetimeIndex):
         # Compare dates
         datesD_1st = utils.dt64arr_as_int64_D(pt_1st.values)  # int64[D]
         datesD = utils.dt64arr_as_int64_D(self.values)  # int64[D]
-        arr = utils.arr_equal_to_arr(datesD, datesD_1st)
+        arr = utils.arr_eq_arr(datesD, datesD_1st)
         return Index(arr, name="is_first_of[%s]" % unit)
 
     def is_last_of(self, unit: str) -> Index[bool]:
@@ -3505,7 +3505,7 @@ class Pddt(DatetimeIndex):
         # Compare dates
         datesD_lst = utils.dt64arr_as_int64_D(pt_lst.values)  # int64[D]
         datesD = utils.dt64arr_as_int64_D(self.values)  # int64[D]
-        arr = utils.arr_equal_to_arr(datesD, datesD_lst)
+        arr = utils.arr_eq_arr(datesD, datesD_lst)
         return Index(arr, name="is_last_of[%s]" % unit)
 
     def is_start_of(self, unit: str) -> Index[bool]:
@@ -3532,9 +3532,9 @@ class Pddt(DatetimeIndex):
         # Compare datetimes
         pt_stt_unit: str = pt_stt.unit
         if pt_stt_unit == self.unit:
-            arr = utils.arr_equal_to_arr(self.values, pt_stt.values)
+            arr = utils.arr_eq_arr(self.values, pt_stt.values)
         else:
-            arr = utils.arr_equal_to_arr(
+            arr = utils.arr_eq_arr(
                 utils.dt64arr_as_unit(self.values, pt_stt_unit), pt_stt.values
             )
         return Index(arr, name="is_start_of[%s]" % unit)
@@ -3563,9 +3563,9 @@ class Pddt(DatetimeIndex):
         # Compare datetimes
         pt_end_unit: str = pt_end.unit
         if pt_end_unit == self.unit:
-            arr = utils.arr_equal_to_arr(self.values, pt_end.values)
+            arr = utils.arr_eq_arr(self.values, pt_end.values)
         else:
-            arr = utils.arr_equal_to_arr(
+            arr = utils.arr_eq_arr(
                 utils.dt64arr_as_unit(self.values, pt_end_unit), pt_end.values
             )
         return Index(arr, name="is_end_of[%s]" % unit)
@@ -3938,13 +3938,13 @@ class Pddt(DatetimeIndex):
                     + microseconds * utils.NS_MICROSECOND
                     + nanoseconds,
                 )
-                delta = utils.arr_floor_div(times, utils.NS_DAY)  # int64[D]
+                delta = utils.arr_div_floor(times, utils.NS_DAY)  # int64[D]
                 delta = utils.arr_add_arr(datesD, delta)  # int64[D]
             else:
                 delta = datesD  # int64[D]
             # Prevent 'ns' overflow: cast to 'us'
             if not utils.is_dt64arr_ns_safe(delta, "D"):
-                times = utils.arr_floor_div(times, utils.NS_MICROSECOND)  # int64[us]
+                times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
                 my_unit = "us"  # change to 'us' from 'ns'
         # . microsecond
         elif my_unit_ch == "u":
@@ -3953,7 +3953,7 @@ class Pddt(DatetimeIndex):
                 (hours * 3600 + minutes * 60 + seconds) * utils.US_SECOND
                 + milliseconds * utils.US_MILLISECOND
                 + microseconds
-                + utils.math_div_half_even(nanoseconds, utils.NS_MICROSECOND),
+                + utils.math_div_even(nanoseconds, utils.NS_MICROSECOND),
             )
         # . millisecond
         elif my_unit_ch == "m":
@@ -3961,17 +3961,17 @@ class Pddt(DatetimeIndex):
                 times,
                 (hours * 3600 + minutes * 60 + seconds) * utils.MS_SECOND
                 + milliseconds
-                + utils.math_div_half_even(microseconds, utils.US_MILLISECOND)
-                + utils.math_div_half_even(nanoseconds, utils.NS_MILLISECOND),
+                + utils.math_div_even(microseconds, utils.US_MILLISECOND)
+                + utils.math_div_even(nanoseconds, utils.NS_MILLISECOND),
             )
         # . second
         elif my_unit_ch == "s":
             times = utils.arr_add(  # int64[s]
                 times,
                 (hours * 3600 + minutes * 60 + seconds)
-                + utils.math_div_half_even(milliseconds, utils.MS_SECOND)
-                + utils.math_div_half_even(microseconds, utils.US_SECOND)
-                + utils.math_div_half_even(nanoseconds, utils.NS_SECOND),
+                + utils.math_div_even(milliseconds, utils.MS_SECOND)
+                + utils.math_div_even(microseconds, utils.US_SECOND)
+                + utils.math_div_even(nanoseconds, utils.NS_SECOND),
             )
 
         # Combine dates & times
@@ -4143,7 +4143,7 @@ class Pddt(DatetimeIndex):
             dt_val = utils.math_div_floor(dt_val, utils.US_SECOND)
 
         # Compare
-        arr = utils.arr_less_than(arr, dt_val)
+        arr = utils.arr_lt(arr, dt_val)
         return Index(arr, name="is_past")
 
     def is_future(self) -> Index[bool]:
@@ -4165,7 +4165,7 @@ class Pddt(DatetimeIndex):
             dt_val = utils.math_div_floor(dt_val, utils.US_SECOND)
 
         # Compare
-        arr = utils.arr_greater_than(arr, dt_val)
+        arr = utils.arr_gt(arr, dt_val)
         return Index(arr, name="is_future")
 
     def closest(self, data: object) -> Self:
