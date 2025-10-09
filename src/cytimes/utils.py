@@ -40,6 +40,11 @@ EPOCH_MINUTE: cython.longlong = EPOCH_HOUR * 60
 EPOCH_SECOND: cython.longlong = EPOCH_MINUTE * 60
 EPOCH_MILLISECOND: cython.longlong = EPOCH_SECOND * 1_000
 EPOCH_MICROSECOND: cython.longlong = EPOCH_MILLISECOND * 1_000
+#: EPOCH pre-compute
+EPOCH_C4: cython.longlong = math_div_floor(1970, 4)  # type: ignore
+EPOCH_C100: cython.longlong = math_div_floor(1970, 100)  # type: ignore
+EPOCH_C400: cython.longlong = math_div_floor(1970, 400)  # type: ignore
+EPOCH_CBASE: cython.longlong = EPOCH_C4 - EPOCH_C100 + EPOCH_C400
 # . timezone
 UTC: datetime.tzinfo = datetime.get_utc()
 # . conversion for seconds
@@ -98,6 +103,20 @@ DT64_NS_SS_MAX: cython.longlong = DT64_NS_MI_MAX * 60
 DT64_NS_MS_MAX: cython.longlong = DT64_NS_SS_MAX * 1_000
 DT64_NS_US_MAX: cython.longlong = DT64_NS_MS_MAX * 1_000
 DT64_NS_NS_MAX: cython.longlong = DT64_NS_US_MAX * 1_000
+# . datetime64 dtype
+DT64_DTYPE_YY: np.dtype = np.dtype("datetime64[Y]")
+DT64_DTYPE_MM: np.dtype = np.dtype("datetime64[M]")
+DT64_DTYPE_WW: np.dtype = np.dtype("datetime64[W]")
+DT64_DTYPE_DD: np.dtype = np.dtype("datetime64[D]")
+DT64_DTYPE_HH: np.dtype = np.dtype("datetime64[h]")
+DT64_DTYPE_MI: np.dtype = np.dtype("datetime64[m]")
+DT64_DTYPE_SS: np.dtype = np.dtype("datetime64[s]")
+DT64_DTYPE_MS: np.dtype = np.dtype("datetime64[ms]")
+DT64_DTYPE_US: np.dtype = np.dtype("datetime64[us]")
+DT64_DTYPE_NS: np.dtype = np.dtype("datetime64[ns]")
+DT64_DTYPE_PS: np.dtype = np.dtype("datetime64[ps]")
+DT64_DTYPE_FS: np.dtype = np.dtype("datetime64[fs]")
+DT64_DTYPE_AS: np.dtype = np.dtype("datetime64[as]")
 
 
 # datetime.tzinfo --------------------------------------------------------------------------------------
@@ -206,7 +225,7 @@ def _test_utils() -> None:
     _test_days_bf_month()
     _test_weekday()
     _test_isocalendar()
-    _test_iso_1st_monday()
+    _test_iso_week1_monday_ordinal()
     _test_ymd_to_ordinal()
     _test_ymd_fr_ordinal()
     _test_ymd_fr_isocalendar()
@@ -244,10 +263,14 @@ def _test_utils() -> None:
     _test_timedelta64_conversion()
     # numpy.ndarray
     _test_ndarray_type_check()
+    _test_ndarray_generate()
     _test_ndarray_dt64_type_check()
     _test_ndarray_dt64_conversion()
     _test_ndarray_td64_type_check()
     _test_ndarray_td64_conversion()
+    # math
+    _test_math()
+    _test_ndarray_math()
 
 
 # Parser
@@ -475,29 +498,28 @@ def _test_isocalendar() -> None:
             for day in range(1, 32):
                 if day > 28:
                     day = min(day, days_in_month(year, month))  # type: ignore
-                iso_calr = ymd_isocalendar(year, month, day)  # type: ignore
-                iso_week = ymd_isoweek(year, month, day)  # type: ignore
-                iso_year = ymd_isoyear(year, month, day)  # type: ignore
                 cmp = date(year, month, day).isocalendar()
+                iso_calr = ymd_isocalendar(year, month, day)  # type: ignore
                 assert (
-                    iso_calr.year == cmp.year == iso_year
-                ), f"{year}-{month}-{day}: {iso_calr.year} != {cmp.year} != {iso_year}"
+                    iso_calr.year == cmp.year
+                ), f"{year}-{month}-{day}: {iso_calr.year} != {cmp.year}"
                 assert (
-                    iso_calr.week == cmp.week == iso_week
-                ), f"{year}-{month}-{day}: {iso_calr.week} != {cmp.week} != {iso_week}"
+                    iso_calr.week == cmp.week
+                ), f"{year}-{month}-{day}: {iso_calr.week} != {cmp.week}"
                 assert (
                     iso_calr.weekday == cmp.weekday
                 ), f"{year}-{month}-{day}: {iso_calr.weekday} != {cmp.weekday}"
+
     print("Passed: isocalendar")
 
     del date
 
 
-def _test_iso_1st_monday() -> None:
+def _test_iso_week1_monday_ordinal() -> None:
     from _pydatetime import _isoweek1monday  # type: ignore
 
     for year in range(1, 10000):
-        val = _iso_1st_monday(year)  # type: ignore
+        val = iso_week1_monday_ordinal(year)  # type: ignore
         cmp = _isoweek1monday(year)
         assert val == cmp, f"{year}: {val} != {cmp}"
     print("Passed: iso_1st_monday")
@@ -533,6 +555,7 @@ def _test_ymd_fr_ordinal() -> None:
         assert (
             val.year == y and val.month == m and val.day == d
         ), f"{i}: {val} != {y}-{m}-{d}"
+
     print("Passed: ymd_fr_ordinal")
 
     del _ord2ymd, _MAXORDINAL
@@ -1187,13 +1210,13 @@ def _test_numpy_share() -> None:
 
     for unit in units:
         arr = np.array([], dtype="datetime64[%s]" % unit)
-        assert unit == map_nptime_unit_int2str(parse_arr_nptime_unit(arr))  # type: ignore
+        assert unit == map_nptime_unit_int2str(get_arr_nptime_unit(arr))  # type: ignore
         arr = np.array([1, 2, 3], dtype="datetime64[%s]" % unit)
-        assert unit == map_nptime_unit_int2str(parse_arr_nptime_unit(arr))  # type: ignore
+        assert unit == map_nptime_unit_int2str(get_arr_nptime_unit(arr))  # type: ignore
         arr = np.array([], dtype="timedelta64[%s]" % unit)
-        assert unit == map_nptime_unit_int2str(parse_arr_nptime_unit(arr))  # type: ignore
+        assert unit == map_nptime_unit_int2str(get_arr_nptime_unit(arr))  # type: ignore
         arr = np.array([1, 2, 3], dtype="timedelta64[%s]" % unit)
-        assert unit == map_nptime_unit_int2str(parse_arr_nptime_unit(arr))  # type: ignore
+        assert unit == map_nptime_unit_int2str(get_arr_nptime_unit(arr))  # type: ignore
 
     print("Passed: numpy_share")
 
@@ -1206,12 +1229,12 @@ def _test_datetime64_type_check() -> None:
 
     dt = np.datetime64("2021-01-02")
     assert is_dt64(dt)  # type: ignore
-    validate_dt64(dt)  # type: ignore
+    assure_dt64(dt)  # type: ignore
 
     dt2 = 1
     assert not is_dt64(dt2)  # type: ignore
     try:
-        validate_dt64(dt2)  # type: ignore
+        assure_dt64(dt2)  # type: ignore
     except TypeError:
         pass
     else:
@@ -1244,12 +1267,12 @@ def _test_timedelta64_type_check() -> None:
 
     td = np.timedelta64(1, "D")
     assert is_td64(td)  # type: ignore
-    validate_td64(td)  # type: ignore
+    assure_td64(td)  # type: ignore
 
     td2 = 1
     assert not is_td64(td2)  # type: ignore
     try:
-        validate_td64(td2)  # type: ignore
+        assure_td64(td2)  # type: ignore
     except TypeError:
         pass
     else:
@@ -1285,6 +1308,23 @@ def _test_ndarray_type_check() -> None:
     assert is_arr("a") == False  # type: ignore
 
     print("Passed: ndarray_type_check")
+
+    del np
+
+
+# . numpy.ndarray - generate
+def _test_ndarray_generate() -> None:
+    import numpy as np
+
+    arr1 = arr_zero_int64(5)  # type: ignore
+    arr2 = np.array([0, 0, 0, 0, 0], dtype="int64")  # type: ignore
+    assert np.equal(arr1, arr2).all()  # type: ignore
+
+    arr1 = arr_fill_int64(1, 5)  # type: ignore
+    arr2 = np.array([1, 1, 1, 1, 1], dtype="int64")  # type: ignore
+    assert np.equal(arr1, arr2).all()  # type: ignore
+
+    print("Passed: ndarray_generate")
 
     del np
 
@@ -1360,3 +1400,487 @@ def _test_ndarray_td64_conversion() -> None:
     print("Passed: ndarray_td64_conversion")
 
     del np
+
+
+# . math
+def _test_math() -> None:
+    import math
+    from decimal import (
+        Decimal,
+        ROUND_HALF_EVEN,
+        ROUND_HALF_UP,
+        ROUND_HALF_DOWN,
+        ROUND_CEILING,
+        ROUND_FLOOR,
+    )
+
+    # Modulo
+    test_cases = [
+        (4, 2),
+        (-9, 3),
+        (9, -3),
+        (-12, -4),
+        (5, 2),  # normal positive remainder
+        (-5, 2),  # negative numerator -> adjust
+        (7, 4),  # remainder 3 < 4
+        (-7, 4),  # remainder -3 -> adjust to 1
+        (5, -2),  # remainder 1 -> adjust to -1
+        (-5, -2),  # remainder -1 -> already same sign
+        (7, -4),  # remainder 3 -> adjust to -1
+        (-7, -4),  # remainder -3 -> already correct
+        (5, 1),
+        (-5, 1),
+        (5, -1),
+        (-5, -1),
+        (0, 3),
+        (0, -3),
+        (0, 1),
+        (0, -1),
+        (7, 4),  # baseline 7 % 4 == 3
+        (-7, 4),  # baseline -7 % 4 == 1
+        (2**62, 3),  # positive large
+        (-(2**62), 3),  # negative large
+        (2**63 - 1, 7),  # max int64
+        (-(2**63) + 1, 7),  # near min int64
+        (2**62, -3),
+        (-(2**62), -3),
+    ]
+    for num, factor in test_cases:
+        res = math_mod(num, factor)  # type: ignore
+        exp = num % factor
+        assert res == exp, f"Failed: math_mod({num}, {factor}) = {res}, expected {exp}"
+
+    # Round half to even / up / down
+    test_cases = [
+        # . Small magnitudes
+        (4, 2),
+        (-9, 3),
+        (7, 4),
+        (9, 5),
+        (17, -10),
+        (11, 4),
+        (-11, 4),
+        (23, -7),
+        (5, 2),
+        (15, 6),
+        (25, 10),
+        (35, 10),
+        (-5, 2),
+        (-15, 6),
+        (-35, 10),
+        (5, -2),
+        (-5, -2),
+        (35, -10),
+        (1, 3),
+        (2, 3),
+        (-2, 3),
+        (3, 2),
+        (-3, 2),
+        (3, -2),
+        (-3, -2),
+        (-8, -4),
+        (0, 3),
+        (0, -7),
+        (7, 1),
+        (-7, 1),
+        (7, -1),
+        (-7, -1),
+        (14, 10),
+        (16, 10),
+        (-14, 10),
+        (-16, 10),
+        (11, 8),
+        (13, 8),
+        (-11, 8),
+        (-13, 8),
+        # . Large magnitudes
+        (2**62, 3),
+        (-(2**62), 3),
+        (2**63 - 1, 7),
+        (-(2**63) + 1, 7),
+        (2**62, -3),
+        (-(2**62), -3),
+        (2**63 - 1, -7),
+        (-(2**63) + 1, -7),
+        (2**63 - 1, 2),
+        (2**63 - 1, -2),
+        (-(2**63) + 1, 2),
+        (-(2**63) + 1, -2),
+        (2**62, 10),
+        (2**62 + 2, 10),
+        (-(2**62), 10),
+        (-(2**62) - 2, 10),
+        (2**62, -10),
+        (2**62 + 2, -10),
+    ]
+    for num, factor in test_cases:
+        # half to even
+        res = math_div_even(num, factor)  # type: ignore
+        exp = (Decimal(num) / Decimal(factor)).to_integral_value(
+            rounding=ROUND_HALF_EVEN
+        )
+        assert (
+            res == exp
+        ), f"Failed: math_div_even({num}, {factor}) = {res}, expected {exp}"
+        # half to up
+        res = math_div_up(num, factor)  # type: ignore
+        exp = (Decimal(num) / Decimal(factor)).to_integral_value(rounding=ROUND_HALF_UP)
+        assert (
+            res == exp
+        ), f"Failed: math_div_up({num}, {factor}) = {res}, expected {exp}"
+        # half to down
+        res = math_div_down(num, factor)  # type: ignore
+        exp = (Decimal(num) / Decimal(factor)).to_integral_value(
+            rounding=ROUND_HALF_DOWN
+        )
+        assert (
+            res == exp
+        ), f"Failed: math_div_down({num}, {factor}) = {res}, expected {exp}"
+
+    # Ceil / Floor
+    test_cases = [
+        # 1) Exact division (r == 0)
+        (4, 2),
+        (-9, 3),
+        (9, -3),
+        (-12, -4),
+        # 2) Positive divisor (mixed numerators)
+        (7, 4),  # 1.75
+        (11, 4),  # 2.75
+        (-7, 4),  # -1.75
+        (-11, 4),  # -2.75
+        # 3) Negative divisor (mixed numerators)
+        (7, -4),  # -1.75
+        (11, -4),  # -2.75
+        (-7, -4),  # 1.75
+        (-11, -4),  # 2.75
+        # 4) Fractions with |num| < |factor| (results in (-1, 0, 1) bands)
+        (3, 5),
+        (-3, 5),
+        (3, -5),
+        (-3, -5),
+        (1, 3),
+        (2, 3),
+        (-1, 3),
+        (-2, 3),
+        # 5) Denominator ±1 (fast paths)
+        (7, 1),
+        (-7, 1),
+        (7, -1),
+        (-7, -1),
+        # 6) Zero numerator
+        (0, 3),
+        (0, -3),
+        (0, 1),
+        (0, -1),
+        # 7) Near “half-ish” examples (just below / just above halves)
+        (14, 10),
+        (16, 10),
+        (-14, 10),
+        (-16, 10),  # 1.4 / 1.6 / -1.4 / -1.6
+        (11, 8),
+        (13, 8),
+        (-11, 8),
+        (-13, 8),  # 1.375 / 1.625 / ...
+        # 8) Sign-edge microcases around zero
+        (1, -2),  # -0.5  -> floor=-1, ceil=0
+        (-1, -2),  # 0.5   -> floor=0,  ceil=1
+        (1, 2),  # 0.5   -> floor=0,  ceil=1
+        (-1, 2),  # -0.5  -> floor=-1, ceil=0
+        # 9) Large magnitudes within int64 (exercise remainder & sign at scale)
+        (2**62, 3),
+        (-(2**62), 3),
+        (2**62, -3),
+        (-(2**62), -3),
+        (2**63 - 1, 7),
+        (-(2**63) + 1, 7),
+        (2**63 - 1, -7),
+        (-(2**63) + 1, -7),
+        # 10) Large cases where |num| < |factor| but huge num
+        (2**62, 2**63 - 1),
+        (-(2**62), 2**63 - 1),
+        (2**62, -(2**63 - 1)),
+        (-(2**62), -(2**63 - 1)),
+    ]
+    for num, factor in test_cases:
+        res = math_div_ceil(num, factor)  # type: ignore
+        exp = (Decimal(num) / Decimal(factor)).to_integral_value(rounding=ROUND_CEILING)
+        assert (
+            res == exp
+        ), f"Failed: math_div_ceil({num}, {factor}) = {res}, expected {exp}"
+        res = math_div_floor(num, factor)  # type: ignore
+        exp = (Decimal(num) / Decimal(factor)).to_integral_value(rounding=ROUND_FLOOR)
+        assert (
+            res == exp
+        ), f"Failed: math_div_floor({num}, {factor}) = {res}, expected {exp}"
+
+    print("Passed: test_math")
+
+    del (
+        math,
+        Decimal,
+        ROUND_HALF_EVEN,
+        ROUND_HALF_UP,
+        ROUND_HALF_DOWN,
+        ROUND_CEILING,
+        ROUND_FLOOR,
+    )
+
+
+def _test_ndarray_math() -> None:
+    import numpy as np
+    from decimal import (
+        Decimal,
+        ROUND_HALF_EVEN,
+        ROUND_HALF_UP,
+        ROUND_HALF_DOWN,
+        ROUND_CEILING,
+        ROUND_FLOOR,
+    )
+
+    # Modulo
+    test_cases = [
+        (4, 2),
+        (-9, 3),
+        (9, -3),
+        (-12, -4),
+        (5, 2),  # normal positive remainder
+        (-5, 2),  # negative numerator -> adjust
+        (7, 4),  # remainder 3 < 4
+        (-7, 4),  # remainder -3 -> adjust to 1
+        (5, -2),  # remainder 1 -> adjust to -1
+        (-5, -2),  # remainder -1 -> already same sign
+        (7, -4),  # remainder 3 -> adjust to -1
+        (-7, -4),  # remainder -3 -> already correct
+        (5, 1),
+        (-5, 1),
+        (5, -1),
+        (-5, -1),
+        (0, 3),
+        (0, -3),
+        (0, 1),
+        (0, -1),
+        (7, 4),  # baseline 7 % 4 == 3
+        (-7, 4),  # baseline -7 % 4 == 1
+        (2**62, 3),  # positive large
+        (-(2**62), 3),  # negative large
+        (2**63 - 1, 7),  # max int64
+        (-(2**63) + 1, 7),  # near min int64
+        (2**62, -3),
+        (-(2**62), -3),
+    ]
+    for num, factor in test_cases:
+        arr = np.array([num], dtype="int64")
+        res = arr_mod(arr, factor)  # type: ignore
+        exp = arr % factor
+        assert np.equal(res, exp).all()  # type: ignore
+
+    # Round half to even / up / down
+    test_cases = [
+        # . Small magnitudes
+        (4, 2),
+        (-9, 3),
+        (7, 4),
+        (9, 5),
+        (17, -10),
+        (11, 4),
+        (-11, 4),
+        (23, -7),
+        (5, 2),
+        (15, 6),
+        (25, 10),
+        (35, 10),
+        (-5, 2),
+        (-15, 6),
+        (-35, 10),
+        (5, -2),
+        (-5, -2),
+        (35, -10),
+        (1, 3),
+        (2, 3),
+        (-2, 3),
+        (3, 2),
+        (-3, 2),
+        (3, -2),
+        (-3, -2),
+        (-8, -4),
+        (0, 3),
+        (0, -7),
+        (7, 1),
+        (-7, 1),
+        (7, -1),
+        (-7, -1),
+        (14, 10),
+        (16, 10),
+        (-14, 10),
+        (-16, 10),
+        (11, 8),
+        (13, 8),
+        (-11, 8),
+        (-13, 8),
+        # . Large magnitudes
+        (2**62, 3),
+        (-(2**62), 3),
+        (2**63 - 1, 7),
+        (-(2**63) + 1, 7),
+        (2**62, -3),
+        (-(2**62), -3),
+        (2**63 - 1, -7),
+        (-(2**63) + 1, -7),
+        (2**63 - 1, 2),
+        (2**63 - 1, -2),
+        (-(2**63) + 1, 2),
+        (-(2**63) + 1, -2),
+        (2**62, 10),
+        (2**62 + 2, 10),
+        (-(2**62), 10),
+        (-(2**62) - 2, 10),
+        (2**62, -10),
+        (2**62 + 2, -10),
+    ]
+    for num, factor in test_cases:
+        arr = np.array([num], dtype="int64")
+        # half to even
+        res = arr_div_even(arr, factor)  # type: ignore
+        exp = (Decimal(num) / Decimal(factor)).to_integral_value(
+            rounding=ROUND_HALF_EVEN
+        )
+        assert (
+            res[0] == exp
+        ), f"Failed: arr_div_even({num}, {factor}) = {res[0]}, expected {exp}"
+        # half to even multiple
+        if -(2**62) - 10 < num < 2**62 + 10:  # avoid overflow in *2
+            res2 = arr_div_even_mul(arr, factor, 2)  # type: ignore
+            assert (
+                res2[0] == res[0] * 2
+            ), f"Failed: arr_div_even_mul({num}, {factor}, 2) = {res2[0]}, expected {res[0] * 2}"
+        # half to up
+        res = arr_div_up(arr, factor)  # type: ignore
+        exp = (Decimal(num) / Decimal(factor)).to_integral_value(rounding=ROUND_HALF_UP)
+        assert (
+            res[0] == exp
+        ), f"Failed: arr_div_up({num}, {factor}) = {res[0]}, expected {exp}"
+        # half to up multiple
+        if -(2**62) - 10 < num < 2**62 + 10:  # avoid overflow in *2
+            res2 = arr_div_up_mul(arr, factor, 2)  # type: ignore
+            assert (
+                res2[0] == res[0] * 2
+            ), f"Failed: arr_div_up_mul({num}, {factor}, 2) = {res2[0]}, expected {res[0] * 2}"
+        # half to down
+        res = arr_div_down(arr, factor)  # type: ignore
+        exp = (Decimal(num) / Decimal(factor)).to_integral_value(
+            rounding=ROUND_HALF_DOWN
+        )
+        assert (
+            res[0] == exp
+        ), f"Failed: arr_div_down({num}, {factor}) = {res[0]}, expected {exp}"
+        # half to down multiple
+        if -(2**62) - 10 < num < 2**62 + 10:  # avoid overflow in *2
+            res2 = arr_div_down_mul(arr, factor, 2)  # type: ignore
+            assert (
+                res2[0] == res[0] * 2
+            ), f"Failed: arr_div_down_mul({num}, {factor}, 2) = {res2[0]}, expected {res[0] * 2}"
+
+    # Ceil / Floor
+    test_cases = [
+        # 1) Exact division (r == 0)
+        (4, 2),
+        (-9, 3),
+        (9, -3),
+        (-12, -4),
+        # 2) Positive divisor (mixed numerators)
+        (7, 4),  # 1.75
+        (11, 4),  # 2.75
+        (-7, 4),  # -1.75
+        (-11, 4),  # -2.75
+        # 3) Negative divisor (mixed numerators)
+        (7, -4),  # -1.75
+        (11, -4),  # -2.75
+        (-7, -4),  # 1.75
+        (-11, -4),  # 2.75
+        # 4) Fractions with |num| < |factor| (results in (-1, 0, 1) bands)
+        (3, 5),
+        (-3, 5),
+        (3, -5),
+        (-3, -5),
+        (1, 3),
+        (2, 3),
+        (-1, 3),
+        (-2, 3),
+        # 5) Denominator ±1 (fast paths)
+        (7, 1),
+        (-7, 1),
+        (7, -1),
+        (-7, -1),
+        # 6) Zero numerator
+        (0, 3),
+        (0, -3),
+        (0, 1),
+        (0, -1),
+        # 7) Near “half-ish” examples (just below / just above halves)
+        (14, 10),
+        (16, 10),
+        (-14, 10),
+        (-16, 10),  # 1.4 / 1.6 / -1.4 / -1.6
+        (11, 8),
+        (13, 8),
+        (-11, 8),
+        (-13, 8),  # 1.375 / 1.625 / ...
+        # 8) Sign-edge microcases around zero
+        (1, -2),  # -0.5  -> floor=-1, ceil=0
+        (-1, -2),  # 0.5   -> floor=0,  ceil=1
+        (1, 2),  # 0.5   -> floor=0,  ceil=1
+        (-1, 2),  # -0.5  -> floor=-1, ceil=0
+        # 9) Large magnitudes within int64 (exercise remainder & sign at scale)
+        (2**62, 3),
+        (-(2**62), 3),
+        (2**62, -3),
+        (-(2**62), -3),
+        (2**63 - 1, 7),
+        (-(2**63) + 1, 7),
+        (2**63 - 1, -7),
+        (-(2**63) + 1, -7),
+        # 10) Large cases where |num| < |factor| but huge num
+        (2**62, 2**63 - 1),
+        (-(2**62), 2**63 - 1),
+        (2**62, -(2**63 - 1)),
+        (-(2**62), -(2**63 - 1)),
+    ]
+    for num, factor in test_cases:
+        arr = np.array([num], dtype="int64")
+        # Ceil
+        res = arr_div_ceil(arr, factor)  # type: ignore
+        exp = (Decimal(num) / Decimal(factor)).to_integral_value(rounding=ROUND_CEILING)
+        assert (
+            res[0] == exp
+        ), f"Failed: arr_div_ceil({num}, {factor}) = {res[0]}, expected {exp}"
+        # Ceil multiple
+        if -(2**62) - 10 < num < 2**62 + 10:  # avoid overflow in *2
+            res2 = arr_div_ceil_mul(arr, factor, 2)  # type: ignore
+            assert (
+                res2[0] == res[0] * 2
+            ), f"Failed: arr_div_ceil_mul({num}, {factor}, 2) = {res2[0]}, expected {res[0] * 2}"
+        # Floor
+        res = arr_div_floor(arr, factor)  # type: ignore
+        exp = (Decimal(num) / Decimal(factor)).to_integral_value(rounding=ROUND_FLOOR)
+        assert (
+            res[0] == exp
+        ), f"Failed: arr_div_floor({num}, {factor}) = {res[0]}, expected {exp}"
+        # Floor multiple
+        if -(2**62) - 10 < num < 2**62 + 10:  # avoid overflow in *2
+            res2 = arr_div_floor_mul(arr, factor, 2)  # type: ignore
+            assert (
+                res2[0] == res[0] * 2
+            ), f"Failed: arr_div_floor_mul({num}, {factor}, 2) = {res2[0]}, expected {res[0] * 2}"
+
+    print("Passed: ndarray_math")
+
+    del (
+        np,
+        Decimal,
+        ROUND_HALF_EVEN,
+        ROUND_HALF_UP,
+        ROUND_HALF_DOWN,
+        ROUND_CEILING,
+        ROUND_FLOOR,
+    )

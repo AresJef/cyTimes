@@ -77,39 +77,67 @@ DT64_NS_NS_MAX: int
 
 # Math ----------------------------------------------------------------------------------------------
 def math_mod(num: int, factor: int, offset: int = 0) -> int:
-    """(cfunc) Computes the modulo of a number by the factor,
-    handling negative numbers accoring to Python's modulo
-    semantics `<'int'>`.
+    """(cfunc) Computes the modulo of a number by the factor `<'int'>`.
 
     Equivalent to:
     >>> (num % factor) + offset
     """
 
-def math_round_div(num: int, factor: int, offset: int = 0) -> int:
-    """(cfunc) Divides a number by the factor and rounds the result
-    to the nearest integer (half away from zero), handling negative
-    numbers accoring to Python's division semantics `<'int'>`.
+def math_div_even(num: int, factor: int, offset: int = 0) -> int:
+    """(cfucn) Divides a number by the factor and rounds the result to
+    the nearest integer (half-to-even) `<'int'>`.
 
     Equivalent to:
-    >>> round(num / factor, 0) + offset
+    >>> round(num / factor, 0) + offset  # For small magnitudes
+        # OR
+        (Decimal(num) / Decimal(factor)).to_integral_value(rounding=ROUND_TO_EVEN)
     """
 
-def math_ceil_div(num: int, factor: int, offset: int = 0) -> int:
-    """(cfunc) Divides a number by the factor and rounds
-    the result up to the nearest integer, handling negative
-    numbers accoring to Python's division semantics `<'int'>`.
+def math_div_up(num: int, factor: int, offset: int = 0) -> int:
+    """(cfunc) Divides a number by the factor and rounds the result to
+    the nearest integer (half-up / away-from-zero) `<'int'>`.
 
     Equivalent to:
-    >>> math.ceil(num / factor) + offset
+    >>> (Decimal(num) / Decimal(factor)).to_integral_value(rounding=ROUND_HALF_UP) + offset
     """
 
-def math_floor_div(num: int, factor: int, offset: int = 0) -> int:
-    """(cfunc) Divides a number by the factor and rounds
-    the result down to the nearest integer, handling negative
-    numbers accoring to Python's division semantics `<'int'>`.
+def math_div_down(num: int, factor: int, offset: int = 0) -> int:
+    """(cfunc) Divides a number by the factor and rounds the result to
+    the nearest integer (half-down / toward-zero) `<'int'>`.
 
     Equivalent to:
-    >>> math.floor(num / factor) + offset
+    >>> (Decimal(num) / Decimal(factor)).to_integral_value(rounding=ROUND_HALF_DOWN) + offset
+    """
+
+def math_div_ceil(num: int, factor: int, offset: int = 0) -> int:
+    """(cfunc) Divides a number by the factor and ceil the result
+    up to the nearest integer `<'int'>`.
+
+    Equivalent to:
+    >>> math.ceil(num / factor) + offset  # Small magnitudes
+        # OR
+        (Decimal(num) / Decimal(factor)).to_integral_value(rounding=ROUND_CEILING) + offset
+    """
+
+def math_div_floor(num: int, factor: int, offset: int = 0) -> int:
+    """(cfunc) Divides a number by the factor and floors the result
+    down to the nearest integer `<'int'>`.
+
+    Equivalent to:
+    >>> math.floor(num / factor) + offset  # Small magnitudes
+        # OR
+        (Decimal(num) / Decimal(factor)).to_integral_value(rounding=ROUND_FLOOR) + offset
+    """
+
+def math_div_trunc(num: int, factor: int, offset: int = 0) -> int:
+    """(cfunc) Divides a number by the factor and truncates the result
+    toward zero to the nearest integer `<'int'>`.
+    """
+
+def abs_diff_ull(a: int, b: int) -> int:
+    """(cfunc) Return |a - b| as uint64 using unsigned arithmetic `<'int'>`.
+
+    Safe for all long long pairs (avoids signed overflow/UB near LLONG_MIN/LLONG_MAX).
     """
 
 # Parser --------------------------------------------------------------------------------------------
@@ -153,7 +181,7 @@ def parse_isoyear(data: str, pos: int, size: int) -> int:
     This function extracts and parses the year component from an ISO date string.
     It reads four characters starting at the specified position and converts them
     into an integer representing the year. The function ensures that the parsed
-    year is valid (i.e., between '0001' and '9999'').
+    year is valid (i.e., between '0001' and '9999').
 
     :param data `<'str'>`: The input string containing the ISO year to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO year.
@@ -192,7 +220,7 @@ def parse_isoday(data: str, pos: int, size: int) -> int:
     """
 
 def parse_isoweek(data: str, pos: int, size: int) -> int:
-    """(cfunc) Prase an ISO format week number component (WW) from a string,
+    """(cfunc) Parse an ISO format week number component (WW) from a string,
     returns `-1` for invalid ISO week number `<'int'>`.
 
     This function extracts and parses the week number from an ISO date string.
@@ -207,7 +235,7 @@ def parse_isoweek(data: str, pos: int, size: int) -> int:
     """
 
 def parse_isoweekday(data: str, pos: int, size: int) -> int:
-    """(cfunc) Prase an ISO format weekday component (D) from a string,
+    """(cfunc) Parse an ISO format weekday component (D) from a string,
     returns `-1` for invalid ISO weekdays `<'int'>`.
 
     This function extracts and parses the weekday component from an ISO date string.
@@ -221,7 +249,7 @@ def parse_isoweekday(data: str, pos: int, size: int) -> int:
     """
 
 def parse_isoyearday(data: str, pos: int, size: int) -> int:
-    """(cfunc) Prase an ISO format day of the year component (DDD) from a string,
+    """(cfunc) Parse an ISO format day of the year component (DDD) from a string,
     returns `-1` for invalid ISO day of the year `<'int'>`.
 
     This function extracts and parses the day of the year from an ISO date string.
@@ -374,14 +402,21 @@ def is_long_year(year: int) -> bool:
     #### Long year: maximum ISO week number equal 53.
     """
 
-def leap_bt_year(year1: int, year2: int) -> int:
+def leap_years(year: int, inclusive: bool) -> int:
+    """(cfunc) Count leap years in the range [1 .. y] `<'int'>`.
+
+    If inclusive == False, exclusive of y itself.
+    I.e., _leaps_upto(1) == 0; _leaps_upto(5) counts only year 4.
+    """
+
+def leap_bt_years(year1: int, year2: int) -> int:
     """(cfunc) Compute the number of leap years between 'year1' & 'year2' `<'int'>`."""
 
 def days_in_year(year: int) -> int:
     """(cfunc) Compute the maximum days (365, 366) in the 'year' `<'int'>`."""
 
 def days_bf_year(year: int) -> int:
-    """(cfunc) Compute the number of days between the 1st day of 1AD and the 'year' `<'int'>`."""
+    """(cfunc) Compute days from 0001-01-01 up to the start of 'year' `<'int'>`."""
 
 def days_of_year(year: int, month: int, day: int) -> int:
     """(cfunc) Compute the number of days between the 1st day of
@@ -436,13 +471,20 @@ def ymd_to_ordinal(year: int, month: int, day: int) -> int:
     """(cfunc) Convert 'Y/M/D' to Gregorian ordinal days `<'int'>`."""
 
 def ymd_fr_ordinal(val: int) -> dict:
-    """(cfunc) Create 'struct:ymd' from Gregorian ordinal days `<'struct:ymd'>`."""
+    """(cfunc) Create 'struct:ymd' from Gregorian ordinal days `<'struct:ymd'>`.
+
+    Faster, branch-light version using 400y cycles and 153-day month blocks.
+    Ordinal 'val' is clamped to [1..ORDINAL_MAX]; 1 -> 0001-01-01.
+    """
 
 def ymd_fr_isocalendar(year: int, week: int, weekday: int) -> dict:
-    """(cfunc) Create 'struct:ymd' from ISO calendar values `<'struct:ymd'>`."""
+    """(cfunc) Create 'struct:ymd' from ISO calendar values (ISO year, ISO week, ISO weekday) `<'struct:ymd'>`."""
 
 def ymd_fr_days_of_year(year: int, days: int) -> dict:
     """(cfunc) Create 'struct:ymd' from the year and days of the year `<'struct:ymd'>`."""
+
+def iso_week1_monday_ordinal(year: int) -> int:
+    """(cfunc) Gregorian ordinal for the Monday starting ISO week 1 of year `<'int'>`."""
 
 # datetime.date -------------------------------------------------------------------------------------
 # . generate
@@ -892,7 +934,7 @@ def td_to_isoformat(td: datetime.timedelta) -> str:
     """(cfunc) Convert timedelta to string in ISO format `<'str'>`."""
 
 def td_to_utcformat(td: datetime.timedelta) -> str:
-    """(cfunc) Convert timedelta to string in UTC format ('+/-HH:MM') `<'str'>`."""
+    """(cfunc) Convert timedelta to string in UTC format ('+/-HHMM') `<'str'>`."""
 
 def td_to_us(td: datetime.timedelta) -> int:
     """(cfunc) Convert timedelta to microseconds `<'int'>`."""
@@ -995,24 +1037,28 @@ def tz_utcformat(
     tz: datetime.tzinfo | None,
     dt: datetime.datetime | None = None,
 ) -> str | None:
-    """(cfunc) Access tzinfo as string in UTC format ('+/-HH:MM') `<'str/None'>`."""
+    """(cfunc) Access tzinfo as string in UTC format ('+/-HHMM') `<'str/None'>`."""
 
 # NumPy: share --------------------------------------------------------------------------------------
-def map_nptime_unit_int2str(unit: int) -> str:
-    """(cfunc) Map numpy datetime64/timedelta64 unit from integer
-    to the corresponding string representation `<'str'>`."""
+def get_arr_nptime_unit(arr: np.ndarray) -> int:
+    """(cfunc) Get ndarray[datetime64/timedelta64] unit from the,
+    returns the unit `<'int'>`."""
 
 def map_nptime_unit_str2int(unit: str) -> int:
     """(cfunc) Map numpy datetime64/timedelta64 unit from string
     representation to the corresponding integer `<'int'>`."""
 
-def get_arr_nptime_unit(arr: np.ndarray) -> int:
-    """(cfunc) Get ndarray[datetime64/timedelta64] unit from the,
-    returns the unit in `<'int'>`."""
+def map_nptime_unit_int2str(unit: int) -> str:
+    """(cfunc) Map numpy datetime64/timedelta64 unit from integer
+    to the corresponding string representation `<'str'>`."""
 
-def parse_arr_nptime_unit(arr: np.ndarray) -> int:
-    """(cfunc) Parse ndarray[datetime64/timedelta64] unit from the,
-    returns the unit in `<'int'>`."""
+def assure_nptime_unit_str(unit: str) -> str:
+    """(cfunc) Assure the numpy datetime64/timedelta64 unit string is valid `<'str'>`."""
+
+def map_nptime_unit_int2dt64(unit: int) -> np.dtype:
+    """(cfunc) Map numpy datetime64/timedelta64 unit from integer
+    to the corresponding numpy dtype `<'np.dtype'>`.
+    """
 
 # NumPy: datetime64 ---------------------------------------------------------------------------------
 # . type check
@@ -1023,9 +1069,8 @@ def is_dt64(obj: object) -> bool:
     >>> isinstance(obj, np.datetime64)
     """
 
-def validate_dt64(obj: object) -> None:
-    """(cfunc) Validate if an object is an instance of np.datetime64,
-    and raises `TypeError` if not."""
+def assure_dt64(obj: object) -> None:
+    """(cfunc) Assure the object is an instance of np.datetime64."""
 
 # . conversion
 def dt64_as_int64_us(dt64: np.datetime64, offset: int = 0) -> int:
@@ -1050,16 +1095,15 @@ def is_td64(obj: object) -> bool:
     >>> isinstance(obj, np.timedelta64)
     """
 
-def validate_td64(obj: object) -> None:
-    """(cfunc) Validate if an object is an instance of np.timedelta64,
-    and raises `TypeError` if not."""
+def assure_td64(obj: object) -> None:
+    """(cfunc) Assure the object is an instance of np.datetime64."""
 
 # . conversion
 def td64_as_int64_us(td64: np.timedelta64, offset: int = 0) -> int:
     """(cfunc) Cast np.timedelta64 to int64 under 'us' (microsecond) resolution `<'int'>`.
 
     Equivalent to:
-    >>> td64.astype("timedelta64[D]").astype("int64") + offset
+    >>> td64.astype("timedelta64[us]").astype("int64") + offset
     """
 
 def td64_to_td(td64: np.timedelta64) -> datetime.timedelta:
@@ -1079,75 +1123,93 @@ def is_arr(obj: object) -> bool:
     >>> isinstance(obj, np.ndarray)
     """
 
+def assure_1dim_arr(obj: object) -> bool:
+    """(cfunc) Assure the given ndarray is 1-dimensional."""
+
+def assure_arr_contiguous(arr: np.ndarray) -> np.ndarray:
+    """(cfunc) Assure the given ndarray is contiguous in memory.
+
+    Automatically convert to contiguous array if not.
+    """
+
 # . dtype
 def arr_assure_int64(arr: np.ndarray) -> np.ndarray[np.int64]:
-    """(cfunc) Assure the given ndarray is dtype of 'int64' `<'ndarray[int64]'>`.
+    """(cfunc) Assure the given ndarray is 1-dimensional and is
+    dtype of 'int64' `<'ndarray[int64]'>`.
 
-    Automatically cast the 'arr' to 'int64' if not the correct dtype.
+    - Will try to cast to 'int64' if it is not the correct dtype.
     """
 
 def arr_assure_int64_like(arr: np.ndarray) -> np.ndarray:
-    """(cfunc) Assure the given ndarray is dtype of [int64/datetime64/timedelta64] `<'ndarray'>`.
+    """(cfunc) Assure the given ndarray is 1-dimensional and is
+    dtype of [int64/datetime64/timedelta64] `<'ndarray'>`.
 
-    The data of an 'int64-like' array can be directly accessed as 'np.npy_int64*'
-
-    Automatically cast the 'arr' to 'int64' if not the correct dtype.
+    - Will try to cast to 'int64' if it is not the correct dtype.
     """
 
 def arr_assure_float64(arr: np.ndarray) -> np.ndarray[np.float64]:
-    """(cfunc) Assure the given ndarray is dtype of 'float64' `<'ndarray[int64]'>`.
+    """(cfunc) Assure the given ndarray is 1-dimensional and is
+    dtype of 'float64' `<'ndarray[int64]'>`.
 
-    Automatically cast the 'arr' to 'flaot64' if not the correct dtype.
+    - Will try to cast to 'float64' if it is not the correct dtype.
     """
 
 # . create
 def arr_zero_int64(size: int) -> np.ndarray[np.int64]:
-    """(cfunc) Create an 1-dimensional ndarray[int64]
-    filled with zero `<'ndarray[int64]'>`.
+    """(cfunc) Create a 1-dimensional ndarray[int64] filled with zero `<'ndarray[int64]'>`.
 
     Equivalent to:
     >>> np.zeros(size, dtype="int64")
     """
 
-def arr_full_int64(value: int, size: int) -> np.ndarray[np.int64]:
-    """(cfunc) Create an 1-dimensional ndarray[int64]
-    filled with 'value' `<'ndarray[int64]'>`.
+def arr_fill_int64(value: int, size: int) -> np.ndarray[np.int64]:
+    """(cfunc) Create a new 1-dimensional ndarray[int64] filled
+    with a specific integer `<'ndarray[int64]'>`.
 
     Equivalent to:
     >>> np.full(size, value, dtype="int64")
     """
 
 # . range
-def arr_clip(
+def arr_clamp(
     arr: np.ndarray,
     minimum: int,
     maximum: int,
     offset: int = 0,
 ) -> np.ndarray[np.int64]:
-    """(cfunc) Clip the values of an ndarray to a given range `<'ndarray[int64]'>`.
+    """(cfunc) Clamp the values of a 1-dimensional ndarray between
+    'minimum' and 'maximum' value `<'ndarray[int64]'>`.
 
-    Before compute, this function will cast the array to 'int64'
-    if it is not dtype of [int64/datetime64/timedelta64].
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
 
     Equivalent to:
     >>> np.clip(arr, minimum, maximum) + offset
     """
 
 def arr_min(arr: np.ndarray, value: int, offset: int = 0) -> np.ndarray[np.int64]:
-    """(cfunc) Get the minimum values between the ndarray and the 'value' `<'ndarray[int64]'>`.
+    """(cfunc) Get the min values between a 1-dimensional ndarray
+    and the passed-in 'value' `<'ndarray[int64]'>`.
 
-    Before compute, this function will cast the array to 'int64'
-    if it is not dtype of [int64/datetime64/timedelta64].
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
 
     Equivalent to:
     >>> np.minimum(arr, value) + offset
     """
 
 def arr_max(arr: np.ndarray, value: int, offset: int = 0) -> np.ndarray[np.int64]:
-    """(cfunc) Get the maximum values between the ndarray and the 'value' `<'ndarray[int64]'>`.
+    """(cfunc) Get the max values between a 1-dimensional ndarray
+    and the passed-in 'value' `<'ndarray[int64]'>`.
 
-    Before compute, this function will cast the array to 'int64'
-    if it is not dtype of [int64/datetime64/timedelta64].
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
 
     Equivalent to:
     >>> np.maximum(arr, value) + offset
@@ -1158,10 +1220,12 @@ def arr_min_arr(
     arr2: np.ndarray,
     offset: int = 0,
 ) -> np.ndarray[np.int64]:
-    """(cfunc) Get the minimum values between two ndarrays `<'ndarray[int64]'>`.
+    """(cfunc) Get the minimum values between two 1-dimensional ndarrays `<'ndarray[int64]'>`.
 
-    Before compute, this function will cast the arrays to 'int64'
-    if they are not dtype of [int64/datetime64/timedelta64].
+    - If the dtype of the arrays are not int64/datetime64/timedelta64,
+      this function will try to cast the arrays to 'int64'.
+    - Does not support comparison between int64 and datetime-like dtypes.
+    - For any NaT values in datetime64/timedelta64 arrays, they will be propagated.
 
     Equivalent to:
     >>> np.minimum(arr1, arr2) + offset
@@ -1172,59 +1236,52 @@ def arr_max_arr(
     arr2: np.ndarray,
     offset: int = 0,
 ) -> np.ndarray[np.int64]:
-    """(cfunc) Get the maximum values between two ndarrays `<'ndarray[int64]'>`.
+    """(cfunc) Get the maxmimum values between two 1-dimensional ndarrays `<'ndarray[int64]'>`.
 
-    Before compute, this function will cast the arrays to 'int64'
-    if they are not dtype of [int64/datetime64/timedelta64].
+    - If the dtype of the arrays are not int64/datetime64/timedelta64,
+      this function will try to cast the arrays to 'int64'.
+    - Does not support comparison between int64 and datetime-like dtypes.
+    - For any NaT values in datetime64/timedelta64 arrays, they will be propagated.
 
     Equivalent to:
     >>> np.maximum(arr1, arr2) + offset
     """
 
 # . arithmetic
-def arr_abs(arr: np.ndarray, offset: int = 0):
-    """(cfunc) Compute the absolute values of the ndarray `<'ndarray[int64]'>`.
+def arr_abs(arr: np.ndarray, offset: int = 0) -> np.ndarray[np.int64]:
+    """(cfunc) Compute the absolute values of a 1-dimensional ndarray `<'ndarray[int64]'>`.
 
-    Before compute, this function will cast the array to 'int64'
-    if it is not dtype of [int64/datetime64/timedelta64].
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
 
     Equivalent to:
     >>> np.abs(arr) + offset
     """
 
 def arr_add(arr: np.ndarray, value: int) -> np.ndarray[np.int64]:
-    """(cfunc) Add the value to the ndarray `<'ndarray[int64]'>`.
+    """(cfunc) Add the value to a 1-dimensional ndarray `<'ndarray[int64]'>`.
 
-    Before compute, this function will cast the array to 'int64'
-    if it is not in 'int64'/'datetime64'/'timedelta64' dtype.
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
 
     Equivalent to:
     >>> arr + value
     """
 
 def arr_mul(arr: np.ndarray, factor: int, offset: int = 0) -> np.ndarray[np.int64]:
-    """(cfunc) Multiply the values of the ndarray by the factor `<'ndarray[int64]'>`.
+    """(cfunc) Multiply the values of a 1-dimensional ndarray by the factor `<'ndarray[int64]'>`.
 
-    Before compute, this function will cast the array to 'int64'
-    if it is not in 'int64'/'datetime64'/'timedelta64' dtype.
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
 
     Equivalent to:
     >>> arr * factor + offset
-    """
-
-def arr_div(
-    arr: np.ndarray,
-    factor: int | float,
-    offset: int | float = 0,
-) -> np.ndarray[np.float64]:
-    """(cfunc) Divides the values of the ndarray by the factor, handling negative
-    numbers accoring to Python's division semantics `<'ndarray[float64]'>`.
-
-    Before compute, this function will cast the array to 'float64'
-    if it is not in 'float64' dtype.
-
-    Equivalent to:
-    >>> arr / factor + offset
     """
 
 def arr_mod(
@@ -1232,127 +1289,235 @@ def arr_mod(
     factor: int,
     offset: int = 0,
 ) -> np.ndarray[np.int64]:
-    """(cfunc) Computes the modulo of the values of the ndarray by the
-    factor, handling negative numbers according to Python's modulo
-    semantics `<'ndarray[int64]'>`.
+    """(cfunc) Computes the modulo of the values of a 1-dimensional ndarray
+    by the factor `<'ndarray[int64]'>`.
 
-    Before computation, this function will cast the array to 'int64'
-    if it is not already in 'int64'/'datetime64'/'timedelta64' dtype.
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
 
     Equivalent to:
     >>> arr % factor + offset
     """
 
-def arr_round_div(
+def arr_div(
+    arr: np.ndarray,
+    factor: int | float,
+    offset: int | float = 0,
+) -> np.ndarray[np.float64]:
+    """(cfunc) Divides the values of a 1-dimensional ndarray by the factor `<'ndarray[float64]'>`.
+
+    - If the dtype is not float64, this function will try to cast the array to 'float64'.
+    - For datetime64/timedelta64 arrays, the NaT values will `NOT` be preserved and
+      will be calculated as `-9223372036854775808 / factor + offset`.
+
+    Equivalent to:
+    >>> arr / factor + offset
+    """
+
+def arr_div_even(
     arr: np.ndarray,
     factor: int,
     offset: int = 0,
 ) -> np.ndarray[np.int64]:
-    """(cfunc) Divides the values of the ndarray by the factor and rounds
-    to the nearest integers (half away from zero), handling negative
-    numbers accoring to Python's division semantics `<'ndarray[int64]'>`.
+    """(cfunc) Divides the values of a 1-dimensional ndarray by the factor
+    and rounds to the nearest integers (half-to-even) `<'ndarray[int64]'>`.
 
-    Before compute, this function will cast the array to 'int64'
-    if it is not in 'int64'/'datetime64'/'timedelta64' dtype.
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
 
     Equivalent to:
     >>> np.round(arr / factor, 0) + offset
     """
 
-def arr_ceil_div(
-    arr: np.ndarray,
-    factor: int,
-    offset: int = 0,
-) -> np.ndarray[np.int64]:
-    """(cfunc) Divides the values of the ndarray by the factor and
-    rounds up to the nearest integers, handling negative numbers
-    accoring to Python's division semantics `<'ndarray[int64]'>`.
-
-    Before compute, this function will cast the array to 'int64'
-    if it is not in 'int64'/'datetime64'/'timedelta64' dtype.
-
-    Equivalent to:
-    >>> np.ceil(arr / factor) + offset
-    """
-
-def arr_floor_div(
-    arr: np.ndarray,
-    factor: int,
-    offset: int = 0,
-) -> np.ndarray[np.int64]:
-    """(cfunc) Divides the values of the ndarray by the factor and
-    rounds down to the nearest integers, handling negative numbers
-    accoring to Python's division semantics `<'ndarray[int64]'>`.
-
-    Before compute, this function will cast the array to 'int64'
-    if it is not in 'int64'/'datetime64'/'timedelta64' dtype.
-
-    Equivalent to:
-    >>> np.floor(arr / factor) + offset
-    """
-
-def arr_round_to_mul(
+def arr_div_even_mul(
     arr: np.ndarray,
     factor: int,
     multiple: int = 0,
     offset: int = 0,
 ) -> np.ndarray[np.int64]:
-    """(cfunc) Round to multiple. Divides the values of the ndarray by the factor
-    and rounds to the nearest integers (half away from zero), handling negative
-    numbers accoring to Python's division semantics. Finally multiply the the multiple.
-    Argument 'multiple' defaults to `0`, which means if not specified, it uses
-    factor as the multiple `<'ndarray[int64]'>`.
+    """(cfunc) Divide a 1-dimensional ndarray by 'factor', round to nearest ties to
+    even (half-to-even), then scale by 'multiple' and add 'offset' `<'ndarray[int64]'>`.
 
-    Before compute, this function will cast the array to 'int64'
-    if it is not in 'int64'/'datetime64'/'timedelta64' dtype.
+    - If the multiple is `0` (default), it will be set to
+      the same value as the factor.
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
 
     Equivalent to:
     >>> np.round(arr / factor, 0) * multiple + offset
     """
 
-def arr_ceil_to_mul(
+def arr_div_up(
+    arr: np.ndarray,
+    factor: int,
+    offset: int = 0,
+) -> np.ndarray[np.int64]:
+    """(cfunc) Divides the values of a 1-dimensional ndarray by the factor
+    and rounds to the nearest integers (half-up / away-from-zero) `<'ndarray[int64]'>`.
+
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
+    """
+
+def arr_div_up_mul(
     arr: np.ndarray,
     factor: int,
     multiple: int = 0,
     offset: int = 0,
 ) -> np.ndarray[np.int64]:
-    """(cfunc) Ceil to multiple. Divides the values of the ndarray by the factor
-    and rounds up to the nearest integers, handling negative numbers accoring
-    to Python's division semantics. Finally multiply the the multiple. Argument
-    'multiple' defaults to `0`, which means if not specified, it uses factor
-    as the multiple `<'ndarray[int64]'>`.
+    """(cfunc) Divide a 1-dimensional ndarray by 'factor', round to nearest away from
+    zero (half-up), then scale by 'multiple' and add 'offset' <'ndarray[int64]'>.
 
-    Before compute, this function will cast the array to 'int64'
-    if it is not in 'int64'/'datetime64'/'timedelta64' dtype.
+    - If the multiple is `0` (default), it will be set to
+      the same value as the factor.
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
+    """
+
+def arr_div_down(
+    arr: np.ndarray,
+    factor: int,
+    offset: int = 0,
+) -> np.ndarray[np.int64]:
+    """(cfunc) Divides the values of a 1-dimensional ndarray by the factor
+    and rounds to the nearest integers (half-down / toward-zero) `<'ndarray[int64]'>`.
+
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
+    """
+
+def arr_div_down_mul(
+    arr: np.ndarray,
+    factor: int,
+    multiple: int = 0,
+    offset: int = 0,
+) -> np.ndarray[np.int64]:
+    """(cfunc) Divide a 1-dimensional ndarray by 'factor', round to nearest with ties toward
+    zero (half-down), then scale by 'multiple' and add 'offset' <'ndarray[int64]'>.
+
+    - If the multiple is `0` (default), it will be set to
+      the same value as the factor.
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
+    """
+
+def arr_div_ceil(
+    arr: np.ndarray,
+    factor: int,
+    offset: int = 0,
+) -> np.ndarray[np.int64]:
+    """(cfunc) Divides the values of a 1-dimensional ndarray by the factor
+    and ceils up to the nearest integers `<'ndarray[int64]'>`.
+
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
+
+    Equivalent to:
+    >>> np.ceil(arr / factor) + offset
+    """
+
+def arr_div_ceil_mul(
+    arr: np.ndarray,
+    factor: int,
+    multiple: int = 0,
+    offset: int = 0,
+) -> np.ndarray[np.int64]:
+    """(cfunc) Divide a 1-dimensional ndarray by 'factor', ceil to integers, then
+    scale by 'multiple' and add 'offset' <'ndarray[int64]'>.
+
+    - If the multiple is `0` (default), it will be set to
+      the same value as the factor.
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
 
     Equivalent to:
     >>> np.ceil(arr / factor) * multiple + offset
     """
 
-def arr_floor_to_mul(
+def arr_div_floor(
+    arr: np.ndarray,
+    factor: int,
+    offset: int = 0,
+) -> np.ndarray[np.int64]:
+    """(cfunc) Divides the values of a 1-dimensional ndarray by the factor
+    and floors down to the nearest integers `<'ndarray[int64]'>`.
+
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
+
+    Equivalent to:
+    >>> np.floor(arr / factor) + offset
+    """
+
+def arr_div_floor_mul(
     arr: np.ndarray,
     factor: int,
     multiple: int = 0,
     offset: int = 0,
 ) -> np.ndarray[np.int64]:
-    """(cfunc) Floor to multiple. Divides the values of the ndarray by the factor
-    and rounds down to the nearest integers, handling negative numbers accoring
-    to Python's division semantics. Finally multiply the the multiple. Argument
-    multiple defaults to '0', which means if not specified, it uses factor as
-    the multiple `<'ndarray[int64]'>`.
+    """(cfunc) Divide a 1-dimensional ndarray by 'factor', floor to integers, then
+    scale by 'multiple' and add 'offset' <'ndarray[int64]'>.
 
-    Before compute, this function will cast the array to 'int64'
-    if it is not in 'int64'/'datetime64'/'timedelta64' dtype.
+    - If the multiple is `0` (default), it will be set to
+      the same value as the factor.
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
 
     Equivalent to:
     >>> np.floor(arr / factor) * multiple + offset
     """
 
-def arr_equal_to_arr(arr1: np.ndarray, arr2: np.ndarray) -> np.ndarray[bool]:
-    """(cfunc) Check if the values of two ndarrays are equal `<'ndarray[bool]'>`
+def arr_div_trunc(
+    arr: np.ndarray,
+    factor: int,
+    offset: int = 0,
+) -> np.ndarray[np.int64]:
+    """(cfunc) Divide the values of a 1-dimensional ndarray by `factor`
+    and truncate toward zero `<'ndarray[int64]'>`.
 
-    Equivalent to:
-    >>> arr1 == arr2
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
+    """
+
+def arr_div_trunc_mul(
+    arr: np.ndarray,
+    factor: int,
+    multiple: int = 0,
+    offset: int = 0,
+) -> np.ndarray[np.int64]:
+    """(cfunc) Divide a 1-dimensional ndarray by 'factor', truncate toward zero,
+    then scale by 'multiple' and add 'offset' <'ndarray[int64]'>.
+
+    - If the multiple is `0` (default), it will be set to
+      the same value as the factor.
+    - If the dtype is not int64/datetime64/timedelta64,
+      this function will try to cast the array to 'int64'.
+    - For NaT values in datetime64/timedelta64 arrays,
+      they will be preserved.
     """
 
 def arr_add_arr(
@@ -1360,13 +1525,14 @@ def arr_add_arr(
     arr2: np.ndarray,
     offset: int = 0,
 ) -> np.ndarray[np.int64]:
-    """(cfunc) Addition between two ndarrays `<'ndarray[int64]'>`.
+    """(cfunc) Addition between two 1-dimensional ndarrays `<'ndarray[int64]'>`.
 
-    Before compute, this function will cast the arrays to 'int64'
-    if they are not in 'int64'/'datetime64'/'timedelta64' dtype.
+    - If the dtype of the arrays are not int64/datetime64/timedelta64,
+       this function will try to cast the arrays to 'int64'.
+     - For any NaT values in datetime64/timedelta64 arrays, they will be propagated.
 
-    Equivalent to:
-    >>> arr1 + arr2 + offset
+     Equivalent to:
+     >>> arr1 + arr2 + offset
     """
 
 def arr_sub_arr(
@@ -1374,47 +1540,118 @@ def arr_sub_arr(
     arr2: np.ndarray,
     offset: int = 0,
 ) -> np.ndarray[np.int64]:
-    """(cfunc) Substraction between two ndarrays `<'ndarray[int64]'>`.
+    """(cfunc) Subtraction between two 1-dimensional ndarrays `<'ndarray[int64]'>`.
 
-    Before compute, this function will cast the arrays to 'int64'
-    if they are not in 'int64'/'datetime64'/'timedelta64' dtype.
+    - If the dtype of the arrays are not int64/datetime64/timedelta64,
+      this function will try to cast the arrays to 'int64'.
+    - For any NaT values in datetime64/timedelta64 arrays, they will be propagated.
 
     Equivalent to:
     >>> arr1 - arr2 + offset
     """
 
-# . comparison
-def arr_equal_to(arr: np.ndarray, value: int) -> np.ndarray[bool]:
-    """(cfunc) Check if the values of the ndarray are equal
-    to the 'value' `<'ndarray[bool]'>`.
+def arr_mul_arr(
+    arr1: np.ndarray,
+    arr2: np.ndarray,
+    offset: int = 0,
+) -> np.ndarray[np.int64]:
+    """(cfunc) Multiply the values between two 1-dimensional ndarrays `<'ndarray[int64]'>`.
 
-    Before compute, this function will cast the array to 'int64'
-    if it is not in 'int64'/'datetime64'/'timedelta64' dtype.
+    - If the dtype of the arrays are not int64/datetime64/timedelta64,
+      this function will try to cast the arrays to 'int64'.
+    - For any NaT values in datetime64/timedelta64 arrays, they will be propagated.
+
+    Equivalent to:
+    >>> arr1 * arr2 + offset
+    """
+
+# . comparison
+def arr_eq(arr: np.ndarray, value: int) -> np.ndarray[bool]:
+    """(cfunc) Elementwise equal comparison to 'value (int64)'
+    for a 1-dimensional ndarray `<'ndarray[bool]'>`.
+
+    - If the dtype of the arrays are not int64/datetime64/timedelta64,
+      this function will try to cast the arrays to 'int64'.
 
     Equivalent to:
     >>> arr == value
     """
 
-def arr_greater_than(arr: np.ndarray, value: int) -> np.ndarray[bool]:
-    """(cfunc) Check if the values of the ndarray are greater
-    than the 'value' `<'ndarray[bool]'>`.
+def arr_gt(arr: np.ndarray, value: int) -> np.ndarray[bool]:
+    """(cfunc) Elementwise greater-than comparison to 'value (int64)'
+    for a 1-dimensional ndarray `<'ndarray[bool]'>`.
 
-    Before compute, this function will cast the array to 'int64'
-    if it is not in 'int64'/'datetime64'/'timedelta64' dtype.
+    - If the dtype of the arrays are not int64/datetime64/timedelta64,
+      this function will try to cast the arrays to 'int64'.
 
     Equivalent to:
     >>> arr > value
     """
 
-def arr_less_than(arr: np.ndarray, value: int) -> np.ndarray[bool]:
-    """(cfunc) Check if the values of the ndarray are less
-    than the 'value' `<'ndarray[bool]'>`.
+def arr_ge(arr: np.ndarray, value: int) -> np.ndarray[bool]:
+    """(cfunc) Elementwise greater-than-or-equal comparison to 'value (int64)'
+    for a 1-dimensional ndarray `<'ndarray[bool]'>`.
 
-    Before compute, this function will cast the array to 'int64'
-    if it is not in 'int64'/'datetime64'/'timedelta64' dtype.
+    - If the dtype of the arrays are not int64/datetime64/timedelta64,
+      this function will try to cast the arrays to 'int64'.
+
+    Equivalent to:
+    >>> arr >= value
+    """
+
+def arr_lt(arr: np.ndarray, value: int) -> np.ndarray[bool]:
+    """(cfunc) Elementwise less-than comparison to 'value (int64)'
+    for a 1-dimensional ndarray `<'ndarray[bool]'>`.
+
+    - If the dtype of the arrays are not int64/datetime64/timedelta64,
+      this function will try to cast the arrays to 'int64'.
 
     Equivalent to:
     >>> arr < value
+    """
+
+def arr_le(arr: np.ndarray, value: int) -> np.ndarray[bool]:
+    """(cfunc) Elementwise less-than-or-equal comparison to 'value (int64)'
+    for a 1-dimensional ndarray `<'ndarray[bool]'>`.
+
+    - If the dtype of the arrays are not int64/datetime64/timedelta64,
+      this function will try to cast the arrays to 'int64'.
+
+    Equivalent to:
+    >>> arr <= value
+    """
+
+def arr_eq_arr(arr1: np.ndarray, arr2: np.ndarray) -> np.ndarray[bool]:
+    """(cfunc) Elementwise equal comparison between two
+    1-dimensional ndarrays `<'ndarray[bool]'>`.
+
+    - If the dtype of the arrays are not int64/datetime64/timedelta64,
+      this function will try to cast the arrays to 'int64'.
+
+    Equivalent to:
+    >>> arr1 == arr2
+    """
+
+def arr_gt_arr(arr1: np.ndarray, arr2: np.ndarray) -> np.ndarray[bool]:
+    """(cfunc) Elementwise greater-than comparison between two
+    1-dimensional ndarrays `<'ndarray[bool]'>`.
+
+    - If the dtype of the arrays are not int64/datetime64/timedelta64,
+      this function will try to cast the arrays to 'int64'.
+
+    Equivalent to:
+    >>> arr1 > arr2
+    """
+
+def arr_ge_arr(arr1: np.ndarray, arr2: np.ndarray) -> np.ndarray[bool]:
+    """(cfunc) Elementwise greater-than-or-equal comparison between two
+    1-dimensional ndarrays `<'ndarray[bool]'>`.
+
+    - If the dtype of the arrays are not int64/datetime64/timedelta64,
+      this function will try to cast the arrays to 'int64'.
+
+    Equivalent to:
+    >>> arr1 >= arr2
     """
 
 # NumPy: ndarray[datetime64] ---------------------------------------------------------------------------
@@ -1426,10 +1663,8 @@ def is_dt64arr(arr: np.ndarray) -> bool:
     >>> isinstance(arr.dtype, np.dtypes.DateTime64DType)
     """
 
-def validate_dt64arr(arr: np.ndarray) -> bool:
-    """Validate if the given array is dtype of 'datetime64',
-    raises `TypeError` if dtype is incorrect.
-    """
+def assure_dt64arr(arr: np.ndarray) -> bool:
+    """(cfunc) Assure the array is dtype of 'datetime64'"""
 
 # . range check
 def is_dt64arr_ns_safe(
@@ -1437,11 +1672,14 @@ def is_dt64arr_ns_safe(
     arr_unit: str = None,
     wide: bool = True,
 ) -> bool:
-    """(cfunc) Check if the ndarray[datetime64] is within
-    nanosecond conversion range `<'bool'>`.
+    """(cfunc) Check if a 1-dimensional ndarray (datetime64 or int64)
+    is within nanoseconds conversion range `<'bool'>`.
 
-    - 'wide=True': ragne between '1677-09-22' and '2262-04-10' (+/- 1 day from limits)
-    - 'wide=False': range between '1678-01-01' and '2261-01-01' (+/- 1 year from limits)
+    Bounds are **exclusive**: (1677-09-22 - 2262-04-10).
+    - Empty arrays return True.
+    - For datetime64 array, its intrinsic unit is used to determine the value range.
+      Otherwise, the 'arr_unit' must be specified
+    - NaT values are ignored.
     """
 
 # . access
@@ -1478,7 +1716,7 @@ def dt64arr_day(
     arr_unit: str = None,
     offset: int = 0,
 ) -> np.ndarray[np.int64]:
-    """(cfunc) Get the weekday values of the ndarray[datetime64] `<'ndarray[int64]'>`."""
+    """(cfunc) Get the day of month values of the ndarray[datetime64] `<'ndarray[int64]'>`."""
 
 def dt64arr_hour(
     arr: np.ndarray,
@@ -1527,7 +1765,9 @@ def dt64arr_times(
     arr_unit: str = None,
     offset: int = 0,
 ) -> np.ndarray[np.int64]:
-    """Get the times values of the ndarray[datetime64] `<'ndarray[int64]'>`."""
+    """(cfunc) Get the **time-of-day** (elapsed time since midnight) for each element
+    of an ndarray[datetime64], as int64 counts in the **same unit** `<'ndarray[int64]'>`.
+    """
 
 # . calendar
 def dt64arr_isocalendar(arr: np.ndarray, arr_unit: str = None) -> np.ndarray[np.int64]:
@@ -1555,7 +1795,7 @@ def dt64arr_is_long_year(arr: np.ndarray, arr_unit: str = None) -> np.ndarray[np
     (maximum ISO week number equal 53) `<'ndarray[bool]'>`.
     """
 
-def dt64arr_leap_bt_year(
+def dt64arr_leap_bt_years(
     arr: np.ndarray,
     year: int,
     arr_unit: str = None,
@@ -1583,14 +1823,14 @@ def dt64arr_days_in_quarter(
     arr: np.ndarray,
     arr_unit: str = None,
 ) -> np.ndarray[np.int64]:
-    """(cfunc) Get the maximum days in the quarter of the np.npdarray[datetime64] `<'int'>`."""
+    """(cfunc) Get the maximum days in the quarter of the np.npdarray[datetime64] `<'ndarray[int64]'>`."""
 
 def dt64arr_days_bf_quarter(
     arr: np.ndarray,
     arr_unit: str = None,
 ) -> np.ndarray[np.int64]:
     """(cfucn) Get the number of days between the 1st day of the year
-    of the np.ndarray[datetime64] and the 1st day of its quarter `<'int'>`.
+    of the np.ndarray[datetime64] and the 1st day of its quarter `<'ndarray[int64]'>`.
     """
 
 def dt64arr_days_of_quarter(
@@ -1598,7 +1838,8 @@ def dt64arr_days_of_quarter(
     arr_unit: str = None,
 ) -> np.ndarray[np.int64]:
     """(cfunc) Get the number of days between the 1st day of the quarter
-    of the np.ndarray[datetime64] and the its date `<'int'>`."""
+    of the np.ndarray[datetime64] and the its date `<'ndarray[int64]'>`.
+    """
 
 def dt64arr_days_in_month(
     arr: np.ndarray,
@@ -1613,16 +1854,16 @@ def dt64arr_days_bf_month(
     arr_unit: str = None,
 ) -> np.ndarray[np.int64]:
     """(cfunc) Get the number of days between the 1st day of the
-    np.ndarray[datetime64] and the 1st day of its month `<'int'>`.
+    np.ndarray[datetime64] and the 1st day of its month <'ndarray[int64]'>.
     """
 
 # . conversion: int64
-def dt64arr_fr_int64(val: int, unit: str, size: int) -> np.ndarray[np.datetime64]:
-    """(cfunc) Create an ndarray[datetime64] from the
-    passed in integer and array size `<'ndarray[datetime64]'>`.
+def dt64arr_fr_int64(val: int, size: int, unit: str) -> np.ndarray[np.datetime64]:
+    """(cfunc) Create a 1-dimemsional ndarray[datetime64] from the passed in
+    integer and array size `<'ndarray[datetime64]'>`.
 
     Equivalent to:
-    >>> np.array([val for _ in range(size)], dtype="datetime64[%s]" % unit)
+    >>> np.full(size, val, dtype=f"datetime64[{unit}]")
     """
 
 def dt64arr_as_int64(
@@ -1678,8 +1919,8 @@ def dt64arr_as_int64_W(
     arr_unit: str = None,
     offset: int = 0,
 ) -> np.ndarray[np.int64]:
-    """(cfunc) Cast np.ndarray[datetime64] to int64 under 'W' (week)
-    resolution `<'ndarray[int64]'>`.
+    """(cfunc) Cast np.ndarray[datetime64] to int64 under 'W'
+    (week - Thursday-aligned) resolution `<'ndarray[int64]'>`.
 
     Equivalent to:
     >>> arr.astype("datetime64[W]").astype("int64") + offset
@@ -1824,7 +2065,9 @@ def dt64arr_round(
     arr_unit: str = None,
 ) -> np.ndarray[np.datetime64]:
     """(cfunc) Perform round operation on the np.ndarray[datetime64] to the
-    specified unit `<'ndarray[datetime64]'>`.
+    specified unit while preserving the original datetime64 resolution
+    when safe. If preservation would overflow (e.g., ns), the array is
+    downgraded to a safe resolution.`<'ndarray[datetime64]'>`.
 
     - Supported array resolution: 'ns', 'us', 'ms', 's', 'm', 'h', 'D'
     - Supported units: 'ns', 'us', 'ms', 's', 'm', 'h', 'D'.
@@ -1836,7 +2079,9 @@ def dt64arr_ceil(
     arr_unit: str = None,
 ) -> np.ndarray[np.datetime64]:
     """(cfunc) Perform ceil operation on the np.ndarray[datetime64] to the
-    specified unit `<'ndarray[datetime64]'>`.
+    specified unit while preserving the original datetime64 resolution
+    when safe. If preservation would overflow (e.g., ns), the array is
+    downgraded to a safe resolution.`<'ndarray[datetime64]'>`.
 
     - Supported array resolution: 'ns', 'us', 'ms', 's', 'm', 'h', 'D'
     - Supported units: 'ns', 'us', 'ms', 's', 'm', 'h', 'D'.
@@ -1848,7 +2093,9 @@ def dt64arr_floor(
     arr_unit: str = None,
 ) -> np.ndarray[np.datetime64]:
     """(cfunc) Perform floor operation on the np.ndarray[datetime64] to the
-    specified unit `<'ndarray[datetime64]'>`.
+    specified unit while preserving the original datetime64 resolution
+    when safe. If preservation would overflow (e.g., ns), the array is
+    downgraded to a safe resolution.`<'ndarray[datetime64]'>`.
 
     - Supported array resolution: 'ns', 'us', 'ms', 's', 'm', 'h', 'D'
     - Supported units: 'ns', 'us', 'ms', 's', 'm', 'h', 'D'.
@@ -1870,10 +2117,8 @@ def is_td64arr(arr: np.ndarray) -> bool:
     >>> isinstance(arr.dtype, np.dtypes.TimeDelta64DType)
     """
 
-def validate_td64arr(arr: np.ndarray) -> bool:
-    """(cfunc) Validate if the given array is dtype of 'timedelta64',
-    raises `TypeError` if dtype is incorrect.
-    """
+def assure_td64arr(arr: np.ndarray) -> bool:
+    """(cfunc) Assure the array is dtype of 'timedelta64'"""
 
 # . conversion
 def td64arr_as_int64_us(
