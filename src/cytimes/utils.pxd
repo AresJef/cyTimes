@@ -1839,6 +1839,43 @@ cdef inline dtm dtm_fr_sec(double value) except *:
     """
     return dtm_fr_us(sec_to_us(value))
 
+# . fractions
+cdef inline int combine_absolute_ms_us(int ms, int us) noexcept nogil:
+    """Combine milliseconds and microseconds into total microseconds (replacement semantics) `<'int'>`.
+
+    :param ms `<'int'>`: Absolute milliseconds (field replacement). Negative means `no change`.
+    :param us `<'int'>`: Absolute microseconds (field replacement). Negative means `no change`.
+    :returns `<'int'>`: Absolute microseconds in [0, 999_999], or `-1` if both inputs are negative.
+
+    ## Rules
+    - Negative input means `no change` for that field.
+    - If BOTH ms and us are negative: return `-1` (caller should keep existing value).
+    - If ms >= 0:
+        * ms sets the millisecond field (clamped to 0..999).
+        * us, if >= 0, sets the sub-millisecond remainder (ignored above 999 via `% 1000`).
+        * Thousands in `us` are ignored (ms has higher priority).
+          => return ms * 1000 + (us % 1000) in [0, 999_999]
+    - Else (ms < 0 and us >= 0):
+        * us directly sets absolute microseconds (clamped to 0..999_999).
+    """
+    # Valid millisecond 
+    if ms >= 0:
+        # clamp 'ms' to 0..999
+        ms = min(ms, 999) * 1_000
+        # 'us' acts only as sub-ms remainder
+        us = ms + (us % 1_000) if us > 0 else ms
+
+    # Valid microsecond
+    elif us >= 0:
+        # clamp 'us' to 0..999,999
+        us = min(us, 999_999)
+
+    # Both invalid
+    else:
+        us = -1
+        
+    return us
+
 # datetime.date ----------------------------------------------------------------------------------------
 # . generate
 cdef inline datetime.date date_new(int year=1, int month=1, int day=1):
@@ -2047,6 +2084,119 @@ cdef inline datetime.date date_fr_dt(datetime.datetime dt):
     :returns `<'datetime.date'>`: A new date with the same Y/M/D.
     """
     return datetime.date_new(dt.year, dt.month, dt.day)
+
+# . manipulation
+cdef inline datetime.date date_add_delta(datetime.date date,
+    int years=0, int quarters=0, int months=0, int weeks=0, 
+    long long days=0, long long hours=0, long long minutes=0, 
+    long long seconds=0, long long milliseconds=0, long long microseconds=0,
+    int year=-1, int month=-1, int day=-1, int weekday=-1,
+    int hour=-1, int minute=-1, int second=-1, int millisecond=-1, int microsecond=-1,
+):
+    """Add relative and absolute deltas to `datetime.date`, preserving 
+    the original subclass when possible `<'datetime.date'>`.
+
+    ## Absolute Deltas (Replace specified fields)
+
+    :param year `<'int'>`: Absolute year. Defaults to `-1` (no change).
+    :param month `<'int'>`: Absolute month. Defaults to `-1` (no change).
+    :param day `<'int'>`: Absolute day. Defaults to `-1` (no change).
+    :param weekday `<'int'>`: Absolute weekday (0=Mon...6=Sun). Defaults to `-1` (no change).
+    :param hour `<'int'>`: Absolute hour. Defaults to `-1` (no change).
+    :param minute `<'int'>`: Absolute minute. Defaults to `-1` (no change).
+    :param second `<'int'>`: Absolute second. Defaults to `-1` (no change).
+    :param millisecond `<'int'>`: Absolute millisecond. Defaults to `-1` (no change).
+    :param microsecond `<'int'>`: Absolute microsecond. Defaults to `-1` (no change).
+
+    ## Relative Deltas (Add to specified fields)
+
+    :param years `<'int'>`: Relative years. Defaults to `0`.
+    :param quarters `<'int'>`: Relative quarters (3 months). Defaults to `0`.
+    :param months `<'int'>`: Relative months. Defaults to `0`.
+    :param weeks `<'int'>`: Relative weeks (7 days). Defaults to `0`.
+    :param days `<'int'>`: Relative days. Defaults to `0`.
+    :param hours `<'int'>`: Relative hours. Defaults to `0`.
+    :param minutes `<'int'>`: Relative minutes. Defaults to `0`.
+    :param seconds `<'int'>`: Relative seconds. Defaults to `0`.
+    :param milliseconds `<'int'>`: Relative milliseconds (1,000 us). Defaults to `0`.
+    :param microseconds `<'int'>`: Relative microseconds. Defaults to `0`.
+
+    :returns `<'datetime.date'>`: New date with applied deltas (or the input's subclass 
+        instance when possible). If all relative and absolute deltas net to the same date 
+        (including weekday), the original `date` is returned unchanged.
+    """
+    # Date fields
+    # ----------------------------------------------------
+    cdef:
+        int o_yy = date.year
+        int yy = (year if year > 0 else o_yy) + years
+        int o_mm = date.month
+        int mm = (month if month > 0 else o_mm) + months + (quarters * 3)
+        int o_dd = date.day
+        int dd = (day if day > 0 else o_dd)
+        long long q, r
+    # . normalize month
+    if mm != o_mm:
+        mm -= 1
+        with cython.cdivision(True):
+            q = mm / 12; r = mm % 12
+        if r < 0:
+            q -= 1; r += 12
+        yy += q; mm = r + 1
+    # . relative days
+    cdef long long rel_days = days + (weeks * 7)
+
+    # Time fields
+    # ----------------------------------------------------
+    cdef long long us = combine_absolute_ms_us(millisecond, microsecond)
+    us = (
+        (us if us >= 0 else 0) + milliseconds * US_MILLISECOND + microseconds +
+        ((second if second >= 0 else 0) + seconds) * US_SECOND +
+        ((minute if minute >= 0 else 0) + minutes) * US_MINUTE +
+        ((hour if hour >= 0 else 0) + hours)       * US_HOUR
+    )
+    # . normalize time to days
+    if us != 0:
+        with cython.cdivision(True):
+            q = us / US_DAY; r = us % US_DAY
+        if r < 0:
+            q -= 1
+        rel_days += q
+
+    # Handle day delta
+    # ----------------------------------------------------
+    cdef long long old_ord, new_ord
+    cdef ymd _ymd
+    if rel_days != 0 or weekday >= 0:
+        old_ord = ymd_to_ord(yy, mm, dd)
+        new_ord = old_ord + rel_days
+        # . adjust to weekday if needed
+        if weekday >= 0:
+            with cython.cdivision(True):
+                r = (new_ord + 6) % 7
+                if r < 0:
+                    r += 7
+            new_ord += min(weekday, 6) - r  # weekday clamped to Sun=6
+        if old_ord != new_ord:
+            _ymd = ymd_fr_ord(new_ord)
+            yy, mm, dd = _ymd.year, _ymd.month, _ymd.day
+
+    # Compare new dates
+    if yy == o_yy and mm == o_mm and dd == o_dd:
+        return date  # exit: no change
+
+    # Clamp day to valid days in month
+    if dd > 28:
+        dd = min(dd, days_in_month(yy, mm))
+
+    # New date
+    if not is_date_exact(date):
+        try:
+            return date.__class__(year=yy, month=mm, day=dd)
+        except Exception:
+            pass
+    # . fallback to native date
+    return datetime.date_new(yy, mm, dd)
 
 # datetime.datetime ------------------------------------------------------------------------------------
 # . generate
@@ -2849,6 +2999,146 @@ cdef inline datetime.datetime dt_add(datetime.datetime dt, int days=0, int secon
         dt.tzinfo, dt.fold,
     )
     
+cdef inline datetime.datetime dt_add_delta(datetime.datetime dt,
+    int years=0, int quarters=0, int months=0, int weeks=0, 
+    long long days=0, long long hours=0, long long minutes=0, 
+    long long seconds=0, long long milliseconds=0, long long microseconds=0,
+    int year=-1, int month=-1, int day=-1, int weekday=-1,
+    int hour=-1, int minute=-1, int second=-1, int millisecond=-1, int microsecond=-1,
+):
+    """Add relative and absolute deltas to `datetime.datetime`, preserving 
+    the original subclass when possible `<'datetime.datetime'>`.
+
+    ## Absolute Deltas (Replace specified fields)
+
+    :param year `<'int'>`: Absolute year. Defaults to `-1` (no change).
+    :param month `<'int'>`: Absolute month. Defaults to `-1` (no change).
+    :param day `<'int'>`: Absolute day. Defaults to `-1` (no change).
+    :param weekday `<'int'>`: Absolute weekday (0=Mon...6=Sun). Defaults to `-1` (no change).
+    :param hour `<'int'>`: Absolute hour. Defaults to `-1` (no change).
+    :param minute `<'int'>`: Absolute minute. Defaults to `-1` (no change).
+    :param second `<'int'>`: Absolute second. Defaults to `-1` (no change).
+    :param millisecond `<'int'>`: Absolute millisecond. Defaults to `-1` (no change).
+    :param microsecond `<'int'>`: Absolute microsecond. Defaults to `-1` (no change).
+
+    ## Relative Deltas (Add to specified fields)
+
+    :param years `<'int'>`: Relative years. Defaults to `0`.
+    :param quarters `<'int'>`: Relative quarters (3 months). Defaults to `0`.
+    :param months `<'int'>`: Relative months. Defaults to `0`.
+    :param weeks `<'int'>`: Relative weeks (7 days). Defaults to `0`.
+    :param days `<'int'>`: Relative days. Defaults to `0`.
+    :param hours `<'int'>`: Relative hours. Defaults to `0`.
+    :param minutes `<'int'>`: Relative minutes. Defaults to `0`.
+    :param seconds `<'int'>`: Relative seconds. Defaults to `0`.
+    :param milliseconds `<'int'>`: Relative milliseconds (1,000 us). Defaults to `0`.
+    :param microseconds `<'int'>`: Relative microseconds. Defaults to `0`.
+
+    :returns `<'datetime.datetime'>`: New datetime with applied deltas (or the input's subclass
+        instance when possible). If all relative and absolute deltas net to the same date & time 
+        (including weekday), the original `datetime` is returned unchanged.
+    """
+    # Date fields
+    # ----------------------------------------------------
+    cdef:
+        int o_yy = dt.year
+        int yy = (year if year > 0 else o_yy) + years
+        int o_mm = dt.month
+        int mm = (month if month > 0 else o_mm) + months + (quarters * 3)
+        int o_dd = dt.day
+        int dd = (day if day > 0 else o_dd)
+        long long q, r
+    # . normalize month
+    if not 0 < mm <= 12:
+        mm -= 1
+        with cython.cdivision(True):
+            q = mm / 12; r = mm % 12
+        if r < 0:
+            q -= 1; r += 12
+        yy += q; mm = r + 1
+    # . relative days
+    cdef long long rel_days = days + (weeks * 7)
+
+    # Time fields
+    # ----------------------------------------------------
+    cdef:
+        long long o_hh = dt.hour
+        long long hh = (hour if hour >= 0 else o_hh) + hours
+        long long o_mi = dt.minute
+        long long mi = (minute if minute >= 0 else o_mi) + minutes
+        long long o_ss = dt.second
+        long long ss = (second if second >= 0 else o_ss) + seconds
+        long long o_us = dt.microsecond
+        long long us = combine_absolute_ms_us(millisecond, microsecond)
+    us = (us if us >= 0 else o_us) + milliseconds * US_MILLISECOND + microseconds
+    # . normalize microseconds
+    if not 0 <= us < US_SECOND:
+        with cython.cdivision(True):
+            q = us / US_SECOND; r = us % US_SECOND
+        if r < 0:
+            q -= 1; r += US_SECOND
+        ss += q; us = r
+    # . normalize seconds
+    if not 0 <= ss < 60:
+        with cython.cdivision(True):
+            q = ss / 60; r = ss % 60
+        if r < 0:
+            q -= 1; r += 60
+        mi += q; ss = r
+    # . normalize minutes
+    if not 0 <= mi < 60:
+        with cython.cdivision(True):
+            q = mi / 60; r = mi % 60
+        if r < 0:
+            q -= 1; r += 60
+        hh += q; mi = r
+    # . normalize hours to days
+    if not 0 <= hh < 24:
+        with cython.cdivision(True):
+            q = hh / 24; r = hh % 24
+        if r < 0:
+            q -= 1; r += 24
+        rel_days += q; hh = r
+
+    # Handle day delta
+    # ----------------------------------------------------
+    cdef long long old_ord, new_ord
+    cdef ymd _ymd
+    if rel_days != 0 or weekday >= 0:
+        old_ord = ymd_to_ord(yy, mm, dd)
+        new_ord = old_ord + rel_days
+        # . adjust to weekday if needed
+        if weekday >= 0:
+            with cython.cdivision(True):
+                r = (new_ord + 6) % 7
+                if r < 0:
+                    r += 7
+            new_ord += min(weekday, 6) - r  # weekday clamped to Sun=6
+        if old_ord != new_ord:
+            _ymd = ymd_fr_ord(new_ord)
+            yy, mm, dd = _ymd.year, _ymd.month, _ymd.day
+
+    # Compare new date/time
+    if (yy == o_yy and mm == o_mm and dd == o_dd and
+        hh == o_hh and mi == o_mi and ss == o_ss and us == o_us):
+        return dt  # exit: no change
+
+    # Clamp day to valid days in month
+    if dd > 28:
+        dd = min(dd, days_in_month(yy, mm))
+
+    # New datetime
+    if not is_dt_exact(dt):
+        try:
+            return dt.__class__(
+                year=yy, month=mm, day=dd, hour=hh, minute=mi, 
+                second=ss, microsecond=us, tzinfo=dt.tzinfo, fold=dt.fold
+            )
+        except Exception:
+            pass
+    # . fallback to native datetime
+    return datetime.datetime_new(yy, mm, dd, hh, mi, ss, us, dt.tzinfo, dt.fold)
+
 cdef inline datetime.datetime dt_replace_tz(datetime.datetime dt, object tz):
     """Create a copy of *dt* with `tzinfo` replaced `<'datetime.datetime'>`.
 

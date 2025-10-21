@@ -940,6 +940,26 @@ def dtm_fr_sec(value: float) -> dict:
         - dtm.microsecond   [0..999999]
     """
 
+# . fractions
+def combine_absolute_ms_us(ms: int, us: int) -> int:
+    """(cfunc) Combine milliseconds and microseconds into total microseconds (replacement semantics) `<'int'>`.
+
+    :param ms `<'int'>`: Absolute milliseconds (field replacement). Negative means `no change`.
+    :param us `<'int'>`: Absolute microseconds (field replacement). Negative means `no change`.
+    :returns `<'int'>`: Absolute microseconds in [0, 999_999], or `-1` if both inputs are negative.
+
+    ## Rules
+    - Negative input means `no change` for that field.
+    - If BOTH ms and us are negative: return `-1` (caller should keep existing value).
+    - If ms >= 0:
+        * ms sets the millisecond field (clamped to 0..999).
+        * us, if >= 0, sets the sub-millisecond remainder (ignored above 999 via `% 1000`).
+        * Thousands in `us` are ignored (ms has higher priority).
+          => return ms * 1000 + (us % 1000) in [0, 999_999]
+    - Else (ms < 0 and us >= 0):
+        * us directly sets absolute microseconds (clamped to 0..999_999).
+    """
+
 # datetime.date -------------------------------------------------------------------------------------
 # . generate
 def date_new(year: int = 1, month: int = 1, day: int = 1) -> datetime.date:
@@ -1099,6 +1119,62 @@ def date_fr_dt(dt: datetime.datetime) -> datetime.date:
 
     :param dt `<'datetime.datetime'>`: Datetime to extract the date from (including subclasses).
     :returns `<'datetime.date'>`: A new date with the same Y/M/D.
+    """
+
+# . manipulation
+def date_add_delta(
+    date: datetime.date,
+    years: int = 0,
+    quarters: int = 0,
+    months: int = 0,
+    weeks: int = 0,
+    days: int = 0,
+    hours: int = 0,
+    minutes: int = 0,
+    seconds: int = 0,
+    milliseconds: int = 0,
+    microseconds: int = 0,
+    year: int = -1,
+    month: int = -1,
+    day: int = -1,
+    weekday: int = -1,
+    hour: int = -1,
+    minute: int = -1,
+    second: int = -1,
+    millisecond: int = -1,
+    microsecond: int = -1,
+) -> datetime.date:
+    """(cfunc) Add relative and absolute deltas to `datetime.date`, preserving
+    the original subclass when possible `<'datetime.date'>`.
+
+    ## Absolute Deltas (Replace specified fields)
+
+    :param year `<'int'>`: Absolute year. Defaults to `-1` (no change).
+    :param month `<'int'>`: Absolute month. Defaults to `-1` (no change).
+    :param day `<'int'>`: Absolute day. Defaults to `-1` (no change).
+    :param weekday `<'int'>`: Absolute weekday (0=Mon...6=Sun). Defaults to `-1` (no change).
+    :param hour `<'int'>`: Absolute hour. Defaults to `-1` (no change).
+    :param minute `<'int'>`: Absolute minute. Defaults to `-1` (no change).
+    :param second `<'int'>`: Absolute second. Defaults to `-1` (no change).
+    :param millisecond `<'int'>`: Absolute millisecond. Defaults to `-1` (no change).
+    :param microsecond `<'int'>`: Absolute microsecond. Defaults to `-1` (no change).
+
+    ## Relative Deltas (Add to specified fields)
+
+    :param years `<'int'>`: Relative years. Defaults to `0`.
+    :param quarters `<'int'>`: Relative quarters (3 months). Defaults to `0`.
+    :param months `<'int'>`: Relative months. Defaults to `0`.
+    :param weeks `<'int'>`: Relative weeks (7 days). Defaults to `0`.
+    :param days `<'int'>`: Relative days. Defaults to `0`.
+    :param hours `<'int'>`: Relative hours. Defaults to `0`.
+    :param minutes `<'int'>`: Relative minutes. Defaults to `0`.
+    :param seconds `<'int'>`: Relative seconds. Defaults to `0`.
+    :param milliseconds `<'int'>`: Relative milliseconds (1,000 us). Defaults to `0`.
+    :param microseconds `<'int'>`: Relative microseconds. Defaults to `0`.
+
+    :returns `<'datetime.date'>`: New date with applied deltas (or the input's subclass
+        instance when possible). If all relative and absolute deltas net to the same date
+        (including weekday), the original `date` is returned unchanged.
     """
 
 # datetime.datetime ---------------------------------------------------------------------------------
@@ -1467,6 +1543,61 @@ def dt_add(
 
     ## Equivalent
     >>> dt + datetime.timedelta(days, seconds, microseconds)
+    """
+
+def dt_add_delta(
+    dt: datetime.datetime,
+    years: int = 0,
+    quarters: int = 0,
+    months: int = 0,
+    weeks: int = 0,
+    days: int = 0,
+    hours: int = 0,
+    minutes: int = 0,
+    seconds: int = 0,
+    milliseconds: int = 0,
+    microseconds: int = 0,
+    year: int = -1,
+    month: int = -1,
+    day: int = -1,
+    weekday: int = -1,
+    hour: int = -1,
+    minute: int = -1,
+    second: int = -1,
+    millisecond: int = -1,
+    microsecond: int = -1,
+) -> datetime.datetime:
+    """(cfunc) Add relative and absolute deltas to `datetime.datetime`, preserving
+    the original subclass when possible `<'datetime.datetime'>`.
+
+    ## Absolute Deltas (Replace specified fields)
+
+    :param year `<'int'>`: Absolute year. Defaults to `-1` (no change).
+    :param month `<'int'>`: Absolute month. Defaults to `-1` (no change).
+    :param day `<'int'>`: Absolute day. Defaults to `-1` (no change).
+    :param weekday `<'int'>`: Absolute weekday (0=Mon...6=Sun). Defaults to `-1` (no change).
+    :param hour `<'int'>`: Absolute hour. Defaults to `-1` (no change).
+    :param minute `<'int'>`: Absolute minute. Defaults to `-1` (no change).
+    :param second `<'int'>`: Absolute second. Defaults to `-1` (no change).
+    :param millisecond `<'int'>`: Absolute millisecond. Defaults to `-1` (no change).
+    :param microsecond `<'int'>`: Absolute microsecond. Defaults to `-1` (no change).
+
+    ## Relative Deltas (Add to specified fields)
+
+    :param years `<'int'>`: Relative years. Defaults to `0`.
+    :param quarters `<'int'>`: Relative quarters (3 months). Defaults to `0`.
+    :param months `<'int'>`: Relative months. Defaults to `0`.
+    :param weeks `<'int'>`: Relative weeks (7 days). Defaults to `0`.
+    :param days `<'int'>`: Relative days. Defaults to `0`.
+    :param hours `<'int'>`: Relative hours. Defaults to `0`.
+    :param minutes `<'int'>`: Relative minutes. Defaults to `0`.
+    :param seconds `<'int'>`: Relative seconds. Defaults to `0`.
+    :param milliseconds `<'int'>`: Relative milliseconds (1,000 us). Defaults to `0`.
+    :param microseconds `<'int'>`: Relative microseconds. Defaults to `0`.
+
+    :returns `<'datetime.datetime'>`: New datetime with applied deltas (or the input's subclass
+        instance when possible). If all relative and absolute deltas net to the same date & time
+        (including weekday), the original `datetime` is returned unchanged.
     """
 
 def dt_replace_tz(
@@ -4125,18 +4256,18 @@ def dt64arr_round(
 ) -> np.ndarray[np.datetime64]:
     """(cfunc) Round a 1-D datetime64 array to the nearest multiple of `to_unit` (ties-to-even) `<'ndarray[datetime64]'>`
 
-    This function will try to preserve the nanosecond datetime64 resolution 
+    This function will try to preserve the nanosecond datetime64 resolution
     when `safe`, and `downgrade` to microsecond unit only to avoid overflow.
 
-    :param arr `<'np.ndarray'>`: The datetime64 array to round. 
+    :param arr `<'np.ndarray'>`: The datetime64 array to round.
         Also support int64 array ticks along with `arr_reso` argument (see below).
 
-    :param to_unit `<'str'>`: Target rounding granularity. 
+    :param to_unit `<'str'>`: Target rounding granularity.
         Supports: `'ns', 'us', 'ms', 's', 'm', 'h', 'D'`.
 
     :param arr_reso `<'int'>`: The unit of `arr` as an `NPY_DATETIMEUNIT` enum value. Defaults to `-1`.
-    
-        - If not specified and `arr` is `datetime64[*]`, the array's 
+
+        - If not specified and `arr` is `datetime64[*]`, the array's
           intrinsic resolution is used.
         - If `arr` dtype is int64, you **MUST** specify the `arr_reso`,
           and values are interpreted as ticks in that unit.
@@ -4156,18 +4287,18 @@ def dt64arr_ceil(
 ) -> np.ndarray[np.datetime64]:
     """(cfunc) Ceil a 1-D datetime64 array to the nearest multiple of `to_unit` `<'ndarray[datetime64]'>`.
 
-    This function will try to preserve the nanosecond datetime64 resolution 
+    This function will try to preserve the nanosecond datetime64 resolution
     when `safe`, and `downgrade` to microsecond unit only to avoid overflow.
 
-    :param arr `<'np.ndarray'>`: The datetime64 array to ceil. 
+    :param arr `<'np.ndarray'>`: The datetime64 array to ceil.
         Also support int64 array ticks along with `arr_reso` argument (see below).
 
-    :param to_unit `<'str'>`: Target ceiling granularity. 
+    :param to_unit `<'str'>`: Target ceiling granularity.
         Supports: `'ns', 'us', 'ms', 's', 'm', 'h', 'D'`.
 
     :param arr_reso `<'int'>`: The unit of `arr` as an `NPY_DATETIMEUNIT` enum value. Defaults to `-1`.
-    
-        - If not specified and `arr` is `datetime64[*]`, the array's 
+
+        - If not specified and `arr` is `datetime64[*]`, the array's
           intrinsic resolution is used.
         - If `arr` dtype is int64, you **MUST** specify the `arr_reso`,
           and values are interpreted as ticks in that unit.
@@ -4186,19 +4317,19 @@ def dt64arr_floor(
     copy: bool = True,
 ) -> np.ndarray[np.datetime64]:
     """(cfunc) Floor a 1-D datetime64 array to the nearest multiple of `to_unit` `<'ndarray[datetime64]'>`.
-    
-    This function will try to preserve the nanosecond datetime64 resolution 
+
+    This function will try to preserve the nanosecond datetime64 resolution
     when `safe`, and `downgrade` to microsecond unit only to avoid overflow.
 
-    :param arr `<'np.ndarray'>`: The datetime64 array to floor. 
+    :param arr `<'np.ndarray'>`: The datetime64 array to floor.
         Also support int64 array ticks along with `arr_reso` argument (see below).
 
     :param to_unit `<'str'>`: Target flooring granularity.
         Supports: `'ns', 'us', 'ms', 's', 'm', 'h', 'D'`.
 
     :param arr_reso `<'int'>`: The unit of `arr` as an `NPY_DATETIMEUNIT` enum value. Defaults to `-1`.
-    
-        - If not specified and `arr` is `datetime64[*]`, the array's 
+
+        - If not specified and `arr` is `datetime64[*]`, the array's
           intrinsic resolution is used.
         - If `arr` dtype is int64, you **MUST** specify the `arr_reso`,
           and values are interpreted as ticks in that unit.
@@ -4229,11 +4360,11 @@ def td64arr_as_int64_us(
     offset: int = 0,
 ) -> np.ndarray[np.int64]:
     """(cfunc) Convert a 1-D ndarray[timedelta64[*]] to int64 microsecond ticks (us) `<'ndarray[int64]'>`.
-    
+
     :param arr `<'np.ndarray'>`: The 1-D array dtype of timedelta64[*] or int64.
     :param arr_reso `<'int'>`: The unit of `arr` as an `NPY_DATETIMEUNIT` enum value. Defaults to `-1`.
-    
-        - If not specified and `arr` is `timedelta64[*]`, the array's 
+
+        - If not specified and `arr` is `timedelta64[*]`, the array's
           intrinsic resolution is used.
         - If `arr` dtype is int64, you **MUST** specify the `arr_reso`,
           and values are interpreted as ticks in that unit.
