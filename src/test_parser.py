@@ -1,16 +1,29 @@
-import warnings
-from typing import Literal
-from random import randint
 import time, unittest, datetime
-import numpy as np, pandas as pd, pendulum as pl
 from cytimes import errors
-from cytimes.pydt import Pydt
-from cytimes.delta import Delta
-from dateutil.relativedelta import relativedelta
 
 
 class TestCase(unittest.TestCase):
     name: str = "Case"
+
+    def test_all(self) -> None:
+        pass
+
+    # Utils
+    def log_start(self, msg: str) -> None:
+        msg = "START TEST '%s': %s" % (self.name, msg)
+        print(msg.ljust(60), end="\r")
+        self._start_time = time.perf_counter()
+
+    def log_ended(self, msg: str, skip: bool = False) -> None:
+        self._ended_time = time.perf_counter()
+        msg = "%s TEST '%s': %s" % ("SKIP" if skip else "PASS", self.name, msg)
+        if self._start_time is not None:
+            msg += " (%.6fs)" % (self._ended_time - self._start_time)
+        print(msg.ljust(60))
+
+
+class TestParser(TestCase):
+    name = "Parser"
     dts: list[tuple[str, str, str]] = [
         # fmt: off
         ('  July   4 ,  1976   12:01:02   am  ', '1976-07-04 00:01:02', '1976-07-04 00:01:02'),
@@ -743,352 +756,6 @@ class TestCase(unittest.TestCase):
     ]
 
     def test_all(self) -> None:
-        pass
-
-    # Utils
-    def log_start(self, msg: str) -> None:
-        msg = "START TEST '%s': %s" % (self.name, msg)
-        print(msg.ljust(60), end="\r")
-        self._start_time = time.perf_counter()
-
-    def log_ended(self, msg: str, skip: bool = False) -> None:
-        self._ended_time = time.perf_counter()
-        msg = "%s TEST '%s': %s" % ("SKIP" if skip else "PASS", self.name, msg)
-        if self._start_time is not None:
-            msg += " (%.6fs)" % (self._ended_time - self._start_time)
-        print(msg.ljust(60))
-
-
-class Test_Delta(TestCase):
-    name = "Delta"
-
-    def test_all(self, rounds: int) -> None:
-        self.test_addition(rounds, "Relative")
-        self.test_addition(rounds, "Absolute")
-        self.test_addition(rounds, "Mixed")
-        self.test_substraction(rounds, "Relative")
-        self.test_substraction(rounds, "Absolute")
-        self.test_substraction(rounds, "Mixed")
-        self.test_numeric()
-        self.test_equal_timedelta(rounds)
-        self.test_equal_relativedelta(rounds, "Relative")
-        self.test_equal_relativedelta(rounds, "Absolute")
-        self.test_equal_relativedelta(rounds, "Mixed")
-        self.test_boolean()
-        self.test_typing()
-
-    def test_addition(
-        self,
-        rounds: int,
-        mode: Literal["Relative", "Absolute", "Mixed"],
-    ) -> None:
-        test = f"Addition ({mode})"
-        self.log_start(test)
-
-        date = datetime.date(5000, 1, 2)
-        dt = datetime.datetime(5000, 1, 2, 3, 4, 5, 6)
-        td = datetime.timedelta(1, 1, 1, 1, 1, 1, 1)
-        c_td2 = Delta(1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
-        r_td2 = relativedelta(
-            years=1,
-            months=1,
-            days=1,
-            weeks=1,
-            hours=1,
-            minutes=1,
-            seconds=1,
-            microseconds=1,
-            year=1,
-            month=1,
-            day=1,
-            hour=1,
-            minute=1,
-            second=1,
-            microsecond=1,
-        )
-        for _ in range(rounds):
-            c_td, r_td = self._random_deltas(mode)
-            # Addition with date
-            try:
-                r_res = date + r_td
-            except (ValueError, OverflowError):
-                pass
-            else:
-                self.assertEqual(date + c_td, r_res.date())
-
-            # Addition with datetime
-            try:
-                r_res = dt + r_td
-            except (ValueError, OverflowError):
-                pass
-            else:
-                self.assertEqual(dt + c_td, r_res)
-
-            # Addition with timedelta
-            try:
-                r_res = td + r_td
-            except (ValueError, OverflowError):
-                pass
-            else:
-                self.assertEqual(td + c_td, r_res)
-
-            # Addition with another Delta
-            self.assertEqual(c_td + c_td2, r_td + c_td2)
-
-            # Addition with another relativedelta
-            self.assertEqual(c_td + r_td2, r_td + r_td2)
-
-        self.log_ended(test)
-
-    def test_substraction(
-        self,
-        rounds: int,
-        mode: Literal["Relative", "Absolute", "Mixed"],
-    ) -> None:
-        test = f"Substraction ({mode})"
-        self.log_start(test)
-
-        date = datetime.date(5000, 1, 2)
-        dt = datetime.datetime(5000, 1, 2, 3, 4, 5, 6)
-        td = datetime.timedelta(1, 1, 1, 1, 1, 1, 1)
-        c_td2 = Delta(1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
-        r_td2 = relativedelta(
-            years=1,
-            months=1,
-            days=1,
-            weeks=1,
-            hours=1,
-            minutes=1,
-            seconds=1,
-            microseconds=1,
-            year=1,
-            month=1,
-            day=1,
-            hour=1,
-            minute=1,
-            second=1,
-            microsecond=1,
-        )
-        for _ in range(rounds):
-            c_td, r_td = self._random_deltas(mode)
-
-            # Substraction with date
-            try:
-                r_res = date - r_td
-            except (ValueError, OverflowError):
-                pass
-            else:
-                self.assertEqual(date - c_td, r_res.date())
-
-            # Substraction with datetime
-            try:
-                r_res = dt - r_td
-            except (ValueError, OverflowError):
-                pass
-            else:
-                self.assertEqual(dt - c_td, r_res)
-
-            # Substraction with timedelta
-            try:
-                r_res = td - r_td
-            except (ValueError, OverflowError):
-                pass
-            else:
-                self.assertEqual(td - c_td, r_res)
-
-            # Substraction with another Delta
-            self.assertEqual(c_td - c_td2, r_td - c_td2)
-
-            # Substraction with another relativedelta
-            self.assertEqual(c_td - r_td2, r_td - r_td2)
-
-        self.log_ended(test)
-
-    def test_numeric(self) -> None:
-        test = "Numeric"
-        self.log_start(test)
-
-        rel_args = {
-            "years": 1000,
-            "months": 1000,
-            "days": 1000,
-            "hours": 1000,
-            "minutes": 1000,
-            "seconds": 1000,
-            "microseconds": 1000,
-        }
-        abs_args = {
-            "year": 1000,
-            "month": 1000,
-            "day": 1000,
-            "hour": 1000,
-            "minute": 1000,
-            "second": 1000,
-            "microsecond": 1000,
-        }
-        td = Delta(**rel_args, **abs_args)
-
-        # Integer
-        i = 2
-        add_i = Delta(**{k: v + i for k, v in rel_args.items()}, **abs_args)
-        self.assertEqual(td + i, add_i)
-        self.assertEqual(i + td, add_i)
-        sub_i = Delta(**{k: v - i for k, v in rel_args.items()}, **abs_args)
-        self.assertEqual(td - i, sub_i)
-        rsub_i = Delta(**{k: i - v for k, v in rel_args.items()}, **abs_args)
-        self.assertEqual(i - td, rsub_i)
-        mul_i = Delta(**{k: v * i for k, v in rel_args.items()}, **abs_args)
-        self.assertEqual(td * i, mul_i)
-        self.assertEqual(i * td, mul_i)
-
-        # Negate
-        td_neg = Delta(**{k: -v for k, v in rel_args.items()}, **abs_args)
-        self.assertEqual(-td, td_neg)
-
-        # Absolute
-        self.assertEqual(abs(td_neg), td)
-
-        # Float
-        f = 2.2
-        self.assertEqual(td - f, -(f - td))
-        self.assertEqual(td / f, td * (1 / f))
-
-        self.log_ended(test)
-
-    def test_equal_timedelta(self, rounds: int) -> None:
-        test = "Equal Timedelta"
-        self.log_start(test)
-
-        dt = datetime.datetime(5000, 1, 2, 3, 4, 5, 6)
-
-        for _ in range(rounds):
-            days = randint(-100_000, 100_000)
-            seconds = randint(-1_000_000, 1_000_000)
-            microseconds = randint(-10_000_000, 10_000_000)
-
-            td = datetime.timedelta(days, seconds, microseconds)
-            c_td = Delta(days=days, seconds=seconds, microseconds=microseconds)
-            self.assertEqual(c_td, td)
-
-            try:
-                dt1 = dt + td
-            except (ValueError, OverflowError):
-                pass
-            else:
-                self.assertEqual(dt + c_td, dt1)
-
-        self.log_ended(test)
-
-    def test_equal_relativedelta(
-        self,
-        rounds: int,
-        mode: Literal["Relative", "Absolute", "Mixed"],
-    ) -> None:
-        test = "Equal Relativedelta"
-        self.log_start(test)
-
-        for _ in range(rounds):
-            c_td, r_td = self._random_deltas(mode)
-            self.assertEqual(c_td, r_td)
-
-        self.log_ended(test)
-
-    def test_boolean(self) -> None:
-        test = "Boolean"
-        self.log_start(test)
-
-        self.assertFalse(Delta())
-        self.assertTrue(Delta(seconds=1))
-        self.assertTrue(Delta(second=1))
-
-        self.log_ended(test)
-
-    def test_typing(self) -> None:
-        test = "Typing"
-        self.log_start(test)
-
-        td = Delta(microseconds=1)
-
-        # return datetime.datetime
-        for obj in (datetime.datetime.now(), Pydt.now(), pd.Timestamp.now(), pl.now()):
-            self.assertTrue(isinstance(td + obj, obj.__class__))
-            self.assertTrue(isinstance(obj + td, obj.__class__))
-            self.assertTrue(isinstance(obj - td, obj.__class__))
-            with self.assertRaises(TypeError):
-                td - obj
-        self.assertTrue(isinstance(td + np.datetime64(1, "s"), datetime.datetime))
-        self.assertTrue(isinstance(td + np.datetime64(1, "ns"), datetime.datetime))
-        self.assertTrue(isinstance(np.datetime64(1, "s") + td, datetime.datetime))
-        self.assertFalse(isinstance(np.datetime64(1, "ns") + td, datetime.datetime))
-        self.assertTrue(isinstance(np.datetime64(1, "s") - td, datetime.datetime))
-        self.assertFalse(isinstance(np.datetime64(1, "ns") - td, datetime.datetime))
-
-        # return datetime.date
-        for obj in (datetime.date.today(), pl.Date.today()):
-            self.assertTrue(isinstance(td + obj, obj.__class__))
-            self.assertTrue(isinstance(obj + td, obj.__class__))
-            self.assertTrue(isinstance(obj - td, obj.__class__))
-            with self.assertRaises(TypeError):
-                td - obj
-
-        # return Delta
-        for obj in (
-            Delta(1),
-            datetime.timedelta(1),
-            pd.Timedelta(1, "D"),
-            relativedelta(days=1),
-            1,
-            1.1,
-        ):
-            self.assertTrue(isinstance(td + obj, Delta))
-            self.assertTrue(isinstance(obj + td, Delta))
-            self.assertTrue(isinstance(obj - td, Delta))
-            self.assertTrue(isinstance(td - obj, Delta))
-        self.assertEqual(td + np.timedelta64(1, "s"), Delta(seconds=1, microseconds=1))
-        self.assertEqual(td + np.timedelta64(1, "ns"), td)
-        self.assertEqual(np.timedelta64(1, "s") + td, Delta(seconds=1, microseconds=1))
-        self.assertNotEqual(np.timedelta64(1, "ns") + td, td)
-        self.assertEqual(td - np.timedelta64(1, "s"), Delta(seconds=-1, microseconds=1))
-        self.assertEqual(td - np.timedelta64(1, "ns"), td)
-        self.assertEqual(np.timedelta64(1, "s") - td, Delta(seconds=1, microseconds=-1))
-        self.assertNotEqual(np.timedelta64(1, "ns") - td, td)
-
-        self.log_ended(test)
-
-    # Utils
-    def _random_deltas(
-        self,
-        mode: Literal["Relative", "Absolute", "Mixed"],
-    ) -> tuple[Delta, relativedelta]:
-        args = {}
-        if mode == "Relative" or mode == "Mixed":
-            args |= {
-                "years": randint(-9999, 9999),
-                "months": randint(-1000, 1000),
-                "days": randint(-1000, 1000),
-                "weeks": randint(-1000, 1000),
-                "hours": randint(-1000, 1000),
-                "minutes": randint(-1000, 1000),
-                "seconds": randint(-10_000, 10_000),
-                "microseconds": randint(-10_000_000, 10_000_000),
-            }
-        if mode == "Absolute" or mode == "Mixed":
-            args |= {
-                "year": randint(1, 9999),
-                "month": randint(1, 12),
-                "day": randint(1, 31),
-                "hour": randint(0, 23),
-                "minute": randint(0, 59),
-                "second": randint(0, 59),
-                "microsecond": randint(0, 999_999),
-            }
-        return Delta(**args), relativedelta(**args)
-
-
-class Test_Parser(TestCase):
-    name = "Parser"
-
-    def test_all(self) -> None:
         self.test_configs()
         self.test_timelex()
         self.test_parser()
@@ -1188,5 +855,4 @@ class Test_Parser(TestCase):
 
 
 if __name__ == "__main__":
-    Test_Delta().test_all(100_000)
-    Test_Parser().test_all()
+    TestParser().test_all()
