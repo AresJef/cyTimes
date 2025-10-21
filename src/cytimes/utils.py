@@ -6,16 +6,18 @@
 import cython
 from cython.cimports import numpy as np  # type: ignore
 from cython.cimports.cpython import datetime  # type: ignore
-from cython.cimports.cytimes import typeref  # type: ignore
+from cython.cimports.cpython.set import PySet_Contains as set_contains  # type: ignore
+
 
 np.import_array()
 np.import_umath()
 datetime.import_datetime()
 
 # Python imports
-import datetime, numpy as np
-from zoneinfo import ZoneInfo
-from cytimes import typeref, errors
+import numpy as np
+import datetime, zoneinfo
+from functools import lru_cache as _lru_cache
+from cytimes import errors
 
 # Constants --------------------------------------------------------------------------------------------
 # . calendar
@@ -117,96 +119,122 @@ DT64_DTYPE_NS: np.dtype = np.dtype("datetime64[ns]")
 DT64_DTYPE_PS: np.dtype = np.dtype("datetime64[ps]")
 DT64_DTYPE_FS: np.dtype = np.dtype("datetime64[fs]")
 DT64_DTYPE_AS: np.dtype = np.dtype("datetime64[as]")
+# . numpy datetime units
+DT_NPY_UNIT_YY: cython.int = np.NPY_DATETIMEUNIT.NPY_FR_Y
+DT_NPY_UNIT_MM: cython.int = np.NPY_DATETIMEUNIT.NPY_FR_M
+DT_NPY_UNIT_WW: cython.int = np.NPY_DATETIMEUNIT.NPY_FR_W
+DT_NPY_UNIT_DD: cython.int = np.NPY_DATETIMEUNIT.NPY_FR_D
+DT_NPY_UNIT_HH: cython.int = np.NPY_DATETIMEUNIT.NPY_FR_h
+DT_NPY_UNIT_MI: cython.int = np.NPY_DATETIMEUNIT.NPY_FR_m
+DT_NPY_UNIT_SS: cython.int = np.NPY_DATETIMEUNIT.NPY_FR_s
+DT_NPY_UNIT_MS: cython.int = np.NPY_DATETIMEUNIT.NPY_FR_ms
+DT_NPY_UNIT_US: cython.int = np.NPY_DATETIMEUNIT.NPY_FR_us
+DT_NPY_UNIT_NS: cython.int = np.NPY_DATETIMEUNIT.NPY_FR_ns
+DT_NPY_UNIT_PS: cython.int = np.NPY_DATETIMEUNIT.NPY_FR_ps
+DT_NPY_UNIT_FS: cython.int = np.NPY_DATETIMEUNIT.NPY_FR_fs
+DT_NPY_UNIT_AS: cython.int = np.NPY_DATETIMEUNIT.NPY_FR_as
 
 
 # datetime.tzinfo --------------------------------------------------------------------------------------
-@cython.cfunc
-@cython.inline(True)
-def _get_localtimezone() -> object:
-    """(internal) Get the local timezone `<'ZoneInfo/timezone'>`."""
+def _get_local_timezone() -> object:
+    """(internal) Get the process-local timezone `<'datetime.tzinfo'>`.
+
+    :returns `<'zoneinfo.ZoneInfo/datetime.timezone'>`: The local timezone.
+
+        - Returns a concrete IANA zone (`zoneinfo.ZoneInfo`) when possible
+          using [babel](https://github.com/python-babel/babel) `LOCALTZ` name.
+        - If that fails, falls back to a fixed-offset `datetime.timezone` using
+          the **current** local UTC offset (but no DST rules).
+
+    ## Notice
+    - The fixed-offset fallback reflects the offset *at the moment of call* and
+      does not track historical or future transitions.
+    """
     from babel.dates import LOCALTZ
 
-    if isinstance(LOCALTZ, ZoneInfo):
+    if isinstance(LOCALTZ, zoneinfo.ZoneInfo):
         return LOCALTZ
     try:
-        return ZoneInfo(LOCALTZ.zone)
+        return zoneinfo.ZoneInfo(LOCALTZ.zone)
     except Exception:
-        return datetime.timezone_new(
-            datetime.timedelta_new(0, tz_local_seconds(None), 0), None  # type: ignore
-        )
+        return tz_new(0, 0, tz_local_sec(None))  # type: ignore
 
 
-_LOCAL_TZ: object = _get_localtimezone()
+_LOCAL_TIMEZONE: object = _get_local_timezone()
+
+
+@_lru_cache(maxsize=128)
+def _get_zoneinfo(name: str) -> zoneinfo.ZoneInfo | datetime.timezone:
+    """(internal) Get `zoneinfo.ZoneInfo` object by name with caching."""
+    name_lower: str = name.lower()
+    if name_lower == "local":
+        return _LOCAL_TIMEZONE  # type: ignore
+    if set_contains(_UTC_ALIASES, name_lower):  # type: ignore
+        return UTC
+    try:
+        return zoneinfo.ZoneInfo(name)
+    except Exception as err:
+        raise errors.InvalidTimezoneError("Invalid timezone name '%s'" % name) from err
+
+
+_UTC_ALIASES: set = {
+    "z",
+    "utc",
+    "zulu",
+    "gmt",
+    "gmt0",
+    "gmt+0",
+    "gmt-0",
+    "universal",
+    "greenwich",
+    "etc/utc",
+    "etc/zulu",
+    "etc/gmt",
+    "etc/gmt0",
+    "etc/gmt+0",
+    "etc/gmt-0",
+    "etc/universal",
+}
 
 
 @cython.cfunc
 @cython.inline(True)
-def _prep_timezone_map() -> dict:
-    """(internal) Prepare the timezone map `<'dict'>`."""
-    from zoneinfo import available_timezones
+def tz_parse(tz: zoneinfo.ZoneInfo | datetime.timezone | str | None) -> object:
+    """(cfunc) Parse timezone input to `<'zoneinfo.ZoneInfo/datetime.timezone/None'>`.
 
-    # Zoneinfo timezones
-    tz_map = {name: ZoneInfo(name) for name in sorted(available_timezones())}
-    # Local timezone
-    tz_map["local"] = _LOCAL_TZ
-    # UTC timezone aliases
-    for tz in (
-        "UTC",
-        "Universal",
-        "GMT",
-        "GMT+0",
-        "GMT-0",
-        "GMT0",
-        "Greenwich",
-        "Zulu",
-    ):
-        tz_map[tz] = UTC
-    return tz_map
+    :param tz `<'datetime.timezone/zoneinfo.ZoneInfo/pytz/str/None'>`: The timezone object.
 
+        - If 'tz' is `None` → return `None`.
+        - If 'tz' is `datetime.timezone/zoneinfo.ZoneInfo` → return as-is.
+        - If 'tz' is `str` →:
 
-_TIMEZONE_MAP: dict = _prep_timezone_map()
+            - `"local"` (case-insensitive) → cached local timezone
+            - common UTC aliases (case-insensitive) → UTC
+            - otherwise interpreted as a canonical IANA key via ZoneInfo
 
+        - If 'tz' is `pytz` timezone → mapped by its `zone` name to a `ZoneInfo`.
 
-@cython.cfunc
-@cython.inline(True)
-def tz_parse(tz: datetime.tzinfo | str) -> object:
-    """(cfunc) Parse 'tz' object into `<'datetime.tzinfo/None'>`.
-
-    :param tz `<'datetime.timezone/Zoneinfo/pytz/str'>`: The timezone object.
-        - If 'tz' is an instance of `<'datetime.timezone'>`, return 'tz' directly.
-        - If 'tz' is a string or timezone from Zoneinfo or pytz,
-           use Python 'Zoneinfo' to (re)-create the timezone object.
+    :returns `<'zoneinfo.ZoneInfo/datetime.timezone/None'>`: The normalized timezone object.
+    :raises `InvalidTimezoneError`: If 'tz' is invalid or unrecognized.
     """
-    # NoneType
+    # None
     if tz is None:
         return tz
-    # datetime.timezone
-    dtype = type(tz)
-    if dtype is typeref.TIMEZONE:
+
+    # zoneinfo.ZoneInfo / datetime.timezone
+    if isinstance(tz, (zoneinfo.ZoneInfo, datetime.timezone)):
         return tz
-    # 'str' timezone name
-    elif dtype is str:
-        try:
-            return _TIMEZONE_MAP[tz]
-        except Exception:
-            pass
-    # 'Zoneinfo' timezone
-    elif dtype is typeref.ZONEINFO:
-        try:
-            return _TIMEZONE_MAP[tz.key]
-        except Exception:
-            pass
-    # Subclass of 'Zoneinfo' timezone
-    elif isinstance(tz, typeref.ZONEINFO):
-        return tz
+
+    # `str` timezone name
+    if isinstance(tz, str):
+        return _get_zoneinfo(tz)
+
     # 'pytz' timezone
-    elif hasattr(tz, "localize"):
-        try:
-            return _TIMEZONE_MAP[tz.zone]
-        except Exception:
-            pass
-    # Invalid timezone
-    raise errors.InvalidTimezoneError("invalid timezone '%s' %s" % (tz, type(tz)))
+    if hasattr(tz, "localize"):
+        return _get_zoneinfo(tz.zone)  # type: ignore
+
+    # Unsupported type
+    raise errors.InvalidTimezoneError("Invalid timezone '%s' %s" % (tz, type(tz)))
 
 
 ########## The REST utility functions are in the utils.pxd file ##########
@@ -219,15 +247,16 @@ def _test_utils() -> None:
     # Calendar
     _test_is_leap_year()
     _test_days_bf_year()
+    _test_day_of_year()
     _test_quarter_of_month()
     _test_days_in_quarter()
     _test_days_in_month()
     _test_days_bf_month()
     _test_weekday()
     _test_isocalendar()
-    _test_iso_week1_monday_ordinal()
-    _test_ymd_to_ordinal()
-    _test_ymd_fr_ordinal()
+    _test_iso_week1_mon_ord()
+    _test_ymd_to_ord()
+    _test_ymd_fr_ord()
     _test_ymd_fr_isocalendar()
     # datetime.date
     _test_date_generate()
@@ -240,10 +269,10 @@ def _test_utils() -> None:
     _test_dt_conversion()
     _test_dt_mainipulate()
     _test_dt_arithmetic()
+    _test_dt_normalize_tz()
     # datetime.time
     _test_time_generate()
     _test_time_type_check()
-    _test_time_tzinfo()
     _test_time_conversion()
     # datetime.timedelta
     _test_timedelta_generate()
@@ -271,6 +300,9 @@ def _test_utils() -> None:
     # math
     _test_math()
     _test_ndarray_math()
+    # hmsf
+    _test_sec_to_us()
+    _cross_test_with_ndarray()
 
 
 # Parser
@@ -297,12 +329,12 @@ def _test_parser() -> None:
     assert not is_ascii_digit("a")  # type: ignore
 
     for i in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
-        assert is_ascii_alpha_upper(i)  # type: ignore
-    assert not is_ascii_alpha_upper("1")  # type: ignore
+        assert is_ascii_letter_upper(i)  # type: ignore
+    assert not is_ascii_letter_upper("1")  # type: ignore
 
     for i in "abcdefghijklmnopqrstuvwxyz":
-        assert is_ascii_alpha_lower(i)  # type: ignore
-    assert not is_ascii_alpha_lower("1")  # type: ignore
+        assert is_ascii_letter_lower(i)  # type: ignore
+    assert not is_ascii_letter_lower("1")  # type: ignore
 
     # Parse
     t: str = "2021-01-02T03:04:05.006007"
@@ -336,32 +368,46 @@ def _test_parser() -> None:
 
 # Time
 def _test_localtime_n_gmtime() -> None:
-    import time
+    import time, numpy as np
 
-    t = time.time()
-    val = tm_localtime(t)  # type: ignore
-    cmp = time.localtime(t)
-    assert val.tm_sec == cmp.tm_sec, f"{val.tm_sec} != {cmp.tm_sec}"
-    assert val.tm_min == cmp.tm_min, f"{val.tm_sec} != {cmp.tm_sec}"
-    assert val.tm_hour == cmp.tm_hour, f"{val.tm_sec} != {cmp.tm_sec}"
-    assert val.tm_mday == cmp.tm_mday, f"{val.tm_sec} != {cmp.tm_sec}"
-    assert val.tm_mon == cmp.tm_mon, f"{val.tm_sec} != {cmp.tm_sec}"
-    assert val.tm_year == cmp.tm_year, f"{val.tm_sec} != {cmp.tm_sec}"
-    assert val.tm_wday == cmp.tm_wday, f"{val.tm_sec} != {cmp.tm_sec}"
-    assert val.tm_yday == cmp.tm_yday, f"{val.tm_sec} != {cmp.tm_sec}"
-    assert val.tm_isdst == cmp.tm_isdst, f"{val.tm_sec} != {cmp.tm_sec}"
+    for t in (-0.6, -0.5, -0.4, -0.1, 0, 0.1, 0.4, 0.5, 0.6, time.time()):
+        cmp = time.localtime(t)
+        _tm = tm_localtime(t)  # type: ignore
+        assert _tm.tm_sec == cmp.tm_sec, f"{_tm.tm_sec} != {cmp.tm_sec}"
+        assert _tm.tm_min == cmp.tm_min, f"{_tm.tm_sec} != {cmp.tm_sec}"
+        assert _tm.tm_hour == cmp.tm_hour, f"{_tm.tm_sec} != {cmp.tm_sec}"
+        assert _tm.tm_mday == cmp.tm_mday, f"{_tm.tm_sec} != {cmp.tm_sec}"
+        assert _tm.tm_mon == cmp.tm_mon, f"{_tm.tm_sec} != {cmp.tm_sec}"
+        assert _tm.tm_year == cmp.tm_year, f"{_tm.tm_sec} != {cmp.tm_sec}"
+        assert _tm.tm_wday == cmp.tm_wday, f"{_tm.tm_sec} != {cmp.tm_sec}"
+        assert _tm.tm_yday == cmp.tm_yday, f"{_tm.tm_sec} != {cmp.tm_sec}"
+        assert _tm.tm_isdst == cmp.tm_isdst, f"{_tm.tm_sec} != {cmp.tm_sec}"
 
-    val = tm_gmtime(t)  # type: ignore
-    cmp = time.gmtime(t)
-    assert val.tm_sec == cmp.tm_sec, f"{val.tm_sec} != {cmp.tm_sec}"
-    assert val.tm_min == cmp.tm_min, f"{val.tm_sec} != {cmp.tm_sec}"
-    assert val.tm_hour == cmp.tm_hour, f"{val.tm_sec} != {cmp.tm_sec}"
-    assert val.tm_mday == cmp.tm_mday, f"{val.tm_sec} != {cmp.tm_sec}"
-    assert val.tm_mon == cmp.tm_mon, f"{val.tm_sec} != {cmp.tm_sec}"
-    assert val.tm_year == cmp.tm_year, f"{val.tm_sec} != {cmp.tm_sec}"
-    assert val.tm_wday == cmp.tm_wday, f"{val.tm_sec} != {cmp.tm_sec}"
-    assert val.tm_yday == cmp.tm_yday, f"{val.tm_sec} != {cmp.tm_sec}"
-    assert val.tm_isdst == cmp.tm_isdst, f"{val.tm_sec} != {cmp.tm_sec}"
+        cmp = time.gmtime(t)
+        _tm = tm_gmtime(t)  # type: ignore
+        assert _tm.tm_sec == cmp.tm_sec, f"{_tm.tm_sec} != {cmp.tm_sec}"
+        assert _tm.tm_min == cmp.tm_min, f"{_tm.tm_sec} != {cmp.tm_sec}"
+        assert _tm.tm_hour == cmp.tm_hour, f"{_tm.tm_sec} != {cmp.tm_sec}"
+        assert _tm.tm_mday == cmp.tm_mday, f"{_tm.tm_sec} != {cmp.tm_sec}"
+        assert _tm.tm_mon == cmp.tm_mon, f"{_tm.tm_sec} != {cmp.tm_sec}"
+        assert _tm.tm_year == cmp.tm_year, f"{_tm.tm_sec} != {cmp.tm_sec}"
+        assert _tm.tm_wday == cmp.tm_wday, f"{_tm.tm_sec} != {cmp.tm_sec}"
+        assert _tm.tm_yday == cmp.tm_yday, f"{_tm.tm_sec} != {cmp.tm_sec}"
+        assert _tm.tm_isdst == cmp.tm_isdst, f"{_tm.tm_sec} != {cmp.tm_sec}"
+
+    for t in (np.inf, -np.inf):
+        try:
+            tm_localtime(t)  # type: ignore
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("Should raise RuntimeError")
+        try:
+            tm_gmtime(t)  # type: ignore
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("Should raise RuntimeError")
 
     print("Passed: localtime & gmtime")
 
@@ -372,11 +418,15 @@ def _test_localtime_n_gmtime() -> None:
 def _test_is_leap_year() -> None:
     from _pydatetime import _is_leap  # type: ignore
 
-    for i in range(1, 10000):
+    for i in range(-10000, 10001):
         val = is_leap_year(i)  # type: ignore
         cmp = _is_leap(i)
         assert val == cmp, f"{i}: {val} != {cmp}"
-    print("Passed: is_leap_year")
+
+    assert is_leap_year(0)  # type: ignore
+    assert is_leap_year(-4)  # type: ignore
+    assert not is_leap_year(-100)  # type: ignore
+    assert is_leap_year(-400)  # type: ignore
 
     del _is_leap
 
@@ -384,13 +434,30 @@ def _test_is_leap_year() -> None:
 def _test_days_bf_year() -> None:
     from _pydatetime import _days_before_year  # type: ignore
 
-    for i in range(1, 10000):
+    for i in range(-10000, 10001):
         val = days_bf_year(i)  # type: ignore
         cmp = _days_before_year(i)
         assert val == cmp, f"{i}: {val} != {cmp}"
+
     print("Passed: days_bf_year")
 
     del _days_before_year
+
+
+def _test_day_of_year() -> None:
+
+    for y in range(-10000, 10001):
+        for m in range(1, 13):
+            for d in range(1, 32):
+                if d > 28:
+                    d = min(d, days_in_month(y, m))  # type: ignore
+                doy = day_of_year(y, m, d)  # type: ignore
+                _ymd = ymd_fr_day_of_year(y, doy)  # type: ignore
+                assert _ymd.year == y, f"{y}-{m}-{d}: {y} != {_ymd.year}"
+                assert _ymd.month == m, f"{y}-{m}-{d}: {m} != {_ymd.month}"
+                assert _ymd.day == d, f"{y}-{m}-{d}: {d} != {_ymd.day}"
+
+    print("Passed: day_of_year")
 
 
 def _test_quarter_of_month() -> None:
@@ -431,18 +498,12 @@ def _test_days_in_quarter() -> None:
 def _test_days_in_month() -> None:
     from _pydatetime import _days_in_month  # type: ignore
 
-    # non-leap
-    year: cython.int = 2021
-    for i in range(1, 13):
-        val = days_in_month(year, i)  # type: ignore
-        cmp = _days_in_month(year, i)
-        assert val == cmp, f"{i}: {val} != {cmp}"
-    # leap
-    year = 2024
-    for i in range(1, 13):
-        val = days_in_month(year, i)  # type: ignore
-        cmp = _days_in_month(year, i)
-        assert val == cmp, f"{i}: {val} != {cmp}"
+    for year in range(-1000, 1001):
+        for i in range(1, 13):
+            val = days_in_month(year, i)  # type: ignore
+            cmp = _days_in_month(year, i)
+            assert val == cmp, f"{year}-{i}: {val} != {cmp}"
+
     print("Passed: days_in_month")
 
     del _days_in_month
@@ -451,18 +512,12 @@ def _test_days_in_month() -> None:
 def _test_days_bf_month() -> None:
     from _pydatetime import _days_before_month  # type: ignore
 
-    # non-leap
-    year: cython.int = 2021
-    for i in range(1, 13):
-        val = days_bf_month(year, i)  # type: ignore
-        cmp = _days_before_month(year, i)
-        assert val == cmp, f"{i}: {val} != {cmp}"
-    # leap
-    year = 2024
-    for i in range(1, 13):
-        val = days_bf_month(year, i)  # type: ignore
-        cmp = _days_before_month(year, i)
-        assert val == cmp, f"{i}: {val} != {cmp}"
+    for year in range(-1000, 1001):
+        for i in range(1, 13):
+            val = days_bf_month(year, i)  # type: ignore
+            cmp = _days_before_month(year, i)
+            assert val == cmp, f"{i}: {val} != {cmp}"
+
     print("Passed: days_bf_month")
 
     del _days_before_month
@@ -510,53 +565,66 @@ def _test_isocalendar() -> None:
                     iso_calr.weekday == cmp.weekday
                 ), f"{year}-{month}-{day}: {iso_calr.weekday} != {cmp.weekday}"
 
+                iso_year = ymd_isoyear(year, month, day)  # type: ignore
+                assert (
+                    iso_year == cmp.year
+                ), f"{year}-{month}-{day}: {iso_year} != {cmp.year}"
+                iso_week = ymd_isoweek(year, month, day)  # type: ignore
+                assert (
+                    iso_week == cmp.week
+                ), f"{year}-{month}-{day}: {iso_week} != {cmp.week}"
+                iso_weekday = ymd_isoweekday(year, month, day)  # type: ignore
+                assert (
+                    iso_weekday == cmp.weekday
+                ), f"{year}-{month}-{day}: {iso_weekday} != {cmp.weekday}"
+
     print("Passed: isocalendar")
 
     del date
 
 
-def _test_iso_week1_monday_ordinal() -> None:
+def _test_iso_week1_mon_ord() -> None:
     from _pydatetime import _isoweek1monday  # type: ignore
 
     for year in range(1, 10000):
-        val = iso_week1_monday_ordinal(year)  # type: ignore
+        val = iso_week1_mon_ord(year)  # type: ignore
         cmp = _isoweek1monday(year)
         assert val == cmp, f"{year}: {val} != {cmp}"
-    print("Passed: iso_1st_monday")
+    print("Passed: iso_week1_mon_ord")
 
     del _isoweek1monday
 
 
-def _test_ymd_to_ordinal() -> None:
+def _test_ymd_to_ord() -> None:
     from _pydatetime import _ymd2ord  # type: ignore
 
     year: cython.int
     month: cython.int
     day: cython.int
-    for year in range(1, 10000):
+    for year in range(-10000, 10001):
         for month in range(1, 13):
             for day in range(1, 32):
                 if day > 28:
                     day = min(day, days_in_month(year, month))  # type: ignore
-                val = ymd_to_ordinal(year, month, day)  # type: ignore
+                val = ymd_to_ord(year, month, day)  # type: ignore
                 cmp = _ymd2ord(year, month, day)
                 assert val == cmp, f"{year}-{month}-{day}: {val} != {cmp}"
-    print("Passed: ymd_to_ordinal")
+    print("Passed: ymd_to_ord")
 
     del _ymd2ord
 
 
-def _test_ymd_fr_ordinal() -> None:
+def _test_ymd_fr_ord() -> None:
     from _pydatetime import _ord2ymd, _MAXORDINAL  # type: ignore
 
-    for i in range(1, _MAXORDINAL + 1):
-        val = ymd_fr_ordinal(i)  # type: ignore
+    for i in range(-_MAXORDINAL - 1000, _MAXORDINAL + 1001):
+        val = ymd_fr_ord(i)  # type: ignore
         (y, m, d) = _ord2ymd(i)
         assert (
             val.year == y and val.month == m and val.day == d
         ), f"{i}: {val} != {y}-{m}-{d}"
 
-    print("Passed: ymd_fr_ordinal")
+    print("Passed: ymd_fr_ord")
 
     del _ord2ymd, _MAXORDINAL
 
@@ -646,12 +714,11 @@ def _test_date_conversion() -> None:
         _tm.tm_yday,
         _tm.tm_isdst,
     )
-    assert "01/02/2021" == date_to_strformat(date, "%m/%d/%Y")  # type: ignore
-    assert "2021-01-02" == date_to_isoformat(date)  # type: ignore
-    assert date.toordinal() == date_to_ordinal(date)  # type: ignore
-    assert (date.toordinal() - EPOCH_DAY) * 86400 == date_to_seconds(date)  # type: ignore
+    assert "01/02/2021" == date_strformat(date, "%m/%d/%Y")  # type: ignore
+    assert "2021-01-02" == date_isoformat(date)  # type: ignore
+    assert date.toordinal() == date_to_ord(date)  # type: ignore
+    assert (date.toordinal() - EPOCH_DAY) * 86400 == date_to_sec(date)  # type: ignore
     assert (date.toordinal() - EPOCH_DAY) * 86400_000000 == date_to_us(date)  # type: ignore
-    assert int(dt.timestamp()) == date_to_ts(date)  # type: ignore
 
     class CustomDate(datetime.date):
         pass
@@ -662,10 +729,10 @@ def _test_date_conversion() -> None:
     tmp = date_fr_dt(dt)  # type: ignore
     assert date == tmp and type(tmp) is datetime.date
 
-    tmp = date_fr_ordinal(date.toordinal())  # type: ignore
+    tmp = date_fr_ord(date.toordinal())  # type: ignore
     assert date == tmp and type(tmp) is datetime.date
 
-    tmp = date_fr_seconds((date.toordinal() - EPOCH_DAY) * 86400)  # type: ignore
+    tmp = date_fr_sec((date.toordinal() - EPOCH_DAY) * 86400)  # type: ignore
     assert date == tmp and type(tmp) is datetime.date
 
     tmp = date_fr_us((date.toordinal() - EPOCH_DAY) * 86400_000000)  # type: ignore
@@ -740,12 +807,11 @@ def _test_dt_type_check() -> None:
 
 def _test_dt_tzinfo() -> None:
     import datetime
-    from zoneinfo import ZoneInfo
 
     dt = datetime.datetime(2021, 1, 2, 3, 4, 5, 6)
     tz = datetime.timezone(datetime.timedelta(hours=1, minutes=1))
     dt_tz1 = datetime.datetime(2021, 1, 2, 3, 4, 5, 6, tz)
-    dt_tz2 = datetime.datetime(2021, 1, 2, 3, 4, 5, 6, ZoneInfo("CET"))
+    dt_tz2 = datetime.datetime(2021, 1, 2, 3, 4, 5, 6, zoneinfo.ZoneInfo("CET"))
 
     for t in (dt, dt_tz1, dt_tz2):
         assert t.tzname() == dt_tzname(t)  # type: ignore
@@ -754,12 +820,11 @@ def _test_dt_tzinfo() -> None:
 
     print("Passed: dt_tzinfo")
 
-    del datetime, ZoneInfo
+    del datetime
 
 
 def _test_dt_conversion() -> None:
     import datetime
-    from zoneinfo import ZoneInfo
     from pandas import Timestamp
 
     dt = datetime.datetime(2021, 1, 2, 3, 4, 5, 6)
@@ -769,7 +834,7 @@ def _test_dt_conversion() -> None:
     dt_tz2 = datetime.datetime(2021, 1, 2, 3, 4, 5, 6, tz2)
     tz3 = datetime.timezone(datetime.timedelta(hours=-23, minutes=-59))
     dt_tz3 = datetime.datetime(2021, 1, 2, 3, 4, 5, 6, tz3)
-    dt_tz4 = datetime.datetime(2021, 1, 2, 3, 4, 5, 6, ZoneInfo("CET"))
+    dt_tz4 = datetime.datetime(2021, 1, 2, 3, 4, 5, 6, zoneinfo.ZoneInfo("CET"))
 
     for d in (dt, dt_tz1, dt_tz2, dt_tz3, dt_tz4):
         _tm = dt_to_tm(d, False)  # type: ignore
@@ -797,18 +862,18 @@ def _test_dt_conversion() -> None:
             _tm.tm_isdst,
         )
 
-    assert "01/02/2021 000006.05-04-03" == dt_to_strformat(dt, "%m/%d/%Y %f.%S-%M-%H")  # type: ignore
-    assert "01/02/2021 000006.05-04-03+0101" == dt_to_strformat(dt_tz1, "%m/%d/%Y %f.%S-%M-%H%z")  # type: ignore
-    assert "01/02/2021 000006.05-04-03UTC+01:01" == dt_to_strformat(dt_tz1, "%m/%d/%Y %f.%S-%M-%H%Z")  # type: ignore
-    assert "2021-01-02T03:04:05.000006" == dt_to_isoformat(dt_tz1, "T", False)  # type: ignore
-    assert "2021-01-02T03:04:05" == dt_to_isoformat(dt_tz1.replace(microsecond=0), "T", False)  # type: ignore
-    assert "2021-01-02 03:04:05.000006+0101" == dt_to_isoformat(dt_tz1, " ", True)  # type: ignore
-    assert "2021-01-02 03:04:05+0101" == dt_to_isoformat(dt_tz1.replace(microsecond=0), " ", True)  # type: ignore
-    assert dt.toordinal() == dt_to_ordinal(dt)  # type: ignore
-    assert dt_tz2.toordinal() == dt_to_ordinal(dt_tz2, False)  # type: ignore
-    assert dt_tz2.toordinal() - 1 == dt_to_ordinal(dt_tz2, True)  # type: ignore
-    assert dt_tz3.toordinal() == dt_to_ordinal(dt_tz3, False)  # type: ignore
-    assert dt_tz3.toordinal() + 1 == dt_to_ordinal(dt_tz3, True)  # type: ignore
+    assert "01/02/2021 000006.05-04-03" == dt_strformat(dt, "%m/%d/%Y %f.%S-%M-%H")  # type: ignore
+    assert "01/02/2021 000006.05-04-03+0101" == dt_strformat(dt_tz1, "%m/%d/%Y %f.%S-%M-%H%z")  # type: ignore
+    assert "01/02/2021 000006.05-04-03UTC+01:01" == dt_strformat(dt_tz1, "%m/%d/%Y %f.%S-%M-%H%Z")  # type: ignore
+    assert "2021-01-02T03:04:05.000006" == dt_isoformat(dt_tz1, "T", False)  # type: ignore
+    assert "2021-01-02T03:04:05" == dt_isoformat(dt_tz1.replace(microsecond=0), "T", False)  # type: ignore
+    assert "2021-01-02 03:04:05.000006+0101" == dt_isoformat(dt_tz1, " ", True)  # type: ignore
+    assert "2021-01-02 03:04:05+0101" == dt_isoformat(dt_tz1.replace(microsecond=0), " ", True)  # type: ignore
+    assert dt.toordinal() == dt_to_ord(dt)  # type: ignore
+    assert dt_tz2.toordinal() == dt_to_ord(dt_tz2, False)  # type: ignore
+    assert dt_tz2.toordinal() - 1 == dt_to_ord(dt_tz2, True)  # type: ignore
+    assert dt_tz3.toordinal() == dt_to_ord(dt_tz3, False)  # type: ignore
+    assert dt_tz3.toordinal() + 1 == dt_to_ord(dt_tz3, True)  # type: ignore
     secs = (
         (dt.toordinal() - EPOCH_DAY) * 86400
         + dt.hour * 3600
@@ -816,10 +881,10 @@ def _test_dt_conversion() -> None:
         + dt.second
         + dt.microsecond / 1_000_000
     )
-    assert secs == dt_to_seconds(dt)  # type: ignore
-    assert secs == dt_to_seconds(dt_tz1, False)  # type: ignore
+    assert secs == dt_to_sec(dt)  # type: ignore
+    assert secs == dt_to_sec(dt_tz1, False)  # type: ignore
     offset = datetime.timedelta(hours=1, minutes=1).total_seconds()
-    assert secs - offset == dt_to_seconds(dt_tz1, True)  # type: ignore
+    assert secs - offset == dt_to_sec(dt_tz1, True)  # type: ignore
     us = int(secs * 1_000_000)
     assert us == dt_to_us(dt)  # type: ignore
     assert us == dt_to_us(dt_tz1, False)  # type: ignore
@@ -846,13 +911,13 @@ def _test_dt_conversion() -> None:
     assert dt == dt_fr_dt(Timestamp(dt))  # type: ignore
     assert dt_tz1 == dt_fr_dt(Timestamp(dt_tz1))  # type: ignore
     assert type(dt_fr_dt(Timestamp(dt_tz1))) is datetime.datetime  # type: ignore
-    assert datetime.datetime(2021, 1, 2) == dt_fr_ordinal(dt.toordinal())  # type: ignore
-    assert datetime.datetime(2021, 1, 2) == dt_fr_ordinal(dt_to_ordinal(dt_tz2, False))  # type: ignore
-    assert datetime.datetime(2021, 1, 1) == dt_fr_ordinal(dt_to_ordinal(dt_tz2, True))  # type: ignore
-    assert datetime.datetime(2021, 1, 2) == dt_fr_ordinal(dt_to_ordinal(dt_tz3, False))  # type: ignore
-    assert datetime.datetime(2021, 1, 3) == dt_fr_ordinal(dt_to_ordinal(dt_tz3, True))  # type: ignore
-    assert dt == dt_fr_seconds(dt_to_seconds(dt))  # type: ignore
-    assert dt_tz1 == dt_fr_seconds(dt_to_seconds(dt_tz1, False), tz1)  # type: ignore
+    assert datetime.datetime(2021, 1, 2) == dt_fr_ord(dt.toordinal())  # type: ignore
+    assert datetime.datetime(2021, 1, 2) == dt_fr_ord(dt_to_ord(dt_tz2, False))  # type: ignore
+    assert datetime.datetime(2021, 1, 1) == dt_fr_ord(dt_to_ord(dt_tz2, True))  # type: ignore
+    assert datetime.datetime(2021, 1, 2) == dt_fr_ord(dt_to_ord(dt_tz3, False))  # type: ignore
+    assert datetime.datetime(2021, 1, 3) == dt_fr_ord(dt_to_ord(dt_tz3, True))  # type: ignore
+    assert dt == dt_fr_sec(dt_to_sec(dt))  # type: ignore
+    assert dt_tz1 == dt_fr_sec(dt_to_sec(dt_tz1, False), tz1)  # type: ignore
     assert dt == dt_fr_us(dt_to_us(dt))  # type: ignore
     assert dt_tz1 == dt_fr_us(dt_to_us(dt_tz1, False), tz1)  # type: ignore
 
@@ -860,7 +925,7 @@ def _test_dt_conversion() -> None:
     tz1 = datetime.timezone(datetime.timedelta(hours=1, minutes=1))
     tz2 = datetime.timezone(datetime.timedelta(hours=23, minutes=59))
     tz3 = datetime.timezone(datetime.timedelta(hours=-23, minutes=-59))
-    tz4 = ZoneInfo("CET")
+    tz4 = zoneinfo.ZoneInfo("CET")
     for tz in (None, tz1, tz2, tz3, tz4):
         dt_ = dt.replace(tzinfo=tz1)
         ts = dt_.timestamp()
@@ -868,18 +933,17 @@ def _test_dt_conversion() -> None:
 
     print("Passed: dt_conversion")
 
-    del datetime, ZoneInfo, Timestamp
+    del datetime, Timestamp
 
 
 def _test_dt_mainipulate() -> None:
     import datetime
-    from zoneinfo import ZoneInfo
 
     dt = datetime.datetime(2021, 1, 2, 3, 4, 5, 6)
     tz1 = datetime.timezone(datetime.timedelta(hours=1, minutes=1))
     tz2 = datetime.timezone(datetime.timedelta(hours=23, minutes=59))
     tz3 = datetime.timezone(datetime.timedelta(hours=-23, minutes=-59))
-    tz4 = ZoneInfo("CET")
+    tz4 = zoneinfo.ZoneInfo("CET")
 
     for tz in (None, tz1, tz2, tz3, tz4):
         assert dt.replace(tzinfo=tz) == dt_replace_tz(dt, tz)  # type: ignore
@@ -887,7 +951,7 @@ def _test_dt_mainipulate() -> None:
 
     print("Passed: dt_manipulate")
 
-    del datetime, ZoneInfo
+    del datetime
 
 
 def _test_dt_arithmetic() -> None:
@@ -921,6 +985,102 @@ def _test_dt_arithmetic() -> None:
     print("Passed: date_arithmetic")
 
     del datetime
+
+
+def _test_dt_normalize_tz() -> None:
+    import datetime, pendulum
+    from zoneinfo import ZoneInfo
+
+    test_pairs = [
+        # New York fall-back (1:30 happens twice)
+        datetime.datetime(
+            2025, 11, 2, 1, 30, tzinfo=ZoneInfo("America/New_York"), fold=0
+        ),
+        datetime.datetime(
+            2025, 11, 2, 1, 30, tzinfo=ZoneInfo("America/New_York"), fold=1
+        ),
+        # Berlin fall-back (CET/CEST)
+        datetime.datetime(2025, 10, 26, 2, 30, tzinfo=ZoneInfo("CET"), fold=0),
+        datetime.datetime(2025, 10, 26, 2, 30, tzinfo=ZoneInfo("CET"), fold=1),
+        # New York spring-forward (2:30 never exists)
+        datetime.datetime(
+            2025, 3, 9, 2, 30, tzinfo=ZoneInfo("America/New_York"), fold=0
+        ),
+        datetime.datetime(
+            2025, 3, 9, 2, 30, tzinfo=ZoneInfo("America/New_York"), fold=1
+        ),
+        # Paris spring-forward gap
+        datetime.datetime(2025, 3, 30, 2, 30, tzinfo=ZoneInfo("Europe/Paris"), fold=0),
+        datetime.datetime(2025, 3, 30, 2, 30, tzinfo=ZoneInfo("Europe/Paris"), fold=1),
+        # Lord Howe (30-minute DST change) ambiguous
+        datetime.datetime(
+            2024, 4, 7, 1, 45, tzinfo=ZoneInfo("Australia/Lord_Howe"), fold=0
+        ),
+        datetime.datetime(
+            2024, 4, 7, 1, 45, tzinfo=ZoneInfo("Australia/Lord_Howe"), fold=1
+        ),
+        # Lord Howe (30-minute DST change) non-existent
+        datetime.datetime(
+            2024, 10, 6, 2, 15, tzinfo=ZoneInfo("Australia/Lord_Howe"), fold=0
+        ),
+        datetime.datetime(
+            2024, 10, 6, 2, 15, tzinfo=ZoneInfo("Australia/Lord_Howe"), fold=1
+        ),
+        # Odd offsets & negative DST
+        datetime.datetime(
+            2025, 1, 15, 12, 34, 56, tzinfo=ZoneInfo("Asia/Kathmandu"), fold=0
+        ),
+        datetime.datetime(
+            2025, 1, 15, 12, 34, 56, tzinfo=ZoneInfo("Asia/Kathmandu"), fold=1
+        ),
+        # Dublin’s historical “negative DST” periods
+        datetime.datetime(
+            1971, 10, 31, 1, 30, tzinfo=ZoneInfo("Europe/Dublin"), fold=0
+        ),
+        datetime.datetime(
+            1971, 10, 31, 1, 30, tzinfo=ZoneInfo("Europe/Dublin"), fold=1
+        ),
+        # Samoa skipping a day (dateline move)
+        datetime.datetime(2011, 12, 29, tzinfo=ZoneInfo("Pacific/Apia"), fold=0),
+        datetime.datetime(2011, 12, 29, tzinfo=ZoneInfo("Pacific/Apia"), fold=1),
+        datetime.datetime(2011, 12, 30, tzinfo=ZoneInfo("Pacific/Apia"), fold=0),
+        datetime.datetime(2011, 12, 30, tzinfo=ZoneInfo("Pacific/Apia"), fold=1),
+        # Aware with tzinfo refusing utcoffset at wall time
+        datetime.datetime(
+            2025, 3, 9, 2, 30, tzinfo=ZoneInfo("America/New_York"), fold=0
+        ),
+        datetime.datetime(
+            2025, 3, 9, 2, 30, tzinfo=ZoneInfo("America/New_York"), fold=1
+        ),
+    ]
+
+    for dt in test_pairs:
+        m_dt = dt_normalize_tz(dt)  # type: ignore
+        p_dt = pendulum.datetime(
+            dt.year,
+            dt.month,
+            dt.day,
+            dt.hour,
+            dt.minute,
+            dt.second,
+            dt.microsecond,
+            tz=dt.tzinfo,
+            fold=dt.fold,
+        )
+        assert (
+            m_dt.year == p_dt.year
+            and m_dt.month == p_dt.month
+            and m_dt.day == p_dt.day
+            and m_dt.hour == p_dt.hour
+            and m_dt.minute == p_dt.minute
+            and m_dt.second == p_dt.second
+            and m_dt.microsecond == p_dt.microsecond
+            and m_dt.fold == p_dt.fold
+        ), f"Failed: dt_normalize_tz({dt}) != pendulum result {p_dt}"
+
+    print("Passed: dt_normalize_tz")
+
+    del datetime, pendulum, ZoneInfo
 
 
 # datetime.time
@@ -980,26 +1140,6 @@ def _test_time_type_check() -> None:
     del CustomTime, datetime
 
 
-def _test_time_tzinfo() -> None:
-    import datetime
-    from zoneinfo import ZoneInfo
-
-    time = datetime.time(3, 4, 5, 6)
-    tz1 = datetime.timezone(datetime.timedelta(hours=1, minutes=1))
-    time_tz1 = datetime.time(3, 4, 5, 6, tz1)
-    tz2 = datetime.timezone(datetime.timedelta(hours=23, minutes=59))
-    time_tz2 = datetime.time(3, 4, 5, 6, tz2)
-
-    for t in (time, time_tz1, time_tz2):
-        assert t.tzname() == time_tzname(t)  # type: ignore
-        assert t.dst() == time_dst(t)  # type: ignore
-        assert t.utcoffset() == time_utcoffset(t)  # type: ignore
-
-    print("Passed: time_tzinfo")
-
-    del datetime, ZoneInfo
-
-
 def _test_time_conversion() -> None:
     import datetime
 
@@ -1009,19 +1149,16 @@ def _test_time_conversion() -> None:
     dt = datetime.datetime(1970, 1, 1, 3, 4, 5, 6)
     dt_tz1 = datetime.datetime(1970, 1, 1, 3, 4, 5, 6, tz1)
 
-    assert "03:04:05.000006" == time_to_isoformat(t_tz1, False)  # type: ignore
-    assert "03:04:05.000006+0101" == time_to_isoformat(t_tz1, True)  # type: ignore
-    assert "03:04:05" == time_to_isoformat(t_tz1.replace(microsecond=0), False)  # type: ignore
-    assert "03:04:05+0101" == time_to_isoformat(t_tz1.replace(microsecond=0), True)  # type: ignore
+    assert "03:04:05.000006" == time_isoformat(t_tz1, False)  # type: ignore
+    assert "03:04:05.000006+0101" == time_isoformat(t_tz1, True)  # type: ignore
+    assert "03:04:05" == time_isoformat(t_tz1.replace(microsecond=0), False)  # type: ignore
+    assert "03:04:05+0101" == time_isoformat(t_tz1.replace(microsecond=0), True)  # type: ignore
     secs = t1.hour * 3600 + t1.minute * 60 + t1.second + t1.microsecond / 1_000_000
-    assert secs == time_to_seconds(t1)  # type: ignore
-    assert secs == time_to_seconds(t_tz1, False)  # type: ignore
-    offset = datetime.timedelta(hours=1, minutes=1).total_seconds()
-    assert secs - offset == time_to_seconds(t_tz1, True)  # type: ignore
+    assert secs == time_to_sec(t1)  # type: ignore
+    assert secs == time_to_sec(t_tz1)  # type: ignore
     us = int(secs * 1_000_000)
     assert us == time_to_us(t1)  # type: ignore
-    assert us == time_to_us(t_tz1, False)  # type: ignore
-    assert us - (offset * 1_000_000) == time_to_us(t_tz1, True)  # type: ignore
+    assert us == time_to_us(t_tz1)  # type: ignore
 
     assert datetime.time(3, 4, 5, 6) == time_fr_dt(dt)  # type: ignore
     assert datetime.time(3, 4, 5, 6, tz1) == time_fr_dt(dt_tz1)  # type: ignore
@@ -1033,10 +1170,10 @@ def _test_time_conversion() -> None:
     assert t1 == tmp and type(tmp) is datetime.time  # type: ignore
     tmp = time_fr_time(CustomTime(3, 4, 5, 6, tz1))  # type: ignore
     assert t_tz1 == tmp and type(tmp) is datetime.time  # type: ignore
-    assert t1 == time_fr_seconds(time_to_seconds(t1))  # type: ignore
-    assert t_tz1 == time_fr_seconds(time_to_seconds(t1, False), tz1)  # type: ignore
+    assert t1 == time_fr_sec(time_to_sec(t1))  # type: ignore
+    assert t_tz1 == time_fr_sec(time_to_sec(t1), tz1)  # type: ignore
     assert t1 == time_fr_us(time_to_us(t1))  # type: ignore
-    assert t_tz1 == time_fr_us(time_to_us(t1, False), tz1)  # type: ignore
+    assert t_tz1 == time_fr_us(time_to_us(t1), tz1)  # type: ignore
 
     print("Passed: time_conversion")
 
@@ -1086,18 +1223,18 @@ def _test_timedelta_type_check() -> None:
 def _test_timedelta_conversion() -> None:
     import datetime
 
-    assert "00:00:01" == td_to_isoformat(datetime.timedelta(0, 1))  # type: ignore
-    assert "00:01:01" == td_to_isoformat(datetime.timedelta(0, 1, minutes=1))  # type: ignore
-    assert "24:01:01" == td_to_isoformat(datetime.timedelta(1, 1, minutes=1))  # type: ignore
-    assert "24:01:01.001000" == td_to_isoformat(datetime.timedelta(1, 1, 0, minutes=1, milliseconds=1))  # type: ignore
-    assert "24:01:01.000001" == td_to_isoformat(datetime.timedelta(1, 1, 1, minutes=1))  # type: ignore
-    assert "24:01:01.001001" == td_to_isoformat(datetime.timedelta(1, 1, 1, minutes=1, milliseconds=1))  # type: ignore
-    assert "-00:00:01" == td_to_isoformat(datetime.timedelta(0, -1))  # type: ignore
-    assert "-00:01:01" == td_to_isoformat(datetime.timedelta(0, -1, minutes=-1))  # type: ignore
-    assert "-24:01:01" == td_to_isoformat(datetime.timedelta(-1, -1, minutes=-1))  # type: ignore
-    assert "-24:01:01.001000" == td_to_isoformat(datetime.timedelta(-1, -1, 0, minutes=-1, milliseconds=-1))  # type: ignore
-    assert "-24:01:01.000001" == td_to_isoformat(datetime.timedelta(-1, -1, -1, minutes=-1))  # type: ignore
-    assert "-24:01:01.001001" == td_to_isoformat(datetime.timedelta(-1, -1, -1, minutes=-1, milliseconds=-1))  # type: ignore
+    assert "00:00:01" == td_isoformat(datetime.timedelta(0, 1))  # type: ignore
+    assert "00:01:01" == td_isoformat(datetime.timedelta(0, 1, minutes=1))  # type: ignore
+    assert "24:01:01" == td_isoformat(datetime.timedelta(1, 1, minutes=1))  # type: ignore
+    assert "24:01:01.001000" == td_isoformat(datetime.timedelta(1, 1, 0, minutes=1, milliseconds=1))  # type: ignore
+    assert "24:01:01.000001" == td_isoformat(datetime.timedelta(1, 1, 1, minutes=1))  # type: ignore
+    assert "24:01:01.001001" == td_isoformat(datetime.timedelta(1, 1, 1, minutes=1, milliseconds=1))  # type: ignore
+    assert "-00:00:01" == td_isoformat(datetime.timedelta(0, -1))  # type: ignore
+    assert "-00:01:01" == td_isoformat(datetime.timedelta(0, -1, minutes=-1))  # type: ignore
+    assert "-24:01:01" == td_isoformat(datetime.timedelta(-1, -1, minutes=-1))  # type: ignore
+    assert "-24:01:01.001000" == td_isoformat(datetime.timedelta(-1, -1, 0, minutes=-1, milliseconds=-1))  # type: ignore
+    assert "-24:01:01.000001" == td_isoformat(datetime.timedelta(-1, -1, -1, minutes=-1))  # type: ignore
+    assert "-24:01:01.001001" == td_isoformat(datetime.timedelta(-1, -1, -1, minutes=-1, milliseconds=-1))  # type: ignore
 
     for h in range(-23, 24):
         for m in range(-59, 60):
@@ -1106,15 +1243,15 @@ def _test_timedelta_conversion() -> None:
             tz_str = dt_str[len(dt_str) - 6 :]
             with cython.wraparound(True):
                 tz_str = tz_str[:-3] + tz_str[-2:]
-            assert tz_str == td_to_utcformat(td)  # type: ignore
+            assert tz_str == td_utcformat(td)  # type: ignore
 
     td = datetime.timedelta(1, 1, 1)
     secs = td.total_seconds()
-    assert secs == td_to_seconds(td)  # type: ignore
+    assert secs == td_to_sec(td)  # type: ignore
     assert int(secs * 1_000_000) == td_to_us(td)  # type: ignore
     td = datetime.timedelta(-1, -1, -1)
     secs = td.total_seconds()
-    assert secs == td_to_seconds(td)  # type: ignore
+    assert secs == td_to_sec(td)  # type: ignore
     assert int(secs * 1_000_000) == td_to_us(td)  # type: ignore
 
     class CustomTD(datetime.timedelta):
@@ -1122,7 +1259,7 @@ def _test_timedelta_conversion() -> None:
 
     tmp = td_fr_td(CustomTD(-1, -1, -1))  # type: ignore
     assert td == tmp and type(tmp) is datetime.timedelta  # type: ignore
-    assert td == td_fr_seconds(td_to_seconds(td))  # type: ignore
+    assert td == td_fr_sec(td_to_sec(td))  # type: ignore
     assert td == td_fr_us(td_to_us(td))  # type: ignore
 
     print("Passed: timedelta_conversion")
@@ -1164,7 +1301,6 @@ def _test_tzinfo_type_check() -> None:
 
 def _test_tzinfo_access() -> None:
     import datetime
-    from zoneinfo import ZoneInfo
 
     dt = datetime.datetime.now()
     tz = dt.tzinfo
@@ -1178,7 +1314,7 @@ def _test_tzinfo_access() -> None:
     assert None == tz_dst(tz, dt)  # type: ignore
     assert datetime.timedelta() == tz_utcoffset(tz, dt)  # type: ignore
 
-    dt = datetime.datetime.now(ZoneInfo("Asia/Shanghai"))
+    dt = datetime.datetime.now(zoneinfo.ZoneInfo("Asia/Shanghai"))
     tz = dt.tzinfo
     assert "CST" == tz_name(tz, dt)  # type: ignore
     assert datetime.timedelta() == tz_dst(tz, dt)  # type: ignore
@@ -1196,7 +1332,7 @@ def _test_tzinfo_access() -> None:
 
     print("Passed: tzinfo_access")
 
-    del datetime, ZoneInfo
+    del datetime
 
 
 # . numpy.share
@@ -1206,17 +1342,17 @@ def _test_numpy_share() -> None:
     units = ("Y", "M", "W", "D", "h", "m", "s", "ms", "us", "ns", "ps", "fs", "as")
 
     for unit in units:
-        unit == map_nptime_unit_int2str(map_nptime_unit_str2int(unit))  # type: ignore
+        unit == nptime_unit_int2str(nptime_unit_str2int(unit))  # type: ignore
 
     for unit in units:
         arr = np.array([], dtype="datetime64[%s]" % unit)
-        assert unit == map_nptime_unit_int2str(get_arr_nptime_unit(arr))  # type: ignore
+        assert unit == nptime_unit_int2str(get_arr_nptime_unit(arr))  # type: ignore
         arr = np.array([1, 2, 3], dtype="datetime64[%s]" % unit)
-        assert unit == map_nptime_unit_int2str(get_arr_nptime_unit(arr))  # type: ignore
+        assert unit == nptime_unit_int2str(get_arr_nptime_unit(arr))  # type: ignore
         arr = np.array([], dtype="timedelta64[%s]" % unit)
-        assert unit == map_nptime_unit_int2str(get_arr_nptime_unit(arr))  # type: ignore
+        assert unit == nptime_unit_int2str(get_arr_nptime_unit(arr))  # type: ignore
         arr = np.array([1, 2, 3], dtype="timedelta64[%s]" % unit)
-        assert unit == map_nptime_unit_int2str(get_arr_nptime_unit(arr))  # type: ignore
+        assert unit == nptime_unit_int2str(get_arr_nptime_unit(arr))  # type: ignore
 
     print("Passed: numpy_share")
 
@@ -1349,22 +1485,29 @@ def _test_ndarray_dt64_conversion() -> None:
     units = ("Y", "M", "W", "D", "h", "m", "s", "ms", "us", "ns")
 
     for my_unit in units:
-        arr = np.array([i for i in range(-500, 501)], dtype=f"datetime64[{my_unit}]")
+        my_unit_int: cython.int = nptime_unit_str2int(my_unit)  # type: ignore
+        arr = np.array([i for i in range(-1000, 1001)], dtype=f"datetime64[{my_unit}]")
         arr_i = arr.astype("int64")
         for to_unit in units:
             cmp = arr.astype(f"datetime64[{to_unit}]").astype("int64")
             val = dt64arr_as_int64(arr, to_unit)  # type: ignore
             assert np.equal(val, cmp).all()
-            val = dt64arr_as_int64(arr, to_unit, my_unit)  # type: ignore
+            val = dt64arr_as_int64(arr, to_unit, my_unit_int)  # type: ignore
             assert np.equal(val, cmp).all()
-            val = dt64arr_as_int64(arr_i, to_unit, my_unit)  # type: ignore
+            val = dt64arr_as_int64(arr_i, to_unit, my_unit_int)  # type: ignore
             assert np.equal(val, cmp).all()
 
     for my_unit in units:
-        arr = np.array([i for i in range(-500, 501)], dtype=f"datetime64[{my_unit}]")
+        my_unit_int: cython.int = nptime_unit_str2int(my_unit)  # type: ignore
+        arr = np.array([i for i in range(-1000, 1001)], dtype=f"datetime64[{my_unit}]")
+        arr_i = arr.astype("int64")
         for to_unit in units:
             cmp = arr.astype(f"datetime64[{to_unit}]")
             val = dt64arr_as_unit(arr, to_unit)  # type: ignore
+            assert np.equal(val, cmp).all()
+            val = dt64arr_as_unit(arr, to_unit, my_unit_int)  # type: ignore
+            assert np.equal(val, cmp).all()
+            val = dt64arr_as_unit(arr_i, to_unit, my_unit_int)  # type: ignore
             assert np.equal(val, cmp).all()
 
     print("Passed: ndarray_dt64_conversion")
@@ -1614,7 +1757,7 @@ def _test_math() -> None:
             res == exp
         ), f"Failed: math_div_floor({num}, {factor}) = {res}, expected {exp}"
 
-    print("Passed: test_math")
+    print("Passed: math")
 
     del (
         math,
@@ -1884,3 +2027,196 @@ def _test_ndarray_math() -> None:
         ROUND_CEILING,
         ROUND_FLOOR,
     )
+
+
+def _test_sec_to_us() -> None:
+
+    pairs = [
+        (0.0, 0),
+        (1.0, 1_000_000),
+        (1.000001, 1_000_001),
+        (0.999999, 999_999),
+        (59.9999996, 59_999_999),
+        (60.0, 60_000_000),
+        (12345.678901, 12_345_678_901),
+        (-0.000001, -1),
+        (-0.999999, -999_999),
+        (-1.000001, -1_000_001),
+        (-59.9999996, -59_999_999),
+        (-60.0, -60_000_000),
+        (-86399.9999996, -86_399_999_999),
+        (86399.9999996, 86_399_999_999),
+        (31556926.123456, 31_556_926_123_456),
+        (-31556926.123456, -31_556_926_123_456),
+        (1e-06, 1),
+        (-1e-06, -1),
+        (0.0000004, 0),
+        (0.0000005, 0),
+        (999999.9999995, 999_999_999_999),
+        (-999999.9999995, -999_999_999_999),
+        (1234567890.123456, 1_234_567_890_123_456),
+        (-1234567890.123456, -1_234_567_890_123_456),
+        (1672531199.9999996, 1_672_531_199_999_999),
+        (-2208988800.0, -2_208_988_800_000_000),
+        (946684800.0, 946_684_800_000_000),
+        (-31536000.0, -31_536_000_000_000),
+        (2_147_483_647.999999, 2_147_483_647_999_999),
+        (-2_147_483_648.000001, -2_147_483_648_000_001),
+    ]
+    for ss, us in pairs:
+        # sec_to_us
+        res = sec_to_us(ss)  # type: ignore
+        assert res == us, f"Failed: sec_to_us({ss}) = {res}, expected {us}"
+
+        # tm_from_*
+        t1 = tm_fr_sec(ss)  # type: ignore
+        t2 = tm_fr_us(us)  # type: ignore
+        assert (
+            t1.tm_sec == t2.tm_sec
+            and t1.tm_min == t2.tm_min
+            and t1.tm_hour == t2.tm_hour
+            and t1.tm_mday == t2.tm_mday
+            and t1.tm_mon == t2.tm_mon
+            and t1.tm_year == t2.tm_year
+            and t1.tm_wday == t2.tm_wday
+            and t1.tm_yday == t2.tm_yday
+            and t1.tm_isdst == t2.tm_isdst
+        ), f"Failed:\nhmsf_fr_sec({ss})\n => {t1}\nhmsf_fr_us({us})\n => {t2}"
+
+        # hmsf_from_*
+        h1 = hmsf_fr_sec(ss)  # type: ignore
+        h2 = hmsf_fr_us(us)  # type: ignore
+        assert (
+            h1.hour == h2.hour
+            and h1.minute == h2.minute
+            and h1.second == h2.second
+            and h1.microsecond == h2.microsecond
+        ), f"Failed:\nhmsf_fr_sec({ss})\n => {h1}\nhmsf_fr_us({us})\n => {h2}"
+
+        # date_from_*
+        d1 = date_fr_sec(ss)  # type: ignore
+        d2 = date_fr_us(us)  # type: ignore
+        assert (
+            d1 == d2
+        ), f"Failed:\ndate_fr_sec({ss})\n => {d1}\ndate_fr_us({us})\n => {d2}"
+
+    print("Passed: sec_to_us")
+
+
+def _cross_test_with_ndarray() -> None:
+    import numpy as np
+
+    # Times
+    V = 9_999_999
+    arr = np.array([i for i in range(-V, V + 1)], dtype="datetime64[us]")
+    arr_i = arr.astype("int64")
+    arr_f = arr_i.astype("float64") / 1_000_000.0
+    arr_Y = dt64arr_year(arr)  # type: ignore
+    arr_M = dt64arr_month(arr)  # type: ignore
+    arr_D = dt64arr_day(arr)  # type: ignore
+    arr_h = dt64arr_hour(arr)  # type: ignore
+    arr_m = dt64arr_minute(arr)  # type: ignore
+    arr_s = dt64arr_second(arr)  # type: ignore
+    arr_us = dt64arr_microsecond(arr)  # type: ignore
+    for i in range(len(arr)):
+        us_i: cython.longlong = arr_i[i]
+        ss_f: cython.double = arr_f[i]
+        yy: cython.longlong = arr_Y[i]
+        mm: cython.longlong = arr_M[i]
+        dd: cython.longlong = arr_D[i]
+        hh: cython.longlong = arr_h[i]
+        mi: cython.longlong = arr_m[i]
+        ss: cython.longlong = arr_s[i]
+        us: cython.longlong = arr_us[i]
+
+        # YMD from microseconds
+        _ymd = ymd_fr_us(us_i)  # type: ignore
+        assert _ymd.year == yy, f"{_ymd.year} != {yy}"
+        assert _ymd.month == mm, f"{_ymd.month} != {mm}"
+        assert _ymd.day == dd, f"{_ymd.day} != {dd}"
+
+        # YMD from seconds (float)
+        _ymd = ymd_fr_sec(ss_f)  # type: ignore
+        assert _ymd.year == yy, f"{_ymd.year} != {yy}"
+        assert _ymd.month == mm, f"{_ymd.month} != {mm}"
+        assert _ymd.day == dd, f"{_ymd.day} != {dd}"
+
+        # hmsf From microseconds
+        _hmsf = hmsf_fr_us(us_i)  # type: ignore
+        assert _hmsf.hour == hh, f"{_hmsf.hour} != {hh}"
+        assert _hmsf.minute == mi, f"{_hmsf.minute} != {mi}"
+        assert _hmsf.second == ss, f"{_hmsf.second} != {ss}"
+        assert _hmsf.microsecond == us, f"{_hmsf.microsecond} != {us}"
+
+        # hmsf From seconds (float)
+        _hmsf = hmsf_fr_sec(ss_f)  # type: ignore
+        assert _hmsf.hour == hh, f"{_hmsf.hour} != {hh}"
+        assert _hmsf.minute == mi, f"{_hmsf.minute} != {mi}"
+        assert _hmsf.second == ss, f"{_hmsf.second} != {ss}"
+        assert _hmsf.microsecond == us, f"{_hmsf.microsecond} != {us}"
+
+        # tm from microseconds
+        _tm = tm_fr_us(us_i)  # type: ignore
+        assert _tm.tm_year == yy, f"{_tm.tm_year} != {yy}"
+        assert _tm.tm_mon == mm, f"{_tm.tm_mon} != {mm}"
+        assert _tm.tm_mday == dd, f"{_tm.tm_mday} != {dd}"
+        assert _tm.tm_hour == hh, f"{_tm.tm_hour} != {hh}"
+        assert _tm.tm_min == mi, f"{_tm.tm_min} != {mi}"
+        assert _tm.tm_sec == ss, f"{_tm.tm_sec} != {ss}"
+
+        # tm from seconds (float)
+        _tm = tm_fr_sec(ss_f)  # type: ignore
+        assert _tm.tm_year == yy, f"{_tm.tm_year} != {yy}"
+        assert _tm.tm_mon == mm, f"{_tm.tm_mon} != {mm}"
+        assert _tm.tm_mday == dd, f"{_tm.tm_mday} != {dd}"
+        assert _tm.tm_hour == hh, f"{_tm.tm_hour} != {hh}"
+        assert _tm.tm_min == mi, f"{_tm.tm_min} != {mi}"
+        assert _tm.tm_sec == ss, f"{_tm.tm_sec} != {ss}"
+
+        # dtm from microseconds
+        _dtm = dtm_fr_us(us_i)  # type: ignore
+        assert _dtm.year == yy, f"{_dtm.year} != {yy}"
+        assert _dtm.month == mm, f"{_dtm.month} != {mm}"
+        assert _dtm.day == dd, f"{_dtm.day} != {dd}"
+        assert _dtm.hour == hh, f"{_dtm.hour} != {hh}"
+        assert _dtm.minute == mi, f"{_dtm.minute} != {mi}"
+        assert _dtm.second == ss, f"{_dtm.second} != {ss}"
+        assert _dtm.microsecond == us, f"{_dtm.microsecond} != {us}"
+
+        # dtm from seconds (float)
+        _dtm = dtm_fr_sec(ss_f)  # type: ignore
+        assert _dtm.year == yy, f"{_dtm.year} != {yy}"
+        assert _dtm.month == mm, f"{_dtm.month} != {mm}"
+        assert _dtm.day == dd, f"{_dtm.day} != {dd}"
+        assert _dtm.hour == hh, f"{_dtm.hour} != {hh}"
+        assert _dtm.minute == mi, f"{_dtm.minute} != {mi}"
+        assert _dtm.second == ss, f"{_dtm.second} != {ss}"
+        assert _dtm.microsecond == us, f"{_dtm.microsecond} != {us}"
+
+    # Dates
+    arr = np.array([i for i in range(-V, V + 1)], dtype="datetime64[D]")
+    arr_ord = dt64arr_to_ord(arr)  # type: ignore
+    arr_wkdy = dt64arr_weekday(arr)  # type: ignore
+    arr_Y = dt64arr_year(arr)  # type: ignore
+    arr_M = dt64arr_month(arr)  # type: ignore
+    arr_D = dt64arr_day(arr)  # type: ignore
+    for i in range(len(arr)):
+        ord_i: cython.longlong = arr_ord[i]
+        wkd_i: cython.longlong = arr_wkdy[i]
+        yy: cython.longlong = arr_Y[i]
+        mm: cython.longlong = arr_M[i]
+        dd: cython.longlong = arr_D[i]
+
+        # YMD from ordinal
+        _ymd = ymd_fr_ord(ord_i)  # type: ignore
+        assert _ymd.year == yy, f"{_ymd.year} != {yy}"
+        assert _ymd.month == mm, f"{_ymd.month} != {mm}"
+        assert _ymd.day == dd, f"{_ymd.day} != {dd}"
+
+        # Weekday
+        wkd = ymd_weekday(yy, mm, dd)  # type: ignore
+        assert wkd == wkd_i, f"{wkd_i} != {wkd_i}"
+
+    print("Passed: cross_test_with_ndarray")
+
+    del np
