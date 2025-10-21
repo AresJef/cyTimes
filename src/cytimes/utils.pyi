@@ -1157,6 +1157,7 @@ def date_add_delta(
     :param minute `<'int'>`: Absolute minute. Defaults to `-1` (no change).
     :param second `<'int'>`: Absolute second. Defaults to `-1` (no change).
     :param millisecond `<'int'>`: Absolute millisecond. Defaults to `-1` (no change).
+        Overrides `microsecond` milliseoncd part if both are provided.
     :param microsecond `<'int'>`: Absolute microsecond. Defaults to `-1` (no change).
 
     ## Relative Deltas (Add to specified fields)
@@ -1580,6 +1581,7 @@ def dt_add_delta(
     :param minute `<'int'>`: Absolute minute. Defaults to `-1` (no change).
     :param second `<'int'>`: Absolute second. Defaults to `-1` (no change).
     :param millisecond `<'int'>`: Absolute millisecond. Defaults to `-1` (no change).
+        Overrides `microsecond` milliseoncd part if both are provided.
     :param microsecond `<'int'>`: Absolute microsecond. Defaults to `-1` (no change).
 
     ## Relative Deltas (Add to specified fields)
