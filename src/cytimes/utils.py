@@ -180,19 +180,19 @@ def _get_zoneinfo(name: str) -> zoneinfo.ZoneInfo | datetime.timezone:
 _UTC_ALIASES: set = {
     "z",
     "utc",
-    "zulu",
     "gmt",
     "gmt0",
     "gmt+0",
     "gmt-0",
+    "zulu",
     "universal",
     "greenwich",
     "etc/utc",
-    "etc/zulu",
     "etc/gmt",
     "etc/gmt0",
     "etc/gmt+0",
     "etc/gmt-0",
+    "etc/zulu",
     "etc/universal",
 }
 
