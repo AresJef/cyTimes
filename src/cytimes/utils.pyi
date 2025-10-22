@@ -266,8 +266,21 @@ def is_ascii_letter(ch: cython.Py_UCS4) -> bool:
     ASCII letters: `'a'` ... `'z'` and `'A'` ... `'Z'`
     """
 
+def is_ascii_ctl(ch: cython.Py_UCS4) -> bool:
+    """(cfunc) Check whether `ch` is a control charactor `<'bool'>`.
+
+    ASCII control characters (0-31) + (127)
+    """
+
+def is_ascii_ctl_or_space(ch: cython.Py_UCS4) -> bool:
+    """(cfunc) Check whether `ch` is a control or space charactor `<'bool'>`.
+
+    ASCII control characters (0-31) + (127)
+    ASCII space character: (32)
+    """
+
 # . parse
-def parse_isoyear(data: str, pos: int, size: int = 0) -> int:
+def parse_isoyear(data: str, pos: int, length: int = 0) -> int:
     """(cfunc) Parse ISO format year component (YYYY) from a string,
     returns `-1` for invalid ISO years `<'int'>`.
 
@@ -278,8 +291,8 @@ def parse_isoyear(data: str, pos: int, size: int = 0) -> int:
 
     :param data `<'str'>`: The input string containing the ISO year to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO year.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO year [1..9999], or `-1` if invalid.
     """
 
@@ -294,8 +307,8 @@ def parse_isomonth(data: str, pos: int, size: int = 0) -> int:
 
     :param data `<'str'>`: The input string containing the ISO month to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO month.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO month `[1..12]`, or `-1` if invalid.
     """
 
@@ -310,8 +323,8 @@ def parse_isoday(data: str, pos: int, size: int = 0) -> int:
 
     :param data `<'str'>`: The input string containing the ISO day to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO day.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO day `[1..31]`, or `-1` if invalid.
     """
 
@@ -326,8 +339,8 @@ def parse_isoweek(data: str, pos: int, size: int = 0) -> int:
 
     :param data `<'str'>`: The input string containing the ISO week number to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO week number.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO week number `[1..53]`, or `-1` if invalid.
     """
 
@@ -341,8 +354,8 @@ def parse_isoweekday(data: str, pos: int, size: int = 0) -> int:
 
     :param data `<'str'>`: The input string containing the ISO weekday to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO weekday.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO weekday `[1..7]`, or `-1` if invalid.
     """
 
@@ -357,8 +370,8 @@ def parse_isoyearday(data: str, pos: int, size: int = 0) -> int:
 
     :param data `<'str'>`: The input string containing the ISO day of the year to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO day of the year.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO day of the year `[1..366]`, or `-1` if invalid.
     """
 
@@ -373,8 +386,8 @@ def parse_isohour(data: str, pos: int, size: int = 0) -> int:
 
     :param data `<'str'>`: The input string containing the ISO hour to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO hour.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO hour `[0..23]`, or `-1` if invalid.
     """
 
@@ -389,8 +402,8 @@ def parse_isominute(data: str, pos: int, size: int = 0) -> int:
 
     :param data `<'str'>`: The input string containing the ISO minute to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO minute.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO minute `[0..59]`, or `-1` if invalid.
     """
 
@@ -405,8 +418,8 @@ def parse_isosecond(data: str, pos: int, size: int = 0) -> int:
 
     :param data `<'str'>`: The input string containing the ISO second to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO second.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO second `[0..59]`, or `-1` if invalid.
     """
 
@@ -421,25 +434,28 @@ def parse_isofraction(data: str, pos: int, size: int = 0) -> int:
 
     :param data `<'str'>`: The input string containing the ISO fraction to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO fraction.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO fraction `[0..999,999]`, or `-1` if invalid.
     """
 
-def slice_to_uint(data: str, start: int, length: int) -> int:
+def slice_to_uint(data: str, start: int, size: int) -> int:
     """(cfunc) Slice a substring from a string and convert to an unsigned integer `<'int'>`.
 
     This function slices a portion of the input string 'data' starting
-    at 'start' and spanning 'length' characters. Each character in the
-    sliced is validated to ensure it is an ASCII digits, before converting
+    at 'start' and spanning 'size' of characters. The sliced substring is
+    validated to ensure it contains only ASCII digits, before converting
     to unsigned integer.
 
     :param data `<'str'>`: The input string to slice and convert.
     :param start `<'int'>`: The starting index for slicing the string.
-    :param length `<'int'>`: The number of characters to slice from 'start'.
+    :param size `<'int'>`: The size of the slice.
     :returns `<'int'>`: The converted unsigned integer.
     :raises `<'ValueError'>`: When the slice is out of range,
         or contains non-digit characters.
+
+    ## Equivalent
+    >>> int(data[start:start+size])
     """
 
 # Time ----------------------------------------------------------------------------------------------

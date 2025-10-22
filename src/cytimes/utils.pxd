@@ -457,8 +457,23 @@ cdef inline bint is_ascii_letter(Py_UCS4 ch) noexcept nogil:
     """
     return is_ascii_letter_lower(ch) or is_ascii_letter_upper(ch)
 
+cdef inline bint is_ascii_ctl(Py_UCS4 ch) noexcept nogil:
+    """Check whether `ch` is a control charactor `<'bool'>`.
+
+    ASCII control characters (0-31) + (127)
+    """
+    return ch <= 31 or ch == 127
+
+cdef inline bint is_ascii_ctl_or_space(Py_UCS4 ch) noexcept nogil:
+    """Check whether `ch` is a control or space charactor `<'bool'>`.
+    
+    ASCII control characters (0-31) + (127)
+    ASCII space character: (32)
+    """
+    return ch <= 32 or ch == 127
+
 # . parse
-cdef inline int parse_isoyear(str data, Py_ssize_t pos, Py_ssize_t size=0) except -2:
+cdef inline int parse_isoyear(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
     """Parse ISO format year component (YYYY) from a string,
     returns `-1` for invalid ISO years `<'int'>`.
 
@@ -469,14 +484,14 @@ cdef inline int parse_isoyear(str data, Py_ssize_t pos, Py_ssize_t size=0) excep
 
     :param data `<'str'>`: The input string containing the ISO year to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO year.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO year [1..9999], or `-1` if invalid.
     """
     # Validate
-    if size <= 0:
-        size = str_len(data)
-    if pos < 0 or size - pos < 4:
+    if length <= 0:
+        length = str_len(data)
+    if pos < 0 or length - pos < 4:
         return -1  # exit: invalid
 
     # Parse value
@@ -502,7 +517,7 @@ cdef inline int parse_isoyear(str data, Py_ssize_t pos, Py_ssize_t size=0) excep
     )
     return out if out > 0 else -1
 
-cdef inline int parse_isomonth(str data, Py_ssize_t pos, Py_ssize_t size=0)  except -2:
+cdef inline int parse_isomonth(str data, Py_ssize_t pos, Py_ssize_t length=0)  except -2:
     """Parse ISO format month component (MM) from a string,
     returns `-1` for invalid ISO months `<'int'>`.
 
@@ -513,14 +528,14 @@ cdef inline int parse_isomonth(str data, Py_ssize_t pos, Py_ssize_t size=0)  exc
 
     :param data `<'str'>`: The input string containing the ISO month to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO month.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO month `[1..12]`, or `-1` if invalid.
     """
     # Validate
-    if size <= 0:
-        size = str_len(data)
-    if pos < 0 or size - pos < 2:
+    if length <= 0:
+        length = str_len(data)
+    if pos < 0 or length - pos < 2:
         return -1  # exit: invalid
 
     # Parse value
@@ -538,7 +553,7 @@ cdef inline int parse_isomonth(str data, Py_ssize_t pos, Py_ssize_t size=0)  exc
     )
     return out if 1 <= out <= 12 else -1
 
-cdef inline int parse_isoday(str data, Py_ssize_t pos, Py_ssize_t size=0) except -2:
+cdef inline int parse_isoday(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
     """Parse ISO format day component (DD) from a string,
     returns `-1` for invalid ISO days `<'int'>`.
 
@@ -549,14 +564,14 @@ cdef inline int parse_isoday(str data, Py_ssize_t pos, Py_ssize_t size=0) except
 
     :param data `<'str'>`: The input string containing the ISO day to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO day.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO day `[1..31]`, or `-1` if invalid.
     """
     # Validate
-    if size <= 0:
-        size = str_len(data)
-    if pos < 0 or size - pos < 2:
+    if length <= 0:
+        length = str_len(data)
+    if pos < 0 or length - pos < 2:
         return -1  # exit: invalid
 
     # Parse value
@@ -574,7 +589,7 @@ cdef inline int parse_isoday(str data, Py_ssize_t pos, Py_ssize_t size=0) except
     )
     return out if 1 <= out <= 31 else -1
 
-cdef inline int parse_isoweek(str data, Py_ssize_t pos, Py_ssize_t size=0) except -2:
+cdef inline int parse_isoweek(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
     """Parse an ISO format week number component (WW) from a string,
     returns `-1` for invalid ISO week number `<'int'>`.
 
@@ -585,14 +600,14 @@ cdef inline int parse_isoweek(str data, Py_ssize_t pos, Py_ssize_t size=0) excep
 
     :param data `<'str'>`: The input string containing the ISO week number to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO week number.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO week number `[1..53]`, or `-1` if invalid.
     """
     # Validate
-    if size <= 0:
-        size = str_len(data)
-    if pos < 0 or size - pos < 2:
+    if length <= 0:
+        length = str_len(data)
+    if pos < 0 or length - pos < 2:
         return -1  # exit: invalid
 
     # Parse value
@@ -610,7 +625,7 @@ cdef inline int parse_isoweek(str data, Py_ssize_t pos, Py_ssize_t size=0) excep
     )
     return out if 1 <= out <= 53 else -1
 
-cdef inline int parse_isoweekday(str data, Py_ssize_t pos, Py_ssize_t size=0) except -2:
+cdef inline int parse_isoweekday(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
     """Parse an ISO format weekday component (D) from a string,
     returns `-1` for invalid ISO weekdays `<'int'>`.
 
@@ -620,14 +635,14 @@ cdef inline int parse_isoweekday(str data, Py_ssize_t pos, Py_ssize_t size=0) ex
 
     :param data `<'str'>`: The input string containing the ISO weekday to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO weekday.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO weekday `[1..7]`, or `-1` if invalid.
     """
     # Validate
-    if size <= 0:
-        size = str_len(data)
-    if pos < 0 or size - pos < 1:
+    if length <= 0:
+        length = str_len(data)
+    if pos < 0 or length - pos < 1:
         return -1  # exit: invalid
 
     # Parse value
@@ -637,7 +652,7 @@ cdef inline int parse_isoweekday(str data, Py_ssize_t pos, Py_ssize_t size=0) ex
     cdef int out = ord(ch) - 48
     return out if 1 <= out <= 7 else -1
 
-cdef inline int parse_isoyearday(str data, Py_ssize_t pos, Py_ssize_t size=0) except -2:
+cdef inline int parse_isoyearday(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
     """Parse an ISO format day of the year component (DDD) from a string,
     returns `-1` for invalid ISO day of the year `<'int'>`.
 
@@ -648,14 +663,14 @@ cdef inline int parse_isoyearday(str data, Py_ssize_t pos, Py_ssize_t size=0) ex
 
     :param data `<'str'>`: The input string containing the ISO day of the year to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO day of the year.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO day of the year `[1..366]`, or `-1` if invalid.
     """
     # Validate
-    if size <= 0:
-        size = str_len(data)
-    if pos < 0 or size - pos < 3:
+    if length <= 0:
+        length = str_len(data)
+    if pos < 0 or length - pos < 3:
         return -1  # exit: invalid
 
     # Parse value
@@ -677,7 +692,7 @@ cdef inline int parse_isoyearday(str data, Py_ssize_t pos, Py_ssize_t size=0) ex
     )
     return out if 1 <= out <= 366 else -1    
 
-cdef inline int parse_isohour(str data, Py_ssize_t pos, Py_ssize_t size=0) except -2:
+cdef inline int parse_isohour(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
     """Parse an ISO format hour (HH) component from a string,
     returns `-1` for invalid ISO hours `<'int'>`.
 
@@ -688,14 +703,14 @@ cdef inline int parse_isohour(str data, Py_ssize_t pos, Py_ssize_t size=0) excep
 
     :param data `<'str'>`: The input string containing the ISO hour to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO hour.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO hour `[0..23]`, or `-1` if invalid.
     """
     # Validate
-    if size <= 0:
-        size = str_len(data)
-    if pos < 0 or size - pos < 2:
+    if length <= 0:
+        length = str_len(data)
+    if pos < 0 or length - pos < 2:
         return -1  # exit: invalid
 
     # Parse value
@@ -713,7 +728,7 @@ cdef inline int parse_isohour(str data, Py_ssize_t pos, Py_ssize_t size=0) excep
     )
     return out if 0 <= out <= 23 else -1
 
-cdef inline int parse_isominute(str data, Py_ssize_t pos, Py_ssize_t size=0) except -2:
+cdef inline int parse_isominute(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
     """Parse an ISO format minute (MM) component from a string,
     returns `-1` for invalid ISO minutes `<'int'>`.
 
@@ -724,14 +739,14 @@ cdef inline int parse_isominute(str data, Py_ssize_t pos, Py_ssize_t size=0) exc
 
     :param data `<'str'>`: The input string containing the ISO minute to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO minute.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO minute `[0..59]`, or `-1` if invalid.
     """
     # Validate
-    if size <= 0:
-        size = str_len(data)
-    if pos < 0 or size - pos < 2:
+    if length <= 0:
+        length = str_len(data)
+    if pos < 0 or length - pos < 2:
         return -1  # exit: invalid
 
     # Parse value
@@ -749,7 +764,7 @@ cdef inline int parse_isominute(str data, Py_ssize_t pos, Py_ssize_t size=0) exc
     )
     return out if 0 <= out <= 59 else -1
 
-cdef inline int parse_isosecond(str data, Py_ssize_t pos, Py_ssize_t size=0) except -2:
+cdef inline int parse_isosecond(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
     """Parse an ISO format second (SS) component from a string,
     returns `-1` for invalid ISO seconds `<'int'>`.
 
@@ -760,13 +775,13 @@ cdef inline int parse_isosecond(str data, Py_ssize_t pos, Py_ssize_t size=0) exc
 
     :param data `<'str'>`: The input string containing the ISO second to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO second.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO second `[0..59]`, or `-1` if invalid.
     """
-    return parse_isominute(data, pos, size)
+    return parse_isominute(data, pos, length)
 
-cdef inline int parse_isofraction(str data, Py_ssize_t pos, Py_ssize_t size=0) except -2:
+cdef inline int parse_isofraction(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
     """Parse an ISO fractional time component (fractions of a second) from a string,
     returns `-1` for invalid ISO fraction `<'int'>`.
 
@@ -777,13 +792,13 @@ cdef inline int parse_isofraction(str data, Py_ssize_t pos, Py_ssize_t size=0) e
 
     :param data `<'str'>`: The input string containing the ISO fraction to parse.
     :param pos `<'int'>`: The starting position in the string of the ISO fraction.
-    :param size `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'size <= 0', the function computes the size of the 'data' string internally.
+    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
+        If 'length <= 0', computes the length of the 'data' string internally.
     :returns `<'int'>`: The parsed ISO fraction `[0..999,999]`, or `-1` if invalid.
     """
     # Validate
-    if size <= 0:
-        size = str_len(data)
+    if length <= 0:
+        length = str_len(data)
     if pos < 0:
         return -1  # exit: invalid
 
@@ -791,7 +806,7 @@ cdef inline int parse_isofraction(str data, Py_ssize_t pos, Py_ssize_t size=0) e
     cdef Py_ssize_t idx = 0
     cdef int out = 0
     cdef Py_UCS4 ch
-    while pos < size and idx < 6:
+    while pos < length and idx < 6:
         ch = str_read(data, pos)
         if not is_ascii_digit(ch):
             break
@@ -814,36 +829,39 @@ cdef inline int parse_isofraction(str data, Py_ssize_t pos, Py_ssize_t size=0) e
     else:  # idx == 1
         return out * 100_000
 
-cdef inline unsigned long long slice_to_uint(str data, Py_ssize_t start, Py_ssize_t length) except -2:
+cdef inline unsigned long long slice_to_uint(str data, Py_ssize_t start, Py_ssize_t size) except -2:
     """Slice a substring from a string and convert to an unsigned integer `<'int'>`.
 
     This function slices a portion of the input string 'data' starting
-    at 'start' and spanning 'length' characters. The sliced substring is
+    at 'start' and spanning 'size' of characters. The sliced substring is
     validated to ensure it contains only ASCII digits, before converting
     to unsigned integer.
 
     :param data `<'str'>`: The input string to slice and convert.
     :param start `<'int'>`: The starting index for slicing the string.
-    :param length `<'int'>`: The number of characters to slice from 'start'.
+    :param size `<'int'>`: The size of the slice.
     :returns `<'int'>`: The converted unsigned integer.
     :raises `<'ValueError'>`: When the slice is out of range, 
         or contains non-digit characters.
+
+    ## Equivalent
+    >>> int(data[start:start+size])
     """
     # Validate
     if start < 0:
         raise ValueError("slice_to_uint: 'start' must be >= 0, got %d" % start)
-    if length <= 0:
-        raise ValueError("slice_to_uint: 'size' must be > 0, got %d" % length)
-    cdef Py_ssize_t size = str_len(data)
-    if start < 0 or start + length > size:
-        raise ValueError("slice_to_uint: out of range (start=%d length=%d size=%d)" % (start, length, size))
+    if size <= 0:
+        raise ValueError("slice_to_uint: 'size' must be > 0, got %d" % size)
+    cdef Py_ssize_t length = str_len(data)
+    if start < 0 or start + size > length:
+        raise ValueError("slice_to_uint: out of range (start=%d size=%d length=%d)" % (start, size, length))
 
     # Parse value
     cdef: 
         unsigned long long out = 0
         Py_ssize_t i
         Py_UCS4 ch
-    for i in range(length):
+    for i in range(size):
         ch = str_read(data, start + i)
         if not is_ascii_digit(ch):
             raise ValueError("Invalid character '%s', not an ASCII digit." % str_chr(ch))
