@@ -46,6 +46,9 @@ def delta_fr_relativedelta(rd: relativedelta) -> Delta:
     :param rd `<'relativedelta'>`: Source relativedelta.
     :returns `<'Delta'>`: The resulting `Delta`.
     :raises `<'TypeError'>`: If the `rd` is not an instance of relativedelta.
+
+    ## Notice
+    The `weekday.n` from `relativedelta` is ignored.
     """
     if not isinstance(rd, relativedelta):
         raise TypeError(
@@ -280,6 +283,19 @@ class Delta:
 
         # Initiate hashcode
         self._hashcode = -1
+
+    @classmethod
+    def from_relativedelta(cls, rd: relativedelta) -> Delta:
+        """Build `Delta` from `dateutil.relativedelta` `<'Delta'>`.
+
+        :param rd `<'relativedelta'>`: Source relativedelta.
+        :returns `<'Delta'>`: The resulting `Delta`.
+        :raises `<'TypeError'>`: If the `rd` is not an instance of relativedelta.
+
+        ## Notice
+        The `weekday.n` from `relativedelta` is ignored.
+        """
+        return delta_fr_relativedelta(rd)
 
     # Property: relative delta -----------------------------------------------
     @property
