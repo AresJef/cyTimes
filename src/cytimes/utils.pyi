@@ -221,43 +221,43 @@ def str_count(s: str, substr: str) -> int:
 def is_iso_sep(ch: cython.Py_UCS4) -> bool:
     """(cfunc) Check whether `ch` is an ISO 8601 date/time separator `<'bool'>`.
 
-    Date / Time seperators: `' '` (space) or `'T'` (ignorecase).
+    Date / Time seperators: `' '` (32) or `'T'` (ignorecase: 84 & 116).
     """
 
 def is_isodate_sep(ch: cython.Py_UCS4) -> bool:
     """(cfunc) Check whether `ch` is a date-field seperator `<'bool'>`.
 
-    Date-field seperators: `'-'` or `'/'`
+    Date-field seperators: `'-'` (45) or `'/'` (47)
     """
 
 def is_isoweek_sep(ch: cython.Py_UCS4) -> bool:
     """(cfunc) Check whether `ch` is the ISO week designator `<'bool'>`.
 
-    ISO week designator: `'W'` (ignorecase).
+    ISO week designator: `'W'` (ignorecase: 87 & 119).
     """
 
 def is_isotime_sep(ch: cython.Py_UCS4) -> bool:
     """(cfunc) Check whether `ch` is the time-field separator `<'bool'>`.
 
-    Time-field seperator: `':'`
+    Time-field seperator: `':'` (58)
     """
 
 def is_ascii_digit(ch: cython.Py_UCS4) -> bool:
     """(cfunc) Check whether `ch` is an ASCII digit `<'bool'>`.
 
-    ASSCI digits: `'0'` ... `'9'`
+    ASSCI digits: `'0'` (48) ... `'9'` (57)
     """
 
 def is_ascii_letter_upper(ch: cython.Py_UCS4) -> bool:
     """(cfunc) Check whether `ch` is an uppercase ASCII letter `<'bool'>`.
 
-    Uppercase ASCII letters: `'A'` ... `'Z'`
+    Uppercase ASCII letters: `'A'` (65) ... `'Z'` (90)
     """
 
 def is_ascii_letter_lower(ch: cython.Py_UCS4) -> bool:
     """(cfunc) Check whether `ch` is a lowercase ASCII letter `<'bool'>`.
 
-    Lowercase ASCII letters: `'a'` ... `'z'`
+    Lowercase ASCII letters: `'a'` (97) ... `'z'` (122)
     """
 
 def is_ascii_letter(ch: cython.Py_UCS4) -> bool:
@@ -269,14 +269,20 @@ def is_ascii_letter(ch: cython.Py_UCS4) -> bool:
 def is_ascii_ctl(ch: cython.Py_UCS4) -> bool:
     """(cfunc) Check whether `ch` is a control charactor `<'bool'>`.
 
-    ASCII control characters (0-31) + (127)
+    ASCII control characters (0-31) and (127)
     """
 
 def is_ascii_ctl_or_space(ch: cython.Py_UCS4) -> bool:
     """(cfunc) Check whether `ch` is a control or space charactor `<'bool'>`.
 
-    ASCII control characters (0-31) + (127)
+    ASCII control characters (0-31) and (127)
     ASCII space character: (32)
+    """
+
+def is_alpha(ch: cython.Py_UCS4) -> bool:
+    """(cfunc) Check whether `ch` is an alphabetic character `<'bool'>`.
+
+    Uses Unicode definition of alphabetic characters.
     """
 
 # . parse

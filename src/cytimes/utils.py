@@ -308,33 +308,65 @@ def _test_utils() -> None:
 # Parser
 def _test_parser() -> None:
     # boolean
-    assert is_iso_sep("t")  # type: ignore
-    assert is_iso_sep("T")  # type: ignore
-    assert is_iso_sep(" ")  # type: ignore
-    assert not is_iso_sep("a")  # type: ignore
+    for i in range(128):
+        s = chr(i)
+        # is_iso_sep
+        if s in ("t", "T", " "):
+            assert is_iso_sep(s)  # type: ignore
+        else:
+            assert not is_iso_sep(s)  # type: ignore
+        # is_isodate_sep
+        if s in ("-", "/"):
+            assert is_isodate_sep(s)  # type: ignore
+        else:
+            assert not is_isodate_sep(s)  # type: ignore
+        # is_isoweek_sep
+        if s in ("w", "W"):
+            assert is_isoweek_sep(s)  # type: ignore
+        else:
+            assert not is_isoweek_sep(s)  # type: ignore
+        # is_isotime_sep
+        if s == ":":
+            assert is_isotime_sep(s)  # type: ignore
+        else:
+            assert not is_isotime_sep(s)  # type: ignore
+        # is_ascii_digit
+        if s in "0123456789":
+            assert is_ascii_digit(s)  # type: ignore
+        else:
+            assert not is_ascii_digit(s)  # type: ignore
+        # is_ascii_letter_upper
+        if s in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+            assert is_ascii_letter_upper(s)  # type: ignore
+        else:
+            assert not is_ascii_letter_upper(s)  # type: ignore
+        # is_ascii_letter_lower
+        if s in "abcdefghijklmnopqrstuvwxyz":
+            assert is_ascii_letter_lower(s)  # type: ignore
+        else:
+            assert not is_ascii_letter_lower(s)  # type: ignore
+        # alphabetic
+        if s in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz":
+            assert is_ascii_letter(s)  # type: ignore
+            assert is_alpha(s)  # type: ignore
+        else:
+            assert not is_ascii_letter(s)  # type: ignore
+            assert not is_alpha(s)  # type: ignore
+        # ctl
+        if i < 32 or i == 127:
+            assert is_ascii_ctl(s)  # type: ignore
+        else:
+            assert not is_ascii_ctl(s)  # type: ignore
+        # ctl or space
+        if i <= 32 or i == 127:
+            assert is_ascii_ctl_or_space(s)  # type: ignore
+        else:
+            assert not is_ascii_ctl_or_space(s)  # type: ignore
 
-    assert is_isodate_sep("-")  # type: ignore
-    assert is_isodate_sep("/")  # type: ignore
-    assert not is_isodate_sep("a")  # type: ignore
-
-    assert is_isoweek_sep("w")  # type: ignore
-    assert is_isoweek_sep("W")  # type: ignore
-    assert not is_isoweek_sep("a")  # type: ignore
-
-    assert is_isotime_sep(":")  # type: ignore
-    assert not is_isotime_sep("a")  # type: ignore
-
-    for i in "0123456789":
-        assert is_ascii_digit(i)  # type: ignore
-    assert not is_ascii_digit("a")  # type: ignore
-
-    for i in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
-        assert is_ascii_letter_upper(i)  # type: ignore
-    assert not is_ascii_letter_upper("1")  # type: ignore
-
-    for i in "abcdefghijklmnopqrstuvwxyz":
-        assert is_ascii_letter_lower(i)  # type: ignore
-    assert not is_ascii_letter_lower("1")  # type: ignore
+    # Alphabetic extend case
+    for i in range(192, 208):
+        assert not is_ascii_letter(i)  # type: ignore
+        assert is_alpha(i)  # type: ignore
 
     # Parse
     t: str = "2021-01-02T03:04:05.006007"

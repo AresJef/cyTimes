@@ -404,51 +404,51 @@ cdef inline Py_ssize_t str_count(str s, str substr) except -1:
 cdef inline bint is_iso_sep(Py_UCS4 ch) noexcept nogil:
     """Check whether `ch` is an ISO 8601 date/time separator `<'bool'>`.
 
-    Date / Time seperators: `' '` (space) or `'T'` (ignorecase).
+    Date / Time seperators: `' '` (32) or `'T'` (ignorecase: 84 & 116).
     """
-    return ch in (" ", "t", "T")
+    return ch == 32 or ch == 84 or ch == 116
 
 cdef inline bint is_isodate_sep(Py_UCS4 ch) noexcept nogil:
     """Check whether `ch` is a date-field seperator `<'bool'>`.
 
-    Date-field seperators: `'-'` or `'/'`
+    Date-field seperators: `'-'` (45) or `'/'` (47)
     """
-    return ch in ("-", "/")
+    return ch == 45 or ch == 47
 
 cdef inline bint is_isoweek_sep(Py_UCS4 ch) noexcept nogil:
     """Check whether `ch` is the ISO week designator `<'bool'>`.
 
-    ISO week designator: `'W'` (ignorecase).
+    ISO week designator: `'W'` (ignorecase: 87 & 119).
     """
-    return ch in ("W", "w")
+    return ch == 87 or ch == 119
 
 cdef inline bint is_isotime_sep(Py_UCS4 ch) noexcept nogil:
     """Check whether `ch` is the time-field separator `<'bool'>`.
 
-    Time-field seperator: `':'`
+    Time-field seperator: `':'` (58)
     """
-    return ch == ":"
+    return ch == 58
 
 cdef inline bint is_ascii_digit(Py_UCS4 ch) noexcept nogil:
     """Check whether `ch` is an ASCII digit `<'bool'>`.
 
-    ASSCI digits: `'0'` ... `'9'`
+    ASSCI digits: `'0'` (48) ... `'9'` (57)
     """
-    return "0" <= ch <= "9"
+    return 48 <= ch <= 57
     
 cdef inline bint is_ascii_letter_upper(Py_UCS4 ch) noexcept nogil:
     """Check whether `ch` is an uppercase ASCII letter `<'bool'>`.
 
-    Uppercase ASCII letters: `'A'` ... `'Z'`
+    Uppercase ASCII letters: `'A'` (65) ... `'Z'` (90)
     """
-    return "A" <= ch <= "Z"
+    return 65 <= ch <= 90
 
 cdef inline bint is_ascii_letter_lower(Py_UCS4 ch) noexcept nogil:
     """Check whether `ch` is a lowercase ASCII letter `<'bool'>`.
 
-    Lowercase ASCII letters: `'a'` ... `'z'`
+    Lowercase ASCII letters: `'a'` (97) ... `'z'` (122)
     """
-    return "a" <= ch <= "z"
+    return 97 <= ch <= 122
 
 cdef inline bint is_ascii_letter(Py_UCS4 ch) noexcept nogil:
     """Check whether `ch` is an ASCII letter (ignorecase) `<'bool'>`.
@@ -460,17 +460,27 @@ cdef inline bint is_ascii_letter(Py_UCS4 ch) noexcept nogil:
 cdef inline bint is_ascii_ctl(Py_UCS4 ch) noexcept nogil:
     """Check whether `ch` is a control charactor `<'bool'>`.
 
-    ASCII control characters (0-31) + (127)
+    ASCII control characters (0-31) and (127)
     """
     return ch <= 31 or ch == 127
 
 cdef inline bint is_ascii_ctl_or_space(Py_UCS4 ch) noexcept nogil:
     """Check whether `ch` is a control or space charactor `<'bool'>`.
     
-    ASCII control characters (0-31) + (127)
+    ASCII control characters (0-31) and (127)
     ASCII space character: (32)
     """
     return ch <= 32 or ch == 127
+
+cdef inline bint is_alpha(Py_UCS4 ch) except -1:
+    """Check whether `ch` is an alphabetic character `<'bool'>`.
+
+    Uses Unicode definition of alphabetic characters.
+    """
+    if is_ascii_letter(ch):
+        return True
+    else:
+        return ch.isalpha()
 
 # . parse
 cdef inline int parse_isoyear(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
