@@ -41,6 +41,7 @@ class TestDelta(TestCase):
     # fmt: on
 
     def test_all(self, rounds: int) -> None:
+        self.test_from_relativedelta()
         self.test_addition(rounds, "Relative")
         self.test_addition(rounds, "Absolute")
         self.test_addition(rounds, "Mixed")
@@ -54,6 +55,16 @@ class TestDelta(TestCase):
         self.test_equal_relativedelta(rounds, "Mixed")
         self.test_boolean()
         self.test_typing()
+
+    def test_from_relativedelta(self) -> None:
+        test = "From Relativedelta"
+        self.log_start(test)
+
+        rtd = relativedelta(days=1)
+        ctd = Delta.from_relativedelta(rtd)
+        self.assertIsInstance(ctd, Delta)
+
+        self.log_ended(test)
 
     def test_addition(
         self,
