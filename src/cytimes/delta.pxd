@@ -41,5 +41,5 @@ cdef class Delta:
     cdef inline datetime.datetime _rsub_datetime(self, datetime.datetime o)
     cdef inline Delta _rsub_timedelta(self, datetime.timedelta o)
     # Comparison
-    cdef inline bint _eq_timedelta(self, datetime.timedelta o) except -1
-    cdef inline bint _eq_delta(self, Delta o) except -1
+    cdef inline bint _eq_timedelta(self, datetime.timedelta o) noexcept
+    cdef inline bint _eq_delta(self, Delta o) noexcept

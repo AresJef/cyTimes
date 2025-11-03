@@ -490,12 +490,12 @@ class Delta:
             0,
             self._months,
             0,
-            self._days + datetime.timedelta_days(o),
+            self._days + o.day,
             self._hours,
             self._minutes,
-            self._seconds + datetime.timedelta_seconds(o),
+            self._seconds + o.second,
             0,
-            self._microseconds + datetime.timedelta_microseconds(o),
+            self._microseconds + o.microsecond,
             self._year,
             self._month,
             self._day,
@@ -613,12 +613,12 @@ class Delta:
             0,
             self._months,
             0,
-            self._days - datetime.timedelta_days(o),
+            self._days - o.day,
             self._hours,
             self._minutes,
-            self._seconds - datetime.timedelta_seconds(o),
+            self._seconds - o.second,
             0,
-            self._microseconds - datetime.timedelta_microseconds(o),
+            self._microseconds - o.microsecond,
             self._year,
             self._month,
             self._day,
@@ -776,12 +776,12 @@ class Delta:
             0,
             -self._months,
             0,
-            -self._days + datetime.timedelta_days(o),
+            -self._days + o.day,
             -self._hours,
             -self._minutes,
-            -self._seconds + datetime.timedelta_seconds(o),
+            -self._seconds + o.second,
             0,
-            -self._microseconds + datetime.timedelta_microseconds(o),
+            -self._microseconds + o.microsecond,
             self._year,
             self._month,
             self._day,
@@ -900,7 +900,7 @@ class Delta:
 
     @cython.cfunc
     @cython.inline(True)
-    @cython.exceptval(-1, check=False)
+    @cython.exceptval(check=False)
     def _eq_timedelta(self, o: datetime.timedelta) -> cython.bint:
         """(internal) Check if equals to a `datetime.timedelta` instance or subclass.
 
@@ -930,9 +930,9 @@ class Delta:
         m_us: cython.longlong = (dd * 86_400 + ss) * 1_000_000 + us
 
         # Total microseconds: object
-        dd = datetime.timedelta_days(o)
-        ss = datetime.timedelta_seconds(o)
-        us = datetime.timedelta_microseconds(o)
+        dd: cython.longlong = o.day
+        ss: cython.longlong = o.second
+        us: cython.longlong = o.microsecond
         o_us: cython.longlong = (dd * 86_400 + ss) * 1_000_000 + us
 
         # Comparison
@@ -940,7 +940,7 @@ class Delta:
 
     @cython.cfunc
     @cython.inline(True)
-    @cython.exceptval(-1, check=False)
+    @cython.exceptval(check=False)
     def _eq_delta(self, o: Delta) -> cython.bint:
         """(internal) Check if equals to another `Delta`.
 
