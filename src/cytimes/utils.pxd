@@ -7,9 +7,7 @@ from libc.limits cimport LLONG_MIN
 from libc cimport math, stdlib, time
 from cpython cimport datetime
 from cpython.time cimport time as unix_time
-from cpython.pyport cimport PY_SSIZE_T_MAX
 from cpython.unicode cimport (
-    PyUnicode_Count,
     PyUnicode_AsUTF8,
     PyUnicode_DecodeUTF8,
     PyUnicode_ReadChar as str_read,
@@ -44,6 +42,7 @@ cdef:
     long long EPOCH_CBASE
     # . timezone
     datetime.tzinfo UTC
+    int NULL_TZOFFSET
     object _LOCAL_TIMEZONE
     set _UTC_ALIASES
     # . conversion for seconds
@@ -141,6 +140,10 @@ ctypedef struct ymd:
 ctypedef struct hmsf:
     int hour
     int minute
+    int second
+    int microsecond
+
+ctypedef struct sf:
     int second
     int microsecond
 
@@ -388,102 +391,431 @@ cdef inline unsigned long long abs_diff_ull(long long a, long long b) noexcept n
     return ua - ub if a >= b else ub - ua
 
 # Parser -----------------------------------------------------------------------------------------------
-# . check
-cdef inline Py_ssize_t str_count(str s, str substr) except -1:
-    """Count non-overlapping occurrences of a substring in a Unicode string `<'int'>`.
-
-    :param s `<'str'>`: The input string.
-    :param substr `<'str'>`: The substring to count.
-    :returns `<'int'>`: Number of non-overlapping occurrences.
-
-    ## Equivalent
-    >>> s.count(substr)
+# . check: character
+cdef inline bint is_dot(Py_UCS4 ch) noexcept nogil:
+    """Check whether `ch` is a dot `'.'` `<'bool'>`.
+    
+    - Dot: `'.'` (46)
     """
-    return PyUnicode_Count(s, substr, 0, PY_SSIZE_T_MAX)
+    return ch == 46
+
+cdef inline bint is_comma(Py_UCS4 ch) noexcept nogil:
+    """Check whether `ch` is a comma `','` `<'bool'>`.
+    
+    - Comma: `','` (44)
+    """
+    return ch == 44
+
+cdef inline bint is_plus_sign(Py_UCS4 ch) noexcept nogil:
+    """Check whether `ch` is a plus sign `'+'` `<'bool'>`.
+    
+    - Plus sign: `'+'` (43)
+    """
+    return ch == 43
+
+cdef inline bint is_minus_sign(Py_UCS4 ch) noexcept nogil:
+    """Check whether `ch` is a minus sign `'-'` `<'bool'>`.
+    
+    - Minus sign: `'-'` (45)
+    """
+    return ch == 45
+
+cdef inline bint is_plus_or_minus_sign(Py_UCS4 ch) noexcept nogil:
+    """Check whether `ch` is a plus or minus sign `'-'` `<'bool'>`.
+    
+    - Plus sign : `'+'` (43)
+    - Minus sign: `'-'` (45)
+    """
+    return is_plus_sign(ch) or is_minus_sign(ch)
 
 cdef inline bint is_iso_sep(Py_UCS4 ch) noexcept nogil:
-    """Check whether `ch` is an ISO 8601 date/time separator `<'bool'>`.
+    """Check whether `ch` is an ISO 8601 date-time separator `<'bool'>`.
 
-    Date / Time seperators: `' '` (32) or `'T'` (ignorecase: 84 & 116).
+    - Date / Time separators: `' '` (32) or `'T'` (case-insensitive: 84 & 116).
     """
     return ch == 32 or ch == 84 or ch == 116
 
-cdef inline bint is_isodate_sep(Py_UCS4 ch) noexcept nogil:
+cdef inline bint is_date_sep(Py_UCS4 ch) noexcept nogil:
     """Check whether `ch` is a date-field seperator `<'bool'>`.
 
-    Date-field seperators: `'-'` (45) or `'/'` (47)
+    - Date-field separators: `'-'` (45), `'.'` (46) or `'/'` (47)
     """
-    return ch == 45 or ch == 47
+    return 45 <= ch <= 47
+
+cdef inline bint is_time_sep(Py_UCS4 ch) noexcept nogil:
+    """Check whether `ch` is the time-field separator `<'bool'>`.
+
+    - Time-field seperator: `':'` (58)
+    """
+    return ch == 58
 
 cdef inline bint is_isoweek_sep(Py_UCS4 ch) noexcept nogil:
     """Check whether `ch` is the ISO week designator `<'bool'>`.
 
-    ISO week designator: `'W'` (ignorecase: 87 & 119).
+    - ISO week designator: `'W'` (case-insensitive: 87 & 119).
     """
     return ch == 87 or ch == 119
-
-cdef inline bint is_isotime_sep(Py_UCS4 ch) noexcept nogil:
-    """Check whether `ch` is the time-field separator `<'bool'>`.
-
-    Time-field seperator: `':'` (58)
-    """
-    return ch == 58
-
-cdef inline bint is_ascii_digit(Py_UCS4 ch) noexcept nogil:
-    """Check whether `ch` is an ASCII digit `<'bool'>`.
-
-    ASSCI digits: `'0'` (48) ... `'9'` (57)
-    """
-    return 48 <= ch <= 57
-    
-cdef inline bint is_ascii_letter_upper(Py_UCS4 ch) noexcept nogil:
-    """Check whether `ch` is an uppercase ASCII letter `<'bool'>`.
-
-    Uppercase ASCII letters: `'A'` (65) ... `'Z'` (90)
-    """
-    return 65 <= ch <= 90
-
-cdef inline bint is_ascii_letter_lower(Py_UCS4 ch) noexcept nogil:
-    """Check whether `ch` is a lowercase ASCII letter `<'bool'>`.
-
-    Lowercase ASCII letters: `'a'` (97) ... `'z'` (122)
-    """
-    return 97 <= ch <= 122
-
-cdef inline bint is_ascii_letter(Py_UCS4 ch) noexcept nogil:
-    """Check whether `ch` is an ASCII letter (ignorecase) `<'bool'>`.
-
-    ASCII letters: `'a'` ... `'z'` and `'A'` ... `'Z'`
-    """
-    return is_ascii_letter_lower(ch) or is_ascii_letter_upper(ch)
 
 cdef inline bint is_ascii_ctl(Py_UCS4 ch) noexcept nogil:
     """Check whether `ch` is a control charactor `<'bool'>`.
 
-    ASCII control characters (0-31) and (127)
+    - ASCII control characters (0-31) and (127)
     """
     return ch <= 31 or ch == 127
 
 cdef inline bint is_ascii_ctl_or_space(Py_UCS4 ch) noexcept nogil:
     """Check whether `ch` is a control or space charactor `<'bool'>`.
     
-    ASCII control characters (0-31) and (127)
-    ASCII space character: (32)
+    - ASCII control characters (0-31) and (127)
+    - ASCII space character: (32)
     """
     return ch <= 32 or ch == 127
 
-cdef inline bint is_alpha(Py_UCS4 ch) except -1:
+cdef inline bint is_ascii_digit(Py_UCS4 ch) noexcept nogil:
+    """Check whether `ch` is an ASCII digit `<'bool'>`.
+
+    - ASSCI digits: `'0'` (48) ... `'9'` (57)
+    """
+    return 48 <= ch <= 57
+    
+cdef inline bint is_ascii_letter_upper(Py_UCS4 ch) noexcept nogil:
+    """Check whether `ch` is an uppercase ASCII letter `<'bool'>`.
+
+    - Uppercase ASCII letters: `'A'` (65) ... `'Z'` (90)
+    """
+    return 65 <= ch <= 90
+
+cdef inline bint is_ascii_letter_lower(Py_UCS4 ch) noexcept nogil:
+    """Check whether `ch` is a lowercase ASCII letter `<'bool'>`.
+
+    - Lowercase ASCII letters: `'a'` (97) ... `'z'` (122)
+    """
+    return 97 <= ch <= 122
+
+cdef inline bint is_ascii_letter(Py_UCS4 ch) noexcept nogil:
+    """Check whether `ch` is an ASCII letter (case-insensitive) `<'bool'>`.
+
+    - Uppercase ASCII letters: `'A'` (65) ... `'Z'` (90)
+    - Lowercase ASCII letters: `'a'` (97) ... `'z'` (122)
+    """
+    return is_ascii_letter_lower(ch) or is_ascii_letter_upper(ch)
+
+cdef inline bint is_alpha(Py_UCS4 ch) noexcept:
     """Check whether `ch` is an alphabetic character `<'bool'>`.
 
-    Uses Unicode definition of alphabetic characters.
+    - Uses Unicode definition of alphabetic characters.
     """
-    if is_ascii_letter(ch):
-        return True
-    else:
-        return ch.isalpha()
+    return True if is_ascii_letter(ch) else ch.isalpha()
+
+# . check: string
+cdef inline bint is_str_dot(str token, Py_ssize_t token_len=-1) except -1:
+    """Check whether `token` is a single-character dot `'.'` `<'bool'>`.
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length. 
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` is a single-character dot `'.'`; False otherwise.
+    """
+    if token is None:
+        return False
+    if token_len <= 0:
+        token_len = str_len(token)
+    if token_len != 1:
+        return False
+    return is_dot(str_read(token, 0))
+
+cdef inline bint is_str_comma(str token, Py_ssize_t token_len=-1) except -1:
+    """Check whether `token` is a single-character comma `','` `<'bool'>`.
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length. 
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` is a single-character comma `'.,`; False otherwise.
+    """
+    if token is None:
+        return False
+    if token_len <= 0:
+        token_len = str_len(token)
+    if token_len != 1:
+        return False
+    return is_comma(str_read(token, 0))
+
+cdef inline bint is_str_iso_sep(str token, Py_ssize_t token_len=-1) except -1:
+    """Check whether `token` is a single-character ISO 8601 date-time separator `<'bool'>`.
+
+    - Date / Time separators: `' '` or `'T'` (case-insensitive).
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length. 
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` is a single-character ISO date-time separator; False otherwise.
+    """
+    if token is None:
+        return False
+    if token_len <= 0:
+        token_len = str_len(token)
+    if token_len != 1:
+        return False
+    return is_iso_sep(str_read(token, 0))
+
+cdef inline bint is_str_date_sep(str token, Py_ssize_t token_len=-1) except -1:
+    """Check whether `token` is a single-character date-field seperator `<'bool'>`.
+
+    - Date-field separators: `'-'`, `'.'` or `'/'`
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length. 
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` is a single-character date-field separator; False otherwise.
+    """
+    if token is None:
+        return False
+    if token_len <= 0:
+        token_len = str_len(token)
+    if token_len != 1:
+        return False
+    return is_date_sep(str_read(token, 0))
+
+cdef inline bint is_str_time_sep(str token, Py_ssize_t token_len=-1) except -1:
+    """Check whether `token` is a single-character time-field seperator `<'bool'>`.
+
+    - Time-field seperator: `':'`
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length. 
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` is a single-character time-field separator; False otherwise.
+    """
+    if token is None:
+        return False
+    if token_len <= 0:
+        token_len = str_len(token)
+    if token_len != 1:
+        return False
+    return is_time_sep(str_read(token, 0))
+
+cdef inline bint is_str_isoweek_sep(str token, Py_ssize_t token_len=-1) except -1:
+    """Check whether `token` is a single-character ISO week designator `<'bool'>`.
+
+    - ISO week designator: `'W'` (case-insensitive).
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length. 
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` is a single-character ISO week designator; False otherwise.
+    """
+    if token is None:
+        return False
+    if token_len <= 0:
+        token_len = str_len(token)
+    if token_len != 1:
+        return False
+    return is_isoweek_sep(str_read(token, 0))
+
+cdef inline bint is_str_ascii_ctl(str token, Py_ssize_t token_len=-1) except -1:
+    """Check whether `token` is a single control charactor `<'bool'>`.
+
+    - ASCII control characters (0-31) and (127)
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length. 
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` is a single control character; False otherwise.
+    """
+    if token is None:
+        return False
+    if token_len <= 0:
+        token_len = str_len(token)
+    if token_len != 1:
+        return False
+    return is_ascii_ctl(str_read(token, 0))
+
+cdef inline bint is_str_ascii_ctl_or_space(str token, Py_ssize_t token_len=-1) except -1:
+    """Check whether `token` is a single control or space charactor `<'bool'>`.
+
+    - ASCII control characters (0-31) and (127)
+    - ASCII space character: (32)
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length. 
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` is a single control or space character; False otherwise.
+    """
+    if token is None:
+        return False
+    if token_len <= 0:
+        token_len = str_len(token)
+    if token_len != 1:
+        return False
+    return is_ascii_ctl_or_space(str_read(token, 0))
+
+cdef inline bint is_str_ascii_digits(str token, Py_ssize_t token_len=-1) except -1:
+    """Check whether `token` only contains ASCII digits `<'bool'>`.
+
+    - ASSCI digits: `'0'` ... `'9'`
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` only contains ASCII digits; False otherwise.
+    """
+    if token is None:
+        return False
+    if token_len <= 0:
+        token_len = str_len(token)
+    if token_len == 0:
+        return False
+    cdef Py_ssize_t i
+    for i in range(token_len):
+        if not is_ascii_digit(str_read(token, i)):
+            return False
+    return True
+
+cdef inline bint is_str_ascii_letters_upper(str token, Py_ssize_t token_len=-1) except -1:
+    """Check whether `token` only contains uppercase ASCII letters `<'bool'>`.
+
+    - Uppercase ASCII letters: `'A'` ... `'Z'`
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` only contains uppercase ASCII letters; False otherwise.
+    """
+    if token is None:
+        return False
+    if token_len <= 0:
+        token_len = str_len(token)
+    if token_len == 0:
+        return False
+    cdef Py_ssize_t i
+    for i in range(token_len):
+        if not is_ascii_letter_upper(str_read(token, i)):
+            return False
+    return True
+
+cdef inline bint is_str_ascii_letters_lower(str token, Py_ssize_t token_len=-1) except -1:
+    """Check whether `token` only contains lowercase ASCII letters `<'bool'>`.
+
+    - Lowercase ASCII letters: `'a'` ... `'z'`
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` only contains lowercase ASCII letters; False otherwise.
+    """
+    if token is None:
+        return False
+    if token_len <= 0:
+        token_len = str_len(token)
+    if token_len == 0:
+        return False
+    cdef Py_ssize_t i
+    for i in range(token_len):
+        if not is_ascii_letter_lower(str_read(token, i)):
+            return False
+    return True
+
+cdef inline bint is_str_ascii_letters(str token, Py_ssize_t token_len=-1) except -1:
+    """Check whether `token` only contains letters (case-insensitive) `<'bool'>`.
+
+    - ASCII letters: `'a'` ... `'z'` and `'A'` ... `'Z'`
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` only contains letters (case-insensitive); False otherwise.
+    """
+    if token is None:
+        return False
+    if token_len <= 0:
+        token_len = str_len(token)
+    if token_len == 0:
+        return False
+    cdef Py_ssize_t i
+    for i in range(token_len):
+        if not is_ascii_letter(str_read(token, i)):
+            return False
+    return True
+
+cdef inline bint is_str_alphas(str token, Py_ssize_t token_len=-1) except -1:
+    """Check whether `token` only contains alphabetic characters `<'bool'>`.
+
+    - Uses Unicode definition of alphabetic characters.
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` only contains alphabetic characters; False otherwise.
+    """
+    if token is None:
+        return False
+    if token_len <= 0:
+        token_len = str_len(token)
+    if token_len == 0:
+        return False
+    cdef Py_ssize_t i
+    for i in range(token_len):
+        if not is_alpha(str_read(token, i)):
+            return False
+    return True
 
 # . parse
-cdef inline int parse_isoyear(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
+cdef inline int parse_numeric_kind(str token, Py_ssize_t token_len=-1) except -1:
+    """Classify `token` string as certain numeric kind `<'int'>`.
+
+    :param token `<'str'>`: The input token string to classify.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'int'>`: Classification result:
+
+        - `1` = integer (ASCII digits only)
+        - `2` = decimal (ASCII digits with a single `'.'`; more than one `'.'` is invalid)
+        - `0` = not numeric (any other case, including empty string, `'.'` alone and prefixing `'+/-'` signs)
+    """
+    # Validate
+    if token is None:
+        return 0
+    if token_len <= 0:
+        token_len = str_len(token)
+    if token_len == 0:
+        return 0
+
+    cdef:
+        bint has_num = False
+        bint has_dot = False
+        Py_ssize_t i
+        Py_UCS4 ch
+
+    for i in range(token_len):
+        ch = str_read(token, i)
+        if is_ascii_digit(ch):
+            has_num = True
+        elif ch == 46:  # '.'
+            if has_dot:
+                return 0
+            has_dot = True
+        else:
+            return 0
+
+    if not has_num:
+        return 0
+    return 2 if has_dot else 1
+
+cdef inline int parse_isoyear(str token, Py_ssize_t pos, Py_ssize_t token_len=-1) except -2:
     """Parse ISO format year component (YYYY) from a string,
     returns `-1` for invalid ISO years `<'int'>`.
 
@@ -492,29 +824,32 @@ cdef inline int parse_isoyear(str data, Py_ssize_t pos, Py_ssize_t length=0) exc
     into an integer representing the year. The function ensures that the parsed
     year is valid (i.e., between '0000' and '9999').
 
-    :param data `<'str'>`: The input string containing the ISO year to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO year.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO year to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO year.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO year [1..9999], or `-1` if invalid.
     """
     # Validate
-    if length <= 0:
-        length = str_len(data)
-    if pos < 0 or length - pos < 4:
+    if token is None:
+        return -1  # exit: invalid
+    if token_len <= 0:
+        token_len = str_len(token)
+    if pos < 0 or token_len - pos < 4:
         return -1  # exit: invalid
 
     # Parse value
-    cdef Py_UCS4 c0 = str_read(data, pos)
+    cdef Py_UCS4 c0 = str_read(token, pos)
     if not is_ascii_digit(c0):
         return -1  # exit: invalid
-    cdef Py_UCS4 c1 = str_read(data, pos + 1)
+    cdef Py_UCS4 c1 = str_read(token, pos + 1)
     if not is_ascii_digit(c1):
         return -1  # exit: invalid
-    cdef Py_UCS4 c2 = str_read(data, pos + 2)
+    cdef Py_UCS4 c2 = str_read(token, pos + 2)
     if not is_ascii_digit(c2):
         return -1  # exit: invalid
-    cdef Py_UCS4 c3 = str_read(data, pos + 3)
+    cdef Py_UCS4 c3 = str_read(token, pos + 3)
     if not is_ascii_digit(c3):
         return -1  # exit: invalid
 
@@ -527,7 +862,7 @@ cdef inline int parse_isoyear(str data, Py_ssize_t pos, Py_ssize_t length=0) exc
     )
     return out if out > 0 else -1
 
-cdef inline int parse_isomonth(str data, Py_ssize_t pos, Py_ssize_t length=0)  except -2:
+cdef inline int parse_isomonth(str token, Py_ssize_t pos, Py_ssize_t token_len=-1)  except -2:
     """Parse ISO format month component (MM) from a string,
     returns `-1` for invalid ISO months `<'int'>`.
 
@@ -536,23 +871,26 @@ cdef inline int parse_isomonth(str data, Py_ssize_t pos, Py_ssize_t length=0)  e
     into an integer representing the month. The function ensures that the parsed
     month is valid (i.e., between '01' and '12').
 
-    :param data `<'str'>`: The input string containing the ISO month to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO month.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO month to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO month.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO month `[1..12]`, or `-1` if invalid.
     """
     # Validate
-    if length <= 0:
-        length = str_len(data)
-    if pos < 0 or length - pos < 2:
+    if token is None:
+        return -1  # exit: invalid
+    if token_len <= 0:
+        token_len = str_len(token)
+    if pos < 0 or token_len - pos < 2:
         return -1  # exit: invalid
 
     # Parse value
-    cdef Py_UCS4 c0 = str_read(data, pos)
+    cdef Py_UCS4 c0 = str_read(token, pos)
     if not is_ascii_digit(c0):
         return -1  # exit: invalid
-    cdef Py_UCS4 c1 = str_read(data, pos + 1)
+    cdef Py_UCS4 c1 = str_read(token, pos + 1)
     if not is_ascii_digit(c1):
         return -1  # exit: invalid
 
@@ -563,7 +901,7 @@ cdef inline int parse_isomonth(str data, Py_ssize_t pos, Py_ssize_t length=0)  e
     )
     return out if 1 <= out <= 12 else -1
 
-cdef inline int parse_isoday(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
+cdef inline int parse_isoday(str token, Py_ssize_t pos, Py_ssize_t token_len=-1) except -2:
     """Parse ISO format day component (DD) from a string,
     returns `-1` for invalid ISO days `<'int'>`.
 
@@ -572,23 +910,26 @@ cdef inline int parse_isoday(str data, Py_ssize_t pos, Py_ssize_t length=0) exce
     into an integer representing the day. The function ensures that the parsed day
     is valid (i.e., between '01' and '31').
 
-    :param data `<'str'>`: The input string containing the ISO day to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO day.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO day to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO day.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO day `[1..31]`, or `-1` if invalid.
     """
     # Validate
-    if length <= 0:
-        length = str_len(data)
-    if pos < 0 or length - pos < 2:
+    if token is None:
+        return -1  # exit: invalid
+    if token_len <= 0:
+        token_len = str_len(token)
+    if pos < 0 or token_len - pos < 2:
         return -1  # exit: invalid
 
     # Parse value
-    cdef Py_UCS4 c0 = str_read(data, pos)
+    cdef Py_UCS4 c0 = str_read(token, pos)
     if not is_ascii_digit(c0):
         return -1  # exit: invalid
-    cdef Py_UCS4 c1 = str_read(data, pos + 1)
+    cdef Py_UCS4 c1 = str_read(token, pos + 1)
     if not is_ascii_digit(c1):
         return -1  # exit: invalid
 
@@ -599,7 +940,7 @@ cdef inline int parse_isoday(str data, Py_ssize_t pos, Py_ssize_t length=0) exce
     )
     return out if 1 <= out <= 31 else -1
 
-cdef inline int parse_isoweek(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
+cdef inline int parse_isoweek(str token, Py_ssize_t pos, Py_ssize_t token_len=-1) except -2:
     """Parse an ISO format week number component (WW) from a string,
     returns `-1` for invalid ISO week number `<'int'>`.
 
@@ -608,23 +949,26 @@ cdef inline int parse_isoweek(str data, Py_ssize_t pos, Py_ssize_t length=0) exc
     into an integer representing the week number. The function ensures that the
     parsed week number is valid (i.e., between '01' and '53').
 
-    :param data `<'str'>`: The input string containing the ISO week number to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO week number.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO week number to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO week number.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO week number `[1..53]`, or `-1` if invalid.
     """
     # Validate
-    if length <= 0:
-        length = str_len(data)
-    if pos < 0 or length - pos < 2:
+    if token is None:
+        return -1  # exit: invalid
+    if token_len <= 0:
+        token_len = str_len(token)
+    if pos < 0 or token_len - pos < 2:
         return -1  # exit: invalid
 
     # Parse value
-    cdef Py_UCS4 c0 = str_read(data, pos)
+    cdef Py_UCS4 c0 = str_read(token, pos)
     if not is_ascii_digit(c0):
         return -1  # exit: invalid
-    cdef Py_UCS4 c1 = str_read(data, pos + 1)
+    cdef Py_UCS4 c1 = str_read(token, pos + 1)
     if not is_ascii_digit(c1):
         return -1  # exit: invalid
 
@@ -635,7 +979,7 @@ cdef inline int parse_isoweek(str data, Py_ssize_t pos, Py_ssize_t length=0) exc
     )
     return out if 1 <= out <= 53 else -1
 
-cdef inline int parse_isoweekday(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
+cdef inline int parse_isoweekday(str token, Py_ssize_t pos, Py_ssize_t token_len=-1) except -2:
     """Parse an ISO format weekday component (D) from a string,
     returns `-1` for invalid ISO weekdays `<'int'>`.
 
@@ -643,27 +987,30 @@ cdef inline int parse_isoweekday(str data, Py_ssize_t pos, Py_ssize_t length=0) 
     It reads a single character at the specified position and converts it into an
     integer representing the ISO weekday, where Monday is 1 and Sunday is 7.
 
-    :param data `<'str'>`: The input string containing the ISO weekday to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO weekday.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO weekday to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO weekday.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO weekday `[1..7]`, or `-1` if invalid.
     """
     # Validate
-    if length <= 0:
-        length = str_len(data)
-    if pos < 0 or length - pos < 1:
+    if token is None:
+        return -1  # exit: invalid
+    if token_len <= 0:
+        token_len = str_len(token)
+    if pos < 0 or token_len - pos < 1:
         return -1  # exit: invalid
 
     # Parse value
-    cdef Py_UCS4 ch = str_read(data, pos)
+    cdef Py_UCS4 ch = str_read(token, pos)
 
     # Convert to integer
     cdef int out = ord(ch) - 48
     return out if 1 <= out <= 7 else -1
 
-cdef inline int parse_isoyearday(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
-    """Parse an ISO format day of the year component (DDD) from a string,
+cdef inline int parse_isodoy(str token, Py_ssize_t pos, Py_ssize_t token_len=-1) except -2:
+    """Parse an ISO format day-of-year component (DDD) from a string,
     returns `-1` for invalid ISO day of the year `<'int'>`.
 
     This function extracts and parses the day of the year from an ISO date string.
@@ -671,26 +1018,29 @@ cdef inline int parse_isoyearday(str data, Py_ssize_t pos, Py_ssize_t length=0) 
     into an integer representing the day of the year. The function ensures that the
     parsed days are valid (i.e., between '001' and '366').
 
-    :param data `<'str'>`: The input string containing the ISO day of the year to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO day of the year.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO day of the year to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO day of the year.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO day of the year `[1..366]`, or `-1` if invalid.
     """
     # Validate
-    if length <= 0:
-        length = str_len(data)
-    if pos < 0 or length - pos < 3:
+    if token is None:
+        return -1  # exit: invalid
+    if token_len <= 0:
+        token_len = str_len(token)
+    if pos < 0 or token_len - pos < 3:
         return -1  # exit: invalid
 
     # Parse value
-    cdef Py_UCS4 c0 = str_read(data, pos)
+    cdef Py_UCS4 c0 = str_read(token, pos)
     if not is_ascii_digit(c0):
         return -1  # exit: invalid
-    cdef Py_UCS4 c1 = str_read(data, pos + 1)
+    cdef Py_UCS4 c1 = str_read(token, pos + 1)
     if not is_ascii_digit(c1):
         return -1  # exit: invalid
-    cdef Py_UCS4 c2 = str_read(data, pos + 2)
+    cdef Py_UCS4 c2 = str_read(token, pos + 2)
     if not is_ascii_digit(c2):
         return -1  # exit: invalid
 
@@ -702,7 +1052,7 @@ cdef inline int parse_isoyearday(str data, Py_ssize_t pos, Py_ssize_t length=0) 
     )
     return out if 1 <= out <= 366 else -1    
 
-cdef inline int parse_isohour(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
+cdef inline int parse_isohour(str token, Py_ssize_t pos, Py_ssize_t token_len=-1) except -2:
     """Parse an ISO format hour (HH) component from a string,
     returns `-1` for invalid ISO hours `<'int'>`.
 
@@ -711,23 +1061,26 @@ cdef inline int parse_isohour(str data, Py_ssize_t pos, Py_ssize_t length=0) exc
     integer representing the hours. The function ensures that the parsed hours are valid
     (i.e., between '00' and '23').
 
-    :param data `<'str'>`: The input string containing the ISO hour to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO hour.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO hour to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO hour.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO hour `[0..23]`, or `-1` if invalid.
     """
     # Validate
-    if length <= 0:
-        length = str_len(data)
-    if pos < 0 or length - pos < 2:
+    if token is None:
+        return -1  # exit: invalid
+    if token_len <= 0:
+        token_len = str_len(token)
+    if pos < 0 or token_len - pos < 2:
         return -1  # exit: invalid
 
     # Parse value
-    cdef Py_UCS4 c0 = str_read(data, pos)
+    cdef Py_UCS4 c0 = str_read(token, pos)
     if not is_ascii_digit(c0):
         return -1  # exit: invalid
-    cdef Py_UCS4 c1 = str_read(data, pos + 1)
+    cdef Py_UCS4 c1 = str_read(token, pos + 1)
     if not is_ascii_digit(c1):
         return -1  # exit: invalid
 
@@ -738,7 +1091,7 @@ cdef inline int parse_isohour(str data, Py_ssize_t pos, Py_ssize_t length=0) exc
     )
     return out if 0 <= out <= 23 else -1
 
-cdef inline int parse_isominute(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
+cdef inline int parse_isominute(str token, Py_ssize_t pos, Py_ssize_t token_len=-1) except -2:
     """Parse an ISO format minute (MM) component from a string,
     returns `-1` for invalid ISO minutes `<'int'>`.
 
@@ -747,23 +1100,26 @@ cdef inline int parse_isominute(str data, Py_ssize_t pos, Py_ssize_t length=0) e
     integer representing the minutes. The function ensures that the parsed minutes are valid
     (i.e., between '00' and '59').
 
-    :param data `<'str'>`: The input string containing the ISO minute to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO minute.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO minute to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO minute.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO minute `[0..59]`, or `-1` if invalid.
     """
     # Validate
-    if length <= 0:
-        length = str_len(data)
-    if pos < 0 or length - pos < 2:
+    if token is None:
+        return -1  # exit: invalid
+    if token_len <= 0:
+        token_len = str_len(token)
+    if pos < 0 or token_len - pos < 2:
         return -1  # exit: invalid
 
     # Parse value
-    cdef Py_UCS4 c0 = str_read(data, pos)
+    cdef Py_UCS4 c0 = str_read(token, pos)
     if not is_ascii_digit(c0):
         return -1  # exit: invalid
-    cdef Py_UCS4 c1 = str_read(data, pos + 1)
+    cdef Py_UCS4 c1 = str_read(token, pos + 1)
     if not is_ascii_digit(c1):
         return -1  # exit: invalid
 
@@ -774,7 +1130,7 @@ cdef inline int parse_isominute(str data, Py_ssize_t pos, Py_ssize_t length=0) e
     )
     return out if 0 <= out <= 59 else -1
 
-cdef inline int parse_isosecond(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
+cdef inline int parse_isosecond(str token, Py_ssize_t pos, Py_ssize_t token_len=-1) except -2:
     """Parse an ISO format second (SS) component from a string,
     returns `-1` for invalid ISO seconds `<'int'>`.
 
@@ -783,15 +1139,16 @@ cdef inline int parse_isosecond(str data, Py_ssize_t pos, Py_ssize_t length=0) e
     integer representing the seconds. The function ensures that the parsed seconds are valid
     (i.e., between '00' and '59').
 
-    :param data `<'str'>`: The input string containing the ISO second to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO second.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO second to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO second.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO second `[0..59]`, or `-1` if invalid.
     """
-    return parse_isominute(data, pos, length)
+    return parse_isominute(token, pos, token_len)
 
-cdef inline int parse_isofraction(str data, Py_ssize_t pos, Py_ssize_t length=0) except -2:
+cdef inline int parse_isofraction(str token, Py_ssize_t pos, Py_ssize_t token_len=-1) except -2:
     """Parse an ISO fractional time component (fractions of a second) from a string,
     returns `-1` for invalid ISO fraction `<'int'>`.
 
@@ -800,83 +1157,278 @@ cdef inline int parse_isofraction(str data, Py_ssize_t pos, Py_ssize_t length=0)
     after the starting position, padding with zeros if necessary to ensure a six-digit
     integer representation.
 
-    :param data `<'str'>`: The input string containing the ISO fraction to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO fraction.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO fraction to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO fraction.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO fraction `[0..999,999]`, or `-1` if invalid.
     """
     # Validate
-    if length <= 0:
-        length = str_len(data)
-    if pos < 0:
+    if token is None:
+        return -1  # exit: invalid
+    if token_len <= 0:
+        token_len = str_len(token)
+    if pos < 0 or token_len - pos < 1:
         return -1  # exit: invalid
 
     # Parse value
-    cdef Py_ssize_t idx = 0
-    cdef int out = 0
-    cdef Py_UCS4 ch
-    while pos < length and idx < 6:
-        ch = str_read(data, pos)
+    cdef:
+        int f_size = 0
+        int out = 0
+        Py_UCS4 ch
+    while pos < token_len and f_size < 6:
+        ch = str_read(token, pos)
         if not is_ascii_digit(ch):
             break
         out = out * 10 + (ord(ch) - 48)
-        pos += 1; idx += 1
+        pos += 1; f_size += 1
 
-    # Pad with trailing zeros
-    if idx == 0:
-        return -1  # exit: invalid
-    elif idx == 6:
-        return out
-    elif idx == 5:
-        return out * 10
-    elif idx == 4:
-        return out * 100
-    elif idx == 3:
-        return out * 1_000
-    elif idx == 2:
-        return out * 10_000
-    else:  # idx == 1
-        return out * 100_000
+    # Compensate missing digits (pad with zeros)
+    return scale_fraction_to_us(out, f_size)
 
-cdef inline unsigned long long slice_to_uint(str data, Py_ssize_t start, Py_ssize_t size) except -2:
+cdef inline sf parse_second_and_fraction(str token, Py_ssize_t pos, Py_ssize_t token_len=-1) except *:
+    """Parse a `seconds` token with an optional fractional part into (second, microsecond) `<'struct:sf'>`.
+
+    This reads a decimal token starting at `pos` for whole `seconds`, optionally
+    followed by a dot `.` and up to 6 fractional digits which are scaled to
+    microseconds (truncated if more digits appear beyond 6). The function is
+    intentionally strict and returns an invalid result for out-of-domain inputs.
+
+    :param token `<'str'>`: The input token string containing `seconds` information.
+    :param pos `<'int'>`: The starting position in the `token` of the `seconds`.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'struct:sf'>`: A small struct with fields:
+
+        - `second`: parsed whole seconds (0..59) or -1 if invalid
+        - `microsecond`: parsed fractional part in microseconds (0..999_999),
+            or -1 if no fraction / value is invalid,
+
+    ## Rules
+    - Input format: `'SS'` or `'SS.f'` where `S` and `f` are ASCII digits.
+    - Decimal separator: dot only `'.'`; comma is NOT accepted.
+    - Fraction length: up to 6 digits kept; extra digits (if any) stop parsing
+      early and are `ignored` (no rounding).
+    - Seconds domain: 0..59 only. Leap-second `60` is not accepted.
+    - Whitespace and other characters terminate parsing.
+    - On any invalid input (e.g., no digits, seconds > 59, out-of-bounds indexes),
+      returns `sf(second=-1, microsecond=-1)`.
+    """
+    # Validate
+    cdef sf out
+    if token is None:
+        out.second = out.microsecond = -1
+        return out  # exit: invalid
+    if token_len <= 0:
+        token_len = str_len(token)
+    if pos < 0 or token_len - pos < 1:
+        out.second = out.microsecond = -1
+        return out  # exit: invalid
+
+    # Parse value
+    cdef:
+        unsigned long long i_part = 0
+        unsigned long long f_part = 0
+        int f_size = 0
+        bint has_dot = False
+        bint has_digit = False
+        Py_UCS4 ch
+    
+    while pos < token_len and f_size < 6:
+        ch = str_read(token, pos)
+        if is_ascii_digit(ch):
+            if not has_dot:
+                i_part = i_part * 10 + (ord(ch) - 48)
+            else:
+                f_part = f_part * 10 + (ord(ch) - 48)
+                f_size += 1
+            has_digit = True
+            pos += 1
+        elif ch == 46:  # '.'
+            if has_dot:
+                break
+            has_dot = True
+            pos += 1
+        else:
+            break
+
+    # No digits / second out of range: invalid
+    if not has_digit or i_part > 59:
+        out.second = out.microsecond = -1
+    # Pure integer: second only
+    elif not has_dot:
+        out.second = i_part
+        out.microsecond = -1
+    # Float: second & microsecond
+    else:
+        out.second = i_part
+        out.microsecond = scale_fraction_to_us(f_part, f_size)
+    return out
+
+cdef inline int scale_fraction_to_us(int fraction, int fraction_size) noexcept:
+    """Scale a fractional time component to microseconds based on its size `<'int'>`.
+
+    This function takes a fractional time component (e.g., milliseconds, microseconds)
+    and scales it to microseconds based on the number of digits provided. It supports
+    fractions with sizes ranging from 1 to 6 digits.
+
+    :param fraction `<'int'>`: The fractional time component to scale.
+    :param fraction_size `<'int'>`: The number of digits in the fractional component.
+        Must be in the range [1..6].
+    :returns `<'int'>`: The scaled fractional time in microseconds.
+        Returns `-1` if `fraction_size` is out of range.
+
+    ## Example
+    >>> scale_fraction_to_us(123, 3)  
+        # 123 milliseconds → 123000 microseconds
+    """
+    if fraction_size == 6:
+        return fraction
+    elif fraction_size == 5:
+        return fraction * 10
+    elif fraction_size == 4:
+        return fraction * 100
+    elif fraction_size == 3:
+        return fraction * 1_000
+    elif fraction_size == 2:
+        return fraction * 10_000
+    elif fraction_size == 1:
+        return fraction * 100_000
+    else:
+        return -1
+
+# . slice and convert
+cdef inline unsigned long long slice_to_uint(str token, Py_ssize_t start, Py_ssize_t size, Py_ssize_t token_len=-1) except -1:
     """Slice a substring from a string and convert to an unsigned integer `<'int'>`.
 
-    This function slices a portion of the input string 'data' starting
+    This function slices a portion of the input `token` string starting
     at 'start' and spanning 'size' of characters. The sliced substring is
     validated to ensure it contains only ASCII digits, before converting
     to unsigned integer.
 
-    :param data `<'str'>`: The input string to slice and convert.
-    :param start `<'int'>`: The starting index for slicing the string.
+    :param token `<'str'>`: The input token string to slice and convert.
+    :param start `<'int'>`: The starting index for slicing the `token`.
     :param size `<'int'>`: The size of the slice.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The converted unsigned integer.
-    :raises `<'ValueError'>`: When the slice is out of range, 
-        or contains non-digit characters.
+    :raises `<'ValueError'>`: When the slice is out of range, or contains non-digit characters.
+
+    ## Notice
+    - Only ASCII digits ('0' to '9') are accepted.
 
     ## Equivalent
-    >>> int(data[start:start+size])
+    >>> int(data[start:start+size])  # without '+/-' signs
     """
     # Validate
+    if token is None:
+        raise ValueError("slice_to_uint: 'data' cannot be None")
     if start < 0:
-        raise ValueError("slice_to_uint: 'start' must be >= 0, got %d" % start)
+        raise ValueError("slice_to_uint: 'start' must be >= 0, instead got %d" % start)
     if size <= 0:
-        raise ValueError("slice_to_uint: 'size' must be > 0, got %d" % size)
-    cdef Py_ssize_t length = str_len(data)
-    if start < 0 or start + size > length:
-        raise ValueError("slice_to_uint: out of range (start=%d size=%d length=%d)" % (start, size, length))
+        raise ValueError("slice_to_uint: 'size' must be > 0, instead got %d" % size)
+    if token_len <= 0:
+        token_len = str_len(token)
+    cdef Py_ssize_t end = start + size
+    if end > token_len:
+        raise ValueError("slice_to_uint: out of range (start=%d size=%d token_len=%d)" % (start, size, token_len))
 
-    # Parse value
+    # Slice and convert
     cdef: 
         unsigned long long out = 0
         Py_ssize_t i
         Py_UCS4 ch
-    for i in range(size):
-        ch = str_read(data, start + i)
+
+    for i in range(start, end):
+        ch = str_read(token, i)
         if not is_ascii_digit(ch):
-            raise ValueError("Invalid character '%s', not an ASCII digit." % str_chr(ch))
+            raise ValueError(
+                "Cannot convert '%s' to unsigned integer. Contains invalid character '%s' "
+                "(non-ASCII digit)." % (token[start: end], str_chr(ch))
+            )
         out = out * 10 + (ord(ch) - 48)
     return out
+
+cdef inline double slice_to_ufloat(str token, Py_ssize_t start, Py_ssize_t size, Py_ssize_t token_len=-1) except *:
+    """Slice a substring from a string and convert to a non-negative double-precision float `<'float'>`.
+
+    This function slices a portion of the input `token` string starting
+    at 'start' and spanning 'size' of characters. The sliced substring is
+    then converted to a non-negative double-precision floating-point number.
+
+    :param token `<'str'>`: The input token string to slice and convert.
+    :param start `<'int'>`: The starting index for slicing the `token`.
+    :param size `<'int'>`: The size of the slice.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'float'>`: The converted non-negative double-precision float.
+    :raises `<'ValueError'>`: When the slice is out of range, or cannot be converted to float.
+
+    ## Notice
+    - Only ASCII digits ('0' to '9') are accepted.
+    - At most one decimal point ('.') is allowed.
+    
+    ## Equivalent
+    >>> float(data[start:start+size])  # without '+/-' signs
+    """
+    # Validate
+    if token is None:
+        raise ValueError("slice_to_ufloat: 'data' cannot be None")
+    if start < 0:
+        raise ValueError("slice_to_ufloat: 'start' must be >= 0, instead got %d" % start)
+    if size <= 0:
+        raise ValueError("slice_to_ufloat: 'size' must be > 0, instead got %d" % size)
+    if token_len <= 0:
+        token_len = str_len(token)
+    cdef Py_ssize_t end = start + size
+    if end > token_len:
+        raise ValueError("slice_to_ufloat: out of range (start=%d size=%d token_len=%d)" % (start, size, token_len))
+
+    # Slice and convert
+    cdef:
+        unsigned long long i_part = 0
+        unsigned long long f_part = 0
+        double f_scale = 1.0
+        bint has_dot = False
+        bint has_digit = False
+        Py_ssize_t i
+        Py_UCS4 ch
+
+    for i in range(start, end):
+        ch = str_read(token, i)
+        if is_ascii_digit(ch):
+            if not has_dot:
+                i_part = i_part * 10 + (ord(ch) - 48)
+            else:
+                f_part = f_part * 10 + (ord(ch) - 48)
+                f_scale *= 0.1
+            has_digit = True
+        elif ch == 46:  # '.'
+            if has_dot:
+                raise ValueError(
+                    "Cannot convert '%s' to non-negative float: "
+                    "contains more than one decimal point." % (token[start: end])
+                )
+            has_dot = True
+        else:
+            raise ValueError(
+                "Cannot convert '%s' to non-negative float: contains invalid character '%s' "
+                "(non-ASCII digit)." % (token[start: end], str_chr(ch))
+            )
+
+    if not has_digit:
+        raise ValueError(
+            "Cannot convert '%s' to non-negative float: "
+            "no digits found." % (token[start: end])
+        )
+    elif not has_dot:
+        return (<double> i_part)
+    else:
+        return (<double> i_part) + (<double> f_part) * f_scale
 
 # Time -------------------------------------------------------------------------------------------------
 # . gmtime
@@ -1046,7 +1598,9 @@ cdef inline str tm_strformat(tm t, str fmt):
     - Output decoding assumes a UTF-8 C locale. If the process locale is not UTF-8,
       expansions of `%a`, `%A`, `%b`, `%B`, etc. may fail to decode.
     """
-    # Empty format
+    # Validate format
+    if fmt is None:
+        raise ValueError("tm_strformat: 'fmt' cannot be None")
     if str_len(fmt) == 0:
         return fmt
 
@@ -2375,6 +2929,8 @@ cdef inline str dt_strformat(datetime.datetime dt, str fmt):
     ## Equivalent
     >>> dt.strftime(fmt)
     """
+    if fmt is None:
+        raise ValueError("dt_strformat: 'fmt' cannot be None")
     cdef:
         list parts = []
         Py_ssize_t size = str_len(fmt)
@@ -2440,6 +2996,8 @@ cdef inline str dt_isoformat(datetime.datetime dt, str sep="T", bint utc=False):
 
     :returns `<'str'>`: Formatted text.
     """
+    if sep is None:
+        raise ValueError("dt_isoformat: 'sep' cannot be None.")
     cdef:
         int us = dt.microsecond
         str s_utc = tz_utcformat(dt.tzinfo, dt) if utc else None
@@ -2746,6 +3304,8 @@ cdef inline long long dt_as_epoch(datetime.datetime dt, str as_unit, bint utc=Fa
         * 'ms' truncates microseconds toward zero (i.e., floor for non-negative datetimes).
         * 'us' reproduces the exact microsecond field.
     """
+    if as_unit is None:
+        _raise_invalid_nptime_str_unit_error(as_unit)
     cdef:
         datetime.timedelta off
         Py_ssize_t size = str_len(as_unit)
@@ -2815,10 +3375,7 @@ cdef inline long long dt_as_epoch(datetime.datetime dt, str as_unit, bint utc=Fa
         return n * 1_440 + hh * 60 + mi
 
     # Unsupported unit
-    raise ValueError(
-        "Unsupported time unit '%s'.\n"
-        "Accepts: 'Y', 'Q', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us'" % (as_unit)
-    )
+    _raise_invalid_nptime_str_unit_error(as_unit)
 
 cdef inline long long dt_as_epoch_W_iso(datetime.datetime dt, int weekday, bint utc=False) except *:
     """Convert a `datetime.datetime` to an integer count of whole 
@@ -3364,7 +3921,7 @@ cdef inline datetime.datetime dt_normalize_tz(datetime.datetime dt):
     # There is no positive delta or either offset is 
     # unknown (sentinel = -100,000); return as-is.
     cdef long long delta = off_f1 - off_f0
-    if delta <= 0 or off_f0 == -100_000 or off_f1 == -100_000:
+    if delta <= 0 or off_f0 == NULL_TZOFFSET or off_f1 == NULL_TZOFFSET:
         return dt
 
     # Gap: apply Δ depending on which side of the gap 
@@ -3900,7 +4457,7 @@ cdef inline int tz_utcoffset_sec(object tz, datetime.datetime dt=None) except -2
     """
     cdef datetime.timedelta off = tz_utcoffset(tz, dt)
     if off is None:
-        return -100_000
+        return NULL_TZOFFSET
 
     cdef int sec = (off.day * (<int> SS_DAY) + off.second)
     if not -86400 < sec < 86400:
@@ -4011,6 +4568,8 @@ cdef inline int nptime_unit_str2int(str unit) except -1:
         'ns', 'us', 'ms', 's', 'm', 'h', 'D', 'Y', etc.
     :returns `<'int'>`: The corresponding NPY_DATETIMEUNIT enum value.
     """
+    if unit is None:
+        _raise_invalid_nptime_str_unit_error(unit)
     cdef:
         Py_ssize_t size = str_len(unit)
         Py_UCS4 ch
@@ -4071,6 +4630,8 @@ cdef inline object nptime_unit_str2dt64(str unit):
     :returns `<'np.dtype'>`: The corresponding datetime dtype:
         np.dtype('datetime64[ns]'), np.dtype('datetime64[Y]'), etc.
     """
+    if unit is None:
+        _raise_invalid_nptime_str_unit_error(unit)
     cdef:
         Py_ssize_t size = str_len(unit)
         Py_UCS4 ch
@@ -4150,8 +4711,8 @@ cdef inline bint _raise_invalid_nptime_int_unit_error(int unit) except -1:
     """(internal) Raise error for an invalid numpy time unit value."""
     raise ValueError(
         "Unsupported numpy time unit (NPY_DATETIMEUNIT enum) '%d'.\n"
-        "Accepts: %d→'Y', %d→'M', %d→'W', %d→'D', %d→'h', %d→'m', %d→'s', "
-        "%d→'ms', %d→'us', %d→'ns', %d→'ps', %d→'fs', %d→'as'" % (
+        "Accepts: %d→'Y', %d→'M', %d→'W', %d→'D', %d→'h', %d→'m', "
+        "%d→'s', %d→'ms', %d→'us', %d→'ns'" % (
             unit, 
             DT_NPY_UNIT_YY,
             DT_NPY_UNIT_MM,
@@ -4163,17 +4724,14 @@ cdef inline bint _raise_invalid_nptime_int_unit_error(int unit) except -1:
             DT_NPY_UNIT_MS,
             DT_NPY_UNIT_US,
             DT_NPY_UNIT_NS,
-            DT_NPY_UNIT_PS,
-            DT_NPY_UNIT_FS,
-            DT_NPY_UNIT_AS,
         )
     )
 
-cdef inline bint _raise_invalid_nptime_str_unit_error(str unit) except -1:
+cdef inline bint _raise_invalid_nptime_str_unit_error(object unit) except -1:
     """(internal) Raise error for an invalid numpy time unit string form."""
     raise ValueError(
-        "Unsupported numpy time unit '%s'.\n"
-        "Accepts: 'Y', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us', 'ns', 'ps', 'fs', 'as'" % (unit)
+        "Unsupported time unit %r.\n"
+        "Accepts: 'Y', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us', 'ns'" % (unit,)
     )
 
 cdef inline bint _raise_invalid_nptime_dtype_error(np.ndarray arr) except -1:
@@ -7404,6 +7962,8 @@ cdef inline np.ndarray dt64arr_as_int64(np.ndarray arr, str as_unit, int arr_res
     ## Equivalent
     >>> arr.astype(f"datetime64[{as_unit}]").astype("int64") + offset
     """
+    if as_unit is None:
+        _raise_invalid_nptime_str_unit_error(as_unit)
     cdef:
         Py_ssize_t size = str_len(as_unit)
         Py_UCS4 ch
@@ -8309,6 +8869,8 @@ cdef inline np.ndarray dt64arr_as_unit(np.ndarray arr, str as_unit, int arr_reso
     ## Equivalent
     >>> arr.astype(f"datetime64[{as_unit}]")
     """
+    if as_unit is None:
+        _raise_invalid_nptime_str_unit_error(as_unit)
     # Get array resolution
     cdef bint is_dt64 = np.PyArray_TYPE(arr) == np.NPY_TYPES.NPY_DATETIME
     if arr_reso < 0:
@@ -8521,6 +9083,8 @@ cdef inline np.ndarray dt64arr_round(np.ndarray arr, str to_unit, int arr_reso=-
     :returns `<'np.ndarray[datetime64]'>`: The rounded array.
         `NaT` values are preserved.
     """
+    if to_unit is None:
+        _raise_invalid_nptime_str_unit_error(to_unit)
     # Get array resolution
     cdef bint is_dt64 = np.PyArray_TYPE(arr) == np.NPY_TYPES.NPY_DATETIME
     if arr_reso < 0:
@@ -8699,6 +9263,8 @@ cdef inline np.ndarray dt64arr_ceil(np.ndarray arr, str to_unit, int arr_reso=-1
     :returns `<'np.ndarray[datetime64]'>`: The ceiled array.
         `NaT` values are preserved.
     """
+    if to_unit is None:
+        _raise_invalid_nptime_str_unit_error(to_unit)
     # Get array resolution
     cdef bint is_dt64 = np.PyArray_TYPE(arr) == np.NPY_TYPES.NPY_DATETIME
     if arr_reso < 0:
@@ -8877,6 +9443,8 @@ cdef inline np.ndarray dt64arr_floor(np.ndarray arr, str to_unit, int arr_reso=-
     :returns `<'np.ndarray[datetime64]'>`: The floored array.
         `NaT` values are preserved.
     """
+    if to_unit is None:
+        _raise_invalid_nptime_str_unit_error(to_unit)
     # Get array resolution
     cdef bint is_dt64 = np.PyArray_TYPE(arr) == np.NPY_TYPES.NPY_DATETIME
     if arr_reso < 0:

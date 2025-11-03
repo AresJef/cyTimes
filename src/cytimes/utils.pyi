@@ -19,6 +19,7 @@ EPOCH_MILLISECOND: int
 EPOCH_MICROSECOND: int
 # . timezone
 UTC: datetime.tzinfo
+NULL_TZOFFSET: int
 # . conversion for seconds
 SS_MINUTE: int
 SS_HOUR: int
@@ -206,103 +207,294 @@ def abs_diff_ull(a: int, b: int) -> int:
     """
 
 # Parser --------------------------------------------------------------------------------------------
-# . check
-def str_count(s: str, substr: str) -> int:
-    """(cfunc) Count non-overlapping occurrences of a substring in a Unicode string `<'int'>`.
+# . check: character
+def is_dot(ch: cython.Py_UCS4) -> bool:
+    """(cfunc) Check whether `ch` is a dot `'.'` `<'bool'>`.
 
-    :param s `<'str'>`: The input string.
-    :param substr `<'str'>`: The substring to count.
-    :returns `<'int'>`: Number of non-overlapping occurrences.
+    - Dot: `'.'` (46)
+    """
 
-    ## Equivalent
-    >>> s.count(substr)
+def is_comma(ch: cython.Py_UCS4) -> bool:
+    """(cfunc) Check whether `ch` is a comma `','` `<'bool'>`.
+
+    - Comma: `','` (44)
+    """
+
+def is_plus_sign(ch: cython.Py_UCS4) -> bool:
+    """(cfunc) Check whether `ch` is a plus sign `'+'` `<'bool'>`.
+
+    - Plus sign: `'+'` (43)
+    """
+
+def is_minus_sign(ch: cython.Py_UCS4) -> bool:
+    """(cfunc) Check whether `ch` is a minus sign `'-'` `<'bool'>`.
+
+    - Plus sign: `'-'` (45)
+    """
+
+def is_plus_or_minus_sign(ch: cython.Py_UCS4) -> bool:
+    """(cfunc) Check whether `ch` is a plus or minus sign `'-'` `<'bool'>`.
+
+    - Plus sign : `'+'` (43)
+    - Minus sign: `'-'` (45)
     """
 
 def is_iso_sep(ch: cython.Py_UCS4) -> bool:
     """(cfunc) Check whether `ch` is an ISO 8601 date/time separator `<'bool'>`.
 
-    Date / Time seperators: `' '` (32) or `'T'` (ignorecase: 84 & 116).
+    - Date / Time separators: `' '` (32) or `'T'` (case-insensitive: 84 & 116).
     """
 
-def is_isodate_sep(ch: cython.Py_UCS4) -> bool:
+def is_date_sep(ch: cython.Py_UCS4) -> bool:
     """(cfunc) Check whether `ch` is a date-field seperator `<'bool'>`.
 
-    Date-field seperators: `'-'` (45) or `'/'` (47)
+    - Date-field separators: `'-'` (45), `'.'` (46) or `'/'` (47)
+    """
+
+def is_time_sep(ch: cython.Py_UCS4) -> bool:
+    """(cfunc) Check whether `ch` is the time-field separator `<'bool'>`.
+
+    - Time-field seperator: `':'` (58)
     """
 
 def is_isoweek_sep(ch: cython.Py_UCS4) -> bool:
     """(cfunc) Check whether `ch` is the ISO week designator `<'bool'>`.
 
-    ISO week designator: `'W'` (ignorecase: 87 & 119).
-    """
-
-def is_isotime_sep(ch: cython.Py_UCS4) -> bool:
-    """(cfunc) Check whether `ch` is the time-field separator `<'bool'>`.
-
-    Time-field seperator: `':'` (58)
-    """
-
-def is_ascii_digit(ch: cython.Py_UCS4) -> bool:
-    """(cfunc) Check whether `ch` is an ASCII digit `<'bool'>`.
-
-    ASSCI digits: `'0'` (48) ... `'9'` (57)
-    """
-
-def is_ascii_letter_upper(ch: cython.Py_UCS4) -> bool:
-    """(cfunc) Check whether `ch` is an uppercase ASCII letter `<'bool'>`.
-
-    Uppercase ASCII letters: `'A'` (65) ... `'Z'` (90)
-    """
-
-def is_ascii_letter_lower(ch: cython.Py_UCS4) -> bool:
-    """(cfunc) Check whether `ch` is a lowercase ASCII letter `<'bool'>`.
-
-    Lowercase ASCII letters: `'a'` (97) ... `'z'` (122)
-    """
-
-def is_ascii_letter(ch: cython.Py_UCS4) -> bool:
-    """(cfunc) Check whether `ch` is an ASCII letter (ignorecase) `<'bool'>`.
-
-    ASCII letters: `'a'` ... `'z'` and `'A'` ... `'Z'`
+    - ISO week designator: `'W'` (case-insensitive: 87 & 119).
     """
 
 def is_ascii_ctl(ch: cython.Py_UCS4) -> bool:
     """(cfunc) Check whether `ch` is a control charactor `<'bool'>`.
 
-    ASCII control characters (0-31) and (127)
+    - ASCII control characters (0-31) and (127)
     """
 
 def is_ascii_ctl_or_space(ch: cython.Py_UCS4) -> bool:
     """(cfunc) Check whether `ch` is a control or space charactor `<'bool'>`.
 
-    ASCII control characters (0-31) and (127)
-    ASCII space character: (32)
+    - ASCII control characters (0-31) and (127)
+    - ASCII space character: (32)
+    """
+
+def is_ascii_digit(ch: cython.Py_UCS4) -> bool:
+    """(cfunc) Check whether `ch` is an ASCII digit `<'bool'>`.
+
+    - ASSCI digits: `'0'` (48) ... `'9'` (57)
+    """
+
+def is_ascii_letter_upper(ch: cython.Py_UCS4) -> bool:
+    """(cfunc) Check whether `ch` is an uppercase ASCII letter `<'bool'>`.
+
+    - Uppercase ASCII letters: `'A'` (65) ... `'Z'` (90)
+    """
+
+def is_ascii_letter_lower(ch: cython.Py_UCS4) -> bool:
+    """(cfunc) Check whether `ch` is a lowercase ASCII letter `<'bool'>`.
+
+    - Lowercase ASCII letters: `'a'` (97) ... `'z'` (122)
+    """
+
+def is_ascii_letter(ch: cython.Py_UCS4) -> bool:
+    """(cfunc) Check whether `ch` is an ASCII letter (case-insensitive) `<'bool'>`.
+
+    - Uppercase ASCII letters: `'A'` (65) ... `'Z'` (90)
+    - Lowercase ASCII letters: `'a'` (97) ... `'z'` (122)
     """
 
 def is_alpha(ch: cython.Py_UCS4) -> bool:
     """(cfunc) Check whether `ch` is an alphabetic character `<'bool'>`.
 
-    Uses Unicode definition of alphabetic characters.
+    - Uses Unicode definition of alphabetic characters.
+    """
+
+# . check: string
+def is_str_dot(token: str, token_len: int = -1) -> bool:
+    """(cfunc) Check whether `token` is a single-character dot `'.'` `<'bool'>`.
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` is a single-character dot `'.'`; False otherwise.
+    """
+
+def is_str_comma(token: str, token_len: int = -1) -> bool:
+    """(cfunc) Check whether `token` is a single-character comma `','` `<'bool'>`.
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` is a single-character comma `'.,`; False otherwise.
+    """
+
+def is_str_iso_sep(token: str, token_len: int = -1) -> bool:
+    """(cfunc) Check whether `token` is an ISO 8601 date-time separator `<'bool'>`.
+
+    - Date / Time separators: `' '` or `'T'` (case-insensitive).
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` is a single-character ISO
+        date-time separator; False otherwise.
+    """
+
+def is_str_date_sep(token: str, token_len: int = -1) -> bool:
+    """(cfunc) Check whether `token` is a single-character date-field seperator `<'bool'>`.
+
+    - Date-field separators: `'-'`, `'.'` or `'/'`
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` is a single-character date-field separator; False otherwise.
+    """
+
+def is_str_time_sep(token: str, token_len: int = -1) -> bool:
+    """(cfunc) Check whether `token` is a single-character time-field seperator `<'bool'>`.
+
+    - Time-field seperator: `':'`
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` is a single-character time-field separator; False otherwise.
+    """
+
+def is_str_isoweek_sep(token: str, token_len: int = -1) -> bool:
+    """(cfunc) Check whether `token` is a single-character ISO week designator `<'bool'>`.
+
+    - ISO week designator: `'W'` (case-insensitive).
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` is a single-character ISO week designator; False otherwise.
+    """
+
+def is_str_ascii_ctl(token: str, token_len: int = -1) -> bool:
+    """(cfunc) Check whether `token` is a single control charactor `<'bool'>`.
+
+    - ASCII control characters (0-31) and (127)
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` is a single control character; False otherwise.
+    """
+
+def is_str_ascii_ctl_or_space(token: str, token_len: int = -1) -> bool:
+    """(cfunc) Check whether `token` is a single control or space charactor `<'bool'>`.
+
+    - ASCII control characters (0-31) and (127)
+    - ASCII space character: (32)
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` is a single control or space character; False otherwise.
+    """
+
+def is_str_ascii_digits(token: str, token_len: int = -1) -> bool:
+    """(cfunc) Check whether `token` only contains ASCII digits `<'bool'>`.
+
+    - ASSCI digits: `'0'` ... `'9'`
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` only contains ASCII digits; False otherwise.
+    """
+
+def is_str_ascii_letters_upper(token: str, token_len: int = -1) -> bool:
+    """(cfunc) Check whether `token` only contains uppercase ASCII letters `<'bool'>`.
+
+    - Uppercase ASCII letters: `'A'` ... `'Z'`
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` only contains uppercase ASCII letters; False otherwise.
+    """
+
+def is_str_ascii_letters_lower(token: str, token_len: int = -1) -> bool:
+    """(cfunc) Check whether `token` only contains lowercase ASCII letters `<'bool'>`.
+
+    - Lowercase ASCII letters: `'a'` ... `'z'`
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` only contains lowercase ASCII letters; False otherwise.
+    """
+
+def is_str_ascii_letters(token: str, token_len: int = -1) -> bool:
+    """(cfunc) Check whether `token` only contains letters (case-insensitive) `<'bool'>`.
+
+    - ASCII letters: `'a'` ... `'z'` and `'A'` ... `'Z'`
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` only contains letters (case-insensitive); False otherwise.
+    """
+
+def is_str_alphas(token: str, token_len: int = -1) -> bool:
+    """(cfunc) Check whether `token` only contains alphabetic characters `<'bool'>`.
+
+    - Uses Unicode definition of alphabetic characters.
+
+    :param token `<'str'>`: The input token string to check.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'bool'>`: True if `token` only contains alphabetic characters; False otherwise.
     """
 
 # . parse
-def parse_isoyear(data: str, pos: int, length: int = 0) -> int:
+def parse_numeric_kind(token: str, token_len: int = -1) -> int:
+    """(cfunc) Classify `token` string as certain numeric kind `<'int'>`.
+
+    :param token `<'str'>`: The input token string to classify.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'int'>`: Classification result:
+
+        - `1` = integer (ASCII digits only)
+        - `2` = decimal (ASCII digits with a single `'.'`; more than one `'.'` is invalid)
+        - `0` = not numeric (any other case, including empty string, `'.'` alone and prefixing `'+/-'` signs)
+    """
+
+def parse_isoyear(token: str, pos: int, token_len: int = -1) -> int:
     """(cfunc) Parse ISO format year component (YYYY) from a string,
     returns `-1` for invalid ISO years `<'int'>`.
 
     This function extracts and parses the year component from an ISO date string.
     It reads four characters starting at the specified position and converts them
     into an integer representing the year. The function ensures that the parsed
-    year is valid (i.e., between '0001' and '9999').
+    year is valid (i.e., between '0000' and '9999').
 
-    :param data `<'str'>`: The input string containing the ISO year to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO year.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO year to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO year.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO year [1..9999], or `-1` if invalid.
     """
 
-def parse_isomonth(data: str, pos: int, size: int = 0) -> int:
+def parse_isomonth(token: str, pos: int, token_len: int = -1) -> int:
     """(cfunc) Parse ISO format month component (MM) from a string,
     returns `-1` for invalid ISO months `<'int'>`.
 
@@ -311,14 +503,15 @@ def parse_isomonth(data: str, pos: int, size: int = 0) -> int:
     into an integer representing the month. The function ensures that the parsed
     month is valid (i.e., between '01' and '12').
 
-    :param data `<'str'>`: The input string containing the ISO month to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO month.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO month to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO month.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO month `[1..12]`, or `-1` if invalid.
     """
 
-def parse_isoday(data: str, pos: int, size: int = 0) -> int:
+def parse_isoday(token: str, pos: int, token_len: int = -1) -> int:
     """(cfunc) Parse ISO format day component (DD) from a string,
     returns `-1` for invalid ISO days `<'int'>`.
 
@@ -327,14 +520,15 @@ def parse_isoday(data: str, pos: int, size: int = 0) -> int:
     into an integer representing the day. The function ensures that the parsed day
     is valid (i.e., between '01' and '31').
 
-    :param data `<'str'>`: The input string containing the ISO day to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO day.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO day to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO day.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO day `[1..31]`, or `-1` if invalid.
     """
 
-def parse_isoweek(data: str, pos: int, size: int = 0) -> int:
+def parse_isoweek(token: str, pos: int, token_len: int = -1) -> int:
     """(cfunc) Parse an ISO format week number component (WW) from a string,
     returns `-1` for invalid ISO week number `<'int'>`.
 
@@ -343,14 +537,15 @@ def parse_isoweek(data: str, pos: int, size: int = 0) -> int:
     into an integer representing the week number. The function ensures that the
     parsed week number is valid (i.e., between '01' and '53').
 
-    :param data `<'str'>`: The input string containing the ISO week number to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO week number.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO week number to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO week number.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO week number `[1..53]`, or `-1` if invalid.
     """
 
-def parse_isoweekday(data: str, pos: int, size: int = 0) -> int:
+def parse_isoweekday(token: str, pos: int, token_len: int = -1) -> int:
     """(cfunc) Parse an ISO format weekday component (D) from a string,
     returns `-1` for invalid ISO weekdays `<'int'>`.
 
@@ -358,15 +553,16 @@ def parse_isoweekday(data: str, pos: int, size: int = 0) -> int:
     It reads a single character at the specified position and converts it into an
     integer representing the ISO weekday, where Monday is 1 and Sunday is 7.
 
-    :param data `<'str'>`: The input string containing the ISO weekday to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO weekday.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO weekday to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO weekday.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO weekday `[1..7]`, or `-1` if invalid.
     """
 
-def parse_isoyearday(data: str, pos: int, size: int = 0) -> int:
-    """(cfunc) Parse an ISO format day of the year component (DDD) from a string,
+def parse_isodoy(token: str, pos: int, token_len: int = -1) -> int:
+    """(cfunc) Parse an ISO format day-of-year component (DDD) from a string,
     returns `-1` for invalid ISO day of the year `<'int'>`.
 
     This function extracts and parses the day of the year from an ISO date string.
@@ -374,14 +570,15 @@ def parse_isoyearday(data: str, pos: int, size: int = 0) -> int:
     into an integer representing the day of the year. The function ensures that the
     parsed days are valid (i.e., between '001' and '366').
 
-    :param data `<'str'>`: The input string containing the ISO day of the year to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO day of the year.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO day of the year to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO day of the year.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO day of the year `[1..366]`, or `-1` if invalid.
     """
 
-def parse_isohour(data: str, pos: int, size: int = 0) -> int:
+def parse_isohour(token: str, pos: int, token_len: int = -1) -> int:
     """(cfunc) Parse an ISO format hour (HH) component from a string,
     returns `-1` for invalid ISO hours `<'int'>`.
 
@@ -390,14 +587,15 @@ def parse_isohour(data: str, pos: int, size: int = 0) -> int:
     integer representing the hours. The function ensures that the parsed hours are valid
     (i.e., between '00' and '23').
 
-    :param data `<'str'>`: The input string containing the ISO hour to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO hour.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO hour to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO hour.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO hour `[0..23]`, or `-1` if invalid.
     """
 
-def parse_isominute(data: str, pos: int, size: int = 0) -> int:
+def parse_isominute(token: str, pos: int, token_len: int = -1) -> int:
     """(cfunc) Parse an ISO format minute (MM) component from a string,
     returns `-1` for invalid ISO minutes `<'int'>`.
 
@@ -406,14 +604,15 @@ def parse_isominute(data: str, pos: int, size: int = 0) -> int:
     integer representing the minutes. The function ensures that the parsed minutes are valid
     (i.e., between '00' and '59').
 
-    :param data `<'str'>`: The input string containing the ISO minute to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO minute.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO minute to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO minute.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO minute `[0..59]`, or `-1` if invalid.
     """
 
-def parse_isosecond(data: str, pos: int, size: int = 0) -> int:
+def parse_isosecond(token: str, pos: int, token_len: int = -1) -> int:
     """(cfunc) Parse an ISO format second (SS) component from a string,
     returns `-1` for invalid ISO seconds `<'int'>`.
 
@@ -422,14 +621,15 @@ def parse_isosecond(data: str, pos: int, size: int = 0) -> int:
     integer representing the seconds. The function ensures that the parsed seconds are valid
     (i.e., between '00' and '59').
 
-    :param data `<'str'>`: The input string containing the ISO second to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO second.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO second to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO second.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO second `[0..59]`, or `-1` if invalid.
     """
 
-def parse_isofraction(data: str, pos: int, size: int = 0) -> int:
+def parse_isofraction(token: str, pos: int, token_len: int = -1) -> int:
     """(cfunc) Parse an ISO fractional time component (fractions of a second) from a string,
     returns `-1` for invalid ISO fraction `<'int'>`.
 
@@ -438,30 +638,109 @@ def parse_isofraction(data: str, pos: int, size: int = 0) -> int:
     after the starting position, padding with zeros if necessary to ensure a six-digit
     integer representation.
 
-    :param data `<'str'>`: The input string containing the ISO fraction to parse.
-    :param pos `<'int'>`: The starting position in the string of the ISO fraction.
-    :param length `<'int'>`: Optional length of the input 'data' string. Defaults to `0`.
-        If 'length <= 0', computes the length of the 'data' string internally.
+    :param token `<'str'>`: The input token string containing the ISO fraction to parse.
+    :param pos `<'int'>`: The starting position in the `token` of the ISO fraction.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The parsed ISO fraction `[0..999,999]`, or `-1` if invalid.
     """
 
-def slice_to_uint(data: str, start: int, size: int) -> int:
+def parse_second_and_fraction(token: str, pos: int, token_len: int = -1) -> dict:
+    """(cfunc) Parse a `seconds` token with an optional fractional part into (second, microsecond) `<'struct:sf'>`.
+
+    This reads a decimal token starting at `pos` for whole `seconds`, optionally
+    followed by a dot `.` and up to 6 fractional digits which are scaled to
+    microseconds (truncated if more digits appear beyond 6). The function is
+    intentionally strict and returns an invalid result for out-of-domain inputs.
+
+    :param token `<'str'>`: The input token string containing `seconds` information.
+    :param pos `<'int'>`: The starting position in the `token` of the `seconds`.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'struct:sf'>`: A small struct with fields:
+
+        - `second`: parsed whole seconds (0..59) or -1 if invalid
+        - `microsecond`: parsed fractional part in microseconds (0..999_999),
+            or -1 if no fraction / value is invalid,
+
+    ## Rules
+    - Input format: `'SS'` or `'SS.f'` where `S` and `f` are ASCII digits.
+    - Decimal separator: dot only `'.'`; comma is NOT accepted.
+    - Fraction length: up to 6 digits kept; extra digits (if any) stop parsing
+      early and are `ignored` (no rounding).
+    - Seconds domain: 0..59 only. Leap-second `60` is not accepted.
+    - Whitespace and other characters terminate parsing.
+    - On any invalid input (e.g., no digits, seconds > 59, out-of-bounds indexes),
+      returns `sf(second=-1, microsecond=-1)`.
+    """
+
+def scale_fraction_to_us(fraction: int, fraction_size: int) -> int:
+    """(cfunc) Scale a fractional time component to microseconds based on its size `<'int'>`.
+
+    This function takes a fractional time component (e.g., milliseconds, microseconds)
+    and scales it to microseconds based on the number of digits provided. It supports
+    fractions with sizes ranging from 1 to 6 digits.
+
+    :param fraction `<'int'>`: The fractional time component to scale.
+    :param fraction_size `<'int'>`: The number of digits in the fractional component.
+        Must be in the range [1..6].
+    :returns `<'int'>`: The scaled fractional time in microseconds.
+        Returns `-1` if `fraction_size` is out of range.
+
+    ## Example
+    >>> scale_fraction_to_us(123, 3)
+        # 123 milliseconds → 123000 microseconds
+    """
+
+# . slice and convert
+def slice_to_uint(token: str, start: int, size: int, token_len=-1) -> int:
     """(cfunc) Slice a substring from a string and convert to an unsigned integer `<'int'>`.
 
-    This function slices a portion of the input string 'data' starting
+    This function slices a portion of the input `token` string starting
     at 'start' and spanning 'size' of characters. The sliced substring is
     validated to ensure it contains only ASCII digits, before converting
     to unsigned integer.
 
-    :param data `<'str'>`: The input string to slice and convert.
-    :param start `<'int'>`: The starting index for slicing the string.
+    :param token `<'str'>`: The input token string to slice and convert.
+    :param start `<'int'>`: The starting index for slicing the `token`.
     :param size `<'int'>`: The size of the slice.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
     :returns `<'int'>`: The converted unsigned integer.
-    :raises `<'ValueError'>`: When the slice is out of range,
-        or contains non-digit characters.
+    :raises `<'ValueError'>`: When the slice is out of range, or contains non-digit characters.
+
+    ## Notice
+    - Only ASCII digits ('0' to '9') are accepted.
 
     ## Equivalent
-    >>> int(data[start:start+size])
+    >>> int(data[start:start+size])  # without '+/-' signs
+    """
+
+def slice_to_ufloat(token: str, start: int, size: int, token_len=-1) -> int:
+    """(cfunc) Slice a substring from a string and convert to a non-negative double-precision float `<'float'>`.
+
+    This function slices a portion of the input `token` string starting
+    at 'start' and spanning 'size' of characters. The sliced substring is
+    then converted to a non-negative double-precision floating-point number.
+
+    :param token `<'str'>`: The input token string to slice and convert.
+    :param start `<'int'>`: The starting index for slicing the `token`.
+    :param size `<'int'>`: The size of the slice.
+    :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+        If `token_len <= 0`, the function computes the length.
+        Otherwise, `token_len` is treated as the token length.
+    :returns `<'float'>`: The converted non-negative double-precision float.
+    :raises `<'ValueError'>`: When the slice is out of range, or cannot be converted to float.
+
+    ## Notice
+    - Only ASCII digits ('0' to '9') are accepted.
+    - At most one decimal point ('.') is allowed.
+
+    ## Equivalent
+    >>> float(data[start:start+size])  # without '+/-' signs
     """
 
 # Time ----------------------------------------------------------------------------------------------

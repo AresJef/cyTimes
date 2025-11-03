@@ -49,6 +49,7 @@ EPOCH_C400: cython.longlong = math_div_floor(1970, 400)  # type: ignore
 EPOCH_CBASE: cython.longlong = EPOCH_C4 - EPOCH_C100 + EPOCH_C400
 # . timezone
 UTC: datetime.tzinfo = datetime.get_utc()
+NULL_TZOFFSET: cython.int = -100_000  # Sentinel for null offset
 # . conversion for seconds
 SS_MINUTE: cython.longlong = 60
 SS_HOUR: cython.longlong = SS_MINUTE * 60
@@ -300,6 +301,8 @@ def _test_utils() -> None:
     # math
     _test_math()
     _test_ndarray_math()
+    _test_slice_to_uint()
+    _test_slice_to_ufloat()
     # hmsf
     _test_sec_to_us()
     _cross_test_with_ndarray()
@@ -312,88 +315,202 @@ def _test_parser() -> None:
         s = chr(i)
         # is_iso_sep
         if s in ("t", "T", " "):
-            assert is_iso_sep(s)  # type: ignore
+            assert is_iso_sep(i)  # type: ignore
+            assert is_str_iso_sep(s)  # type: ignore
         else:
-            assert not is_iso_sep(s)  # type: ignore
-        # is_isodate_sep
-        if s in ("-", "/"):
-            assert is_isodate_sep(s)  # type: ignore
+            assert not is_iso_sep(i)  # type: ignore
+            assert not is_str_iso_sep(s)  # type: ignore
+        # is_date_sep
+        if s in ("-", "/", "."):
+            assert is_date_sep(i)  # type: ignore
+            assert is_str_date_sep(s)  # type: ignore
         else:
-            assert not is_isodate_sep(s)  # type: ignore
+            assert not is_date_sep(i)  # type: ignore
+            assert not is_str_date_sep(s)  # type: ignore
+        # is_time_sep
+        if s == ":":
+            assert is_time_sep(i)  # type: ignore
+            assert is_str_time_sep(s)  # type: ignore
+        else:
+            assert not is_time_sep(i)  # type: ignore
+            assert not is_str_time_sep(s)  # type: ignore
         # is_isoweek_sep
         if s in ("w", "W"):
-            assert is_isoweek_sep(s)  # type: ignore
+            assert is_isoweek_sep(i)  # type: ignore
+            assert is_str_isoweek_sep(s)  # type: ignore
         else:
-            assert not is_isoweek_sep(s)  # type: ignore
-        # is_isotime_sep
-        if s == ":":
-            assert is_isotime_sep(s)  # type: ignore
-        else:
-            assert not is_isotime_sep(s)  # type: ignore
+            assert not is_isoweek_sep(i)  # type: ignore
+            assert not is_str_isoweek_sep(s)  # type: ignore
         # is_ascii_digit
         if s in "0123456789":
-            assert is_ascii_digit(s)  # type: ignore
+            assert is_ascii_digit(i)  # type: ignore
+            assert is_str_ascii_digits(s)  # type: ignore
         else:
-            assert not is_ascii_digit(s)  # type: ignore
+            assert not is_ascii_digit(i)  # type: ignore
+            assert not is_str_ascii_digits(s)  # type: ignore
         # is_ascii_letter_upper
         if s in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
-            assert is_ascii_letter_upper(s)  # type: ignore
+            assert is_ascii_letter_upper(i)  # type: ignore
+            assert is_str_ascii_letters_upper(s)  # type: ignore
         else:
-            assert not is_ascii_letter_upper(s)  # type: ignore
+            assert not is_ascii_letter_upper(i)  # type: ignore
+            assert not is_str_ascii_letters_upper(s)  # type: ignore
         # is_ascii_letter_lower
         if s in "abcdefghijklmnopqrstuvwxyz":
-            assert is_ascii_letter_lower(s)  # type: ignore
+            assert is_ascii_letter_lower(i)  # type: ignore
+            assert is_str_ascii_letters_lower(s)  # type: ignore
         else:
-            assert not is_ascii_letter_lower(s)  # type: ignore
+            assert not is_ascii_letter_lower(i)  # type: ignore
+            assert not is_str_ascii_letters_lower(s)  # type: ignore
         # alphabetic
         if s in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz":
-            assert is_ascii_letter(s)  # type: ignore
-            assert is_alpha(s)  # type: ignore
+            assert is_ascii_letter(i)  # type: ignore
+            assert is_str_ascii_letters(s)  # type: ignore
+            assert is_alpha(i)  # type: ignore
+            assert is_str_alphas(s)  # type: ignore
         else:
-            assert not is_ascii_letter(s)  # type: ignore
-            assert not is_alpha(s)  # type: ignore
+            assert not is_ascii_letter(i)  # type: ignore
+            assert not is_str_ascii_letters(s)  # type: ignore
+            assert not is_alpha(i)  # type: ignore
+            assert not is_str_alphas(s)  # type: ignore
         # ctl
         if i < 32 or i == 127:
-            assert is_ascii_ctl(s)  # type: ignore
+            assert is_ascii_ctl(i)  # type: ignore
+            assert is_str_ascii_ctl(s)  # type: ignore
         else:
-            assert not is_ascii_ctl(s)  # type: ignore
+            assert not is_ascii_ctl(i)  # type: ignore
+            assert not is_str_ascii_ctl(s)  # type: ignore
         # ctl or space
         if i <= 32 or i == 127:
-            assert is_ascii_ctl_or_space(s)  # type: ignore
+            assert is_ascii_ctl_or_space(i)  # type: ignore
+            assert is_str_ascii_ctl_or_space(s)  # type: ignore
         else:
-            assert not is_ascii_ctl_or_space(s)  # type: ignore
+            assert not is_ascii_ctl_or_space(i)  # type: ignore
+            assert not is_str_ascii_ctl_or_space(s)  # type: ignore
+
+    for k in (None, ""):
+        assert not is_str_iso_sep(k)  # type: ignore
+        assert not is_str_date_sep(k)  # type: ignore
+        assert not is_str_time_sep(k)  # type: ignore
+        assert not is_str_isoweek_sep(k)  # type: ignore
+        assert not is_str_ascii_ctl(k)  # type: ignore
+        assert not is_str_ascii_ctl_or_space(k)  # type: ignore
+        assert not is_str_ascii_digits(k)  # type: ignore
+        assert not is_str_ascii_letters_upper(k)  # type: ignore
+        assert not is_str_ascii_letters_lower(k)  # type: ignore
+        assert not is_str_ascii_letters(k)  # type: ignore
+        assert not is_str_alphas(k)  # type: ignore
 
     # Alphabetic extend case
     for i in range(192, 208):
         assert not is_ascii_letter(i)  # type: ignore
+        assert not is_str_ascii_letters(chr(i))  # type: ignore
         assert is_alpha(i)  # type: ignore
+        assert is_str_alphas(chr(i))  # type: ignore
 
     # Parse
+    # . parse_numeric_kind
+    assert parse_numeric_kind("1", 0) == 1  # type: ignore
+    assert parse_numeric_kind("1.", 0) == 2  # type: ignore
+    assert parse_numeric_kind("1.1", 0) == 2  # type: ignore
+    assert parse_numeric_kind(".1", 0) == 2  # type: ignore
+    assert parse_numeric_kind("0.1", 0) == 2  # type: ignore
+    assert parse_numeric_kind("", 0) == 0  # type: ignore
+    assert parse_numeric_kind(None, 0) == 0  # type: ignore
+    assert parse_numeric_kind("1a", 0) == 0  # type: ignore
+
+    # . parse_isoyear
     t: str = "2021-01-02T03:04:05.006007"
-    assert parse_isoyear(t, 0, 0) == 2021  # type: ignore
-    assert parse_isoyear(t, 1, 0) == -1  # type: ignore
-    assert parse_isomonth(t, 5, 0) == 1  # type: ignore
-    assert parse_isomonth(t, 6, 0) == -1  # type: ignore
-    assert parse_isoday(t, 8, 0) == 2  # type: ignore
-    assert parse_isoday(t, 9, 0) == -1  # type: ignore
+    assert parse_isoyear(t, 0) == 2021  # type: ignore
+    assert parse_isoyear(t, 1) == -1  # type: ignore
+    assert parse_isoyear(None, 1) == -1  # type: ignore
 
+    # . parse_isomonth
+    assert parse_isomonth(t, 5) == 1  # type: ignore
+    assert parse_isomonth(t, 6) == -1  # type: ignore
+    assert parse_isomonth(None, 6) == -1  # type: ignore
+
+    # . parse_isoday
+    assert parse_isoday(t, 8) == 2  # type: ignore
+    assert parse_isoday(t, 9) == -1  # type: ignore
+    assert parse_isoday(None, 9) == -1  # type: ignore
+
+    # . parse_isoweek
     t = "2021-W52-6"
-    assert parse_isoweek(t, 6, 0) == 52  # type: ignore
-    assert parse_isoweek(t, 7, 0) == -1  # type: ignore
-    assert parse_isoweekday(t, 9, 0) == 6  # type: ignore
-    assert parse_isoweekday(t, 8, 0) == -1  # type: ignore
-    assert parse_isoweekday(t, 10, 0) == -1  # type: ignore
-    assert parse_isoweekday(t, 1, 0) == -1  # type: ignore
-    assert parse_isoweekday(t, 0, 0) == 2  # type: ignore
+    assert parse_isoweek(t, 6) == 52  # type: ignore
+    assert parse_isoweek(t, 7) == -1  # type: ignore
+    assert parse_isoweek(None, 7) == -1  # type: ignore
 
+    # . parse_isoweekday
+    assert parse_isoweekday(t, 9) == 6  # type: ignore
+    assert parse_isoweekday(t, 8) == -1  # type: ignore
+    assert parse_isoweekday(t, 10) == -1  # type: ignore
+    assert parse_isoweekday(t, 1) == -1  # type: ignore
+    assert parse_isoweekday(t, 0) == 2  # type: ignore
+    assert parse_isoweekday(None, 0) == -1  # type: ignore
+
+    # . parse_isodoy
     t = "2021-365"
-    assert parse_isoyearday(t, 5, 0) == 365  # type: ignore
-    assert parse_isoyearday(t, 6, 0) == -1  # type: ignore
-    assert parse_isoyearday(t, 4, 0) == -1  # type: ignore
+    assert parse_isodoy(t, 5) == 365  # type: ignore
+    assert parse_isodoy(t, 6) == -1  # type: ignore
+    assert parse_isodoy(t, 4) == -1  # type: ignore
     t = "2021-367"
-    assert parse_isoyearday(t, 5, 0) == -1  # type: ignore
+    assert parse_isodoy(t, 5) == -1  # type: ignore
     t = "2021-000"
-    assert parse_isoyearday(t, 5, 0) == -1  # type: ignore
+    assert parse_isodoy(t, 5) == -1  # type: ignore
+    assert parse_isodoy(None, 4) == -1  # type: ignore
+
+    # . parse_isohour
+    t = "03:04:05"
+    assert parse_isohour(t, 0) == 3  # type: ignore
+    assert parse_isohour(t, 1) == -1  # type: ignore
+    assert parse_isohour(None, 1) == -1  # type: ignore
+
+    # . parse_isominute
+    assert parse_isominute(t, 3) == 4  # type: ignore
+    assert parse_isominute(t, 4) == -1  # type: ignore
+    assert parse_isominute(None, 4) == -1  # type: ignore
+
+    # . parse_isosecond
+    assert parse_isosecond(t, 6) == 5  # type: ignore
+    assert parse_isosecond(t, 7) == -1  # type: ignore
+    assert parse_isosecond(None, 7) == -1  # type: ignore
+
+    # . parse_isofraction
+    assert parse_isofraction(".1", 1) == 100_000  # type: ignore
+    assert parse_isofraction(".01", 1) == 10_000  # type: ignore
+    assert parse_isofraction(".123456", 1) == 123456  # type: ignore
+    assert parse_isofraction(".1234567", 1) == 123456  # type: ignore
+    assert parse_isofraction("", 1) == -1  # type: ignore
+    assert parse_isofraction(None, 1) == -1  # type: ignore
+
+    # . parse_second_and_fraction
+    for t, ss, us in (
+        ("1", 1, -1),
+        ("1.", 1, -1),
+        ("1.0", 1, 0),
+        ("1.12", 1, 120_000),
+        ("1.123456", 1, 123_456),
+        ("1.1234567", 1, 123_456),
+        ("0.1", 0, 100_000),
+        ("0.12", 0, 120_000),
+        ("0.123456", 0, 123_456),
+        ("0.1234567", 0, 123_456),
+        (".1", 0, 100_000),
+        (".12", 0, 120_000),
+        (".123456", 0, 123_456),
+        (".1234567", 0, 123_456),
+    ):
+        out = parse_second_and_fraction(t, 0)  # type: ignore
+        assert out.second == ss, f"{t}: {out.second} != {ss}"
+        assert out.microsecond == us, f"{t}: {out.microsecond} != {us}"
+
+    out = parse_second_and_fraction("", 0)  # type: ignore
+    assert out.second == -1, f"{out.second} != -1"
+    assert out.microsecond == -1, f"{out.microsecond} != -1"
+    out = parse_second_and_fraction(None, 0)  # type: ignore
+    assert out.second == -1, f"{out.second} != -1"
+    assert out.microsecond == -1, f"{out.microsecond} != -1"
 
     print("Passed: parser")
 
@@ -2252,3 +2369,73 @@ def _cross_test_with_ndarray() -> None:
     print("Passed: cross_test_with_ndarray")
 
     del np
+
+
+def _test_slice_to_uint() -> None:
+    non_digits = " +-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    i_str = "0123456789"
+    i_len: cython.Py_ssize_t = len(i_str)
+    for pfix in non_digits:
+        try:
+            slice_to_uint(pfix + i_str, 0, i_len + 1)  # type: ignore
+        except ValueError:
+            pass
+
+    for sfix in non_digits:
+        try:
+            slice_to_uint(i_str + sfix, 0, i_len + 1)  # type: ignore
+        except ValueError:
+            pass
+
+    try:
+        slice_to_uint("", 0, 1)  # type: ignore
+    except ValueError:
+        pass
+
+    try:
+        slice_to_uint("", 0, 0)  # type: ignore
+    except ValueError:
+        pass
+
+    assert slice_to_uint(i_str, 0, i_len) == 123456789  # type: ignore
+
+    print("Passed: slice_to_uint")
+
+
+def _test_slice_to_ufloat() -> None:
+
+    assert slice_to_ufloat("1", 0, 1) == 1.0  # type: ignore
+    assert slice_to_ufloat("1.1", 0, 3) == 1.1  # type: ignore
+    assert slice_to_ufloat("0.1", 0, 3) == 0.1  # type: ignore
+    assert slice_to_ufloat(".1", 0, 2) == 0.1  # type: ignore
+    assert slice_to_ufloat("1.", 0, 2) == 1.0  # type: ignore
+
+    for i in (
+        "1.1.1",
+        "1..1",
+        "..1",
+        "1..",
+        ".",
+        "a1.1",
+        "1.1a",
+        "-1.1",
+        "+1.1",
+        " 1.1",
+        "1.1 ",
+    ):
+        try:
+            slice_to_ufloat(i, 0, len(i))  # type: ignore
+        except ValueError:
+            pass
+
+    try:
+        slice_to_ufloat("", 0, 1)  # type: ignore
+    except ValueError:
+        pass
+
+    try:
+        slice_to_ufloat("", 0, 0)  # type: ignore
+    except ValueError:
+        pass
+
+    print("Passed: slice_to_ufloat")
