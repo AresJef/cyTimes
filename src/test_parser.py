@@ -191,7 +191,7 @@ class TestParser(TestCase):
         ('2 Ağustos 2023 saat 12:01', '2023-08-02 12:01:00', '2023-08-02 12:01:00'),
         ('2 agosto 2023 ore 12:01', '2023-08-02 12:01:00', '2023-08-02 12:01:00'),
         ('2 de agosto de 2023', '2023-08-02 00:00:00', '2023-08-02 00:00:00'),
-        ('2 de agosto de 2023 a las 12:01', '0001-08-02 12:01:00', '0001-08-02 12:01:00'),
+        ('2 de agosto de 2023 a las 12:01', '2023-08-02 12:01:00', '2023-08-02 12:01:00'),
         ('2 Αυγούστου 2023, 12:01', '2023-02-01 12:01:00', '2023-02-01 12:01:00'),
         ('2 августа 2023 г. в 12:01', '2023-02-01 12:01:00', '2023-02-01 12:01:00'),
         ('2 अगस्त 2023, 12:01 अपराह्न', '2023-02-01 12:01:00', '2023-02-01 12:01:00'),
@@ -485,6 +485,8 @@ class TestParser(TestCase):
         ('2023-August-2', '2023-08-02 00:00:00', '2023-08-02 00:00:00'),
         ('2023-August-2 12:01', '2023-08-02 12:01:00', '2023-08-02 12:01:00'),
         ('2023-August-2 12:01:01', '2023-08-02 12:01:01', '2023-08-02 12:01:01'),
+        ('2023-W31', '2023-07-31 00:00:00', '2023-07-31 00:00:00'),
+        ('2023-W31T12:01:01.001', '2023-07-31 12:01:01.001000', '2023-07-31 12:01:01.001000'),
         ('2023-W31-3', '2023-08-02 00:00:00', '2023-08-02 00:00:00'),
         ('2023-W31-3T12:01:01.001', '2023-08-02 12:01:01.001000', '2023-08-02 12:01:01.001000'),
         ('2023.02.08 22:01 PM', '2023-02-08 22:01:00', '2023-02-08 22:01:00'),
@@ -723,7 +725,7 @@ class TestParser(TestCase):
         ('November 5, 1994, 8:15:30 am +23:59 (EST)', '1994-11-05 08:15:30', '1994-11-05 08:15:30+23:59'),
         ('November 5, 1994, 8:15:30 am +23:59(EST)', '1994-11-05 08:15:30', '1994-11-05 08:15:30+23:59'),
         ('November 5, 1994, 8:15:30 am EST', '1994-11-05 08:15:30', '1994-11-05 08:15:30-05:00'),
-        ('November 5, 1994, 8:15:30 am EST+23:59', '1994-11-05 08:15:30', '1994-11-05 08:15:30-23:59'),
+        ('November 5, 1994, 8:15:30 am EST+2', '1994-11-05 08:15:30', '1994-11-05 08:15:30-03:00'),
         ('October', '0001-10-01 00:00:00', '0001-10-01 00:00:00'),
         ('On June 8th, 2020, I am going to be the first man on Mars', '2020-06-08 00:00:00', '2020-06-08 00:00:00'),
         ('Sat 2023-08-02', '2023-08-05 00:00:00', '2023-08-05 00:00:00'),
@@ -755,70 +757,372 @@ class TestParser(TestCase):
         # fmt: on
     ]
 
-    def test_all(self) -> None:
+    def test_all(self, rounds: int) -> None:
         self.test_configs()
-        self.test_timelex()
-        self.test_parser()
+        self.test_timelex(rounds)
+        self.test_parser(rounds, isoformat=True, ignoretz=True)
+        self.test_parser(rounds, isoformat=True, ignoretz=False)
+        self.test_parser(rounds, isoformat=False, ignoretz=True)
+        self.test_parser(rounds, isoformat=False, ignoretz=False)
+        self.test_custom_dtclass()
 
     def test_configs(self) -> None:
         from cytimes.parser import Configs
         from dateutil.parser import parserinfo
+        from cytimes import errors
 
         test = "Configs"
         self.log_start(test)
 
-        # Test if default has conflicts
+        # Build default configs
         cfg = Configs()
 
+        # Clear settings
+        cfg.clear_settings()
+        self.assertFalse(len(cfg.jump))
+        self.assertFalse(len(cfg.pertain))
+        self.assertFalse(len(cfg.utc))
+        self.assertFalse(len(cfg.tz))
+        self.assertFalse(len(cfg.month))
+        self.assertFalse(len(cfg.weekday))
+        self.assertFalse(len(cfg.hms))
+        self.assertFalse(len(cfg.ampm))
+
+        # Reset to defaults
+        cfg.reset_settings()
+        self.assertTrue(len(cfg.jump))
+        self.assertTrue(len(cfg.pertain))
+        self.assertTrue(len(cfg.utc))
+        self.assertFalse(len(cfg.tz))
+        self.assertTrue(len(cfg.month))
+        self.assertTrue(len(cfg.weekday))
+        self.assertTrue(len(cfg.hms))
+        self.assertTrue(len(cfg.ampm))
+
+        # Test Jump
+        org_jump = cfg.jump
+        new_jump = {"and", "ad", "th"}
+        cfg.replace_jump(set())  # . clear jump
+        self.assertFalse(len(cfg.jump))
+        self.assertFalse(cfg.is_jump("and"))
+        cfg.add_jump("and")  # . add jump
+        self.assertEqual(len(cfg.jump), 1)
+        self.assertTrue(cfg.is_jump("and"))  # . lowercase
+        self.assertTrue(cfg.is_jump("AND"))  # . uppercase
+        self.assertTrue(cfg.is_jump("And"))  # . titlecase
+        self.assertFalse(cfg.is_jump("aND"))  # . worng case
+        self.assertTrue(cfg.remove_jump("and"))  # . remove jump
+        self.assertFalse(cfg.is_jump("and"))
+        self.assertFalse(cfg.is_jump("AND"))
+        self.assertFalse(cfg.is_jump("And"))
+        self.assertFalse(len(cfg.jump))
+        self.assertFalse(cfg.remove_jump("and"))
+        cfg.replace_jump(new_jump)  # . replace jump
+        self.assertEqual(cfg.jump, new_jump)
+        cfg.add_jump("mon")  # accept overlap (overlap with weekday)
+        cfg.replace_jump(None)  # . reset jump
+        self.assertEqual(cfg.jump, org_jump)
+
+        # Test Pertain
+        org_pertain = cfg.pertain
+        new_pertain = {"of", "the", "in"}
+        cfg.replace_pertain(set())  # . clear pertain
+        self.assertFalse(len(cfg.pertain))
+        self.assertFalse(cfg.is_pertain("of"))
+        cfg.add_pertain("of")  # . add pertain
+        self.assertEqual(len(cfg.pertain), 1)
+        self.assertTrue(cfg.is_pertain("of"))  # . lowercase
+        self.assertTrue(cfg.is_pertain("OF"))  # . uppercase
+        self.assertTrue(cfg.is_pertain("Of"))  # . titlecase
+        self.assertFalse(cfg.is_pertain("oF"))  # . worng case
+        self.assertTrue(cfg.remove_pertain("of"))  # . remove pertain
+        self.assertFalse(cfg.is_pertain("of"))
+        self.assertFalse(cfg.is_pertain("OF"))
+        self.assertFalse(cfg.is_pertain("Of"))
+        self.assertFalse(len(cfg.pertain))
+        self.assertFalse(cfg.remove_pertain("of"))
+        cfg.replace_pertain(new_pertain)  # . replace pertain
+        self.assertEqual(cfg.pertain, new_pertain)
+        with self.assertRaises(errors.InvalidConfigsValue):
+            cfg.add_pertain("mon")  # conflict with weekday
+        cfg.replace_pertain(None)  # . reset pertain
+        self.assertEqual(cfg.pertain, org_pertain)
+
+        # Test UTC
+        org_utc = cfg.utc
+        new_utc = {"utc", "z", "gmt"}
+        cfg.replace_utc(set())  # . clear utc
+        self.assertFalse(len(cfg.utc))
+        self.assertFalse(cfg.is_utc("UTC"))
+        cfg.add_utc("UTC")  # . add utc
+        self.assertEqual(len(cfg.utc), 1)
+        self.assertTrue(cfg.is_utc("UTC"))  # . uppercase
+        self.assertTrue(cfg.is_utc("utc"))  # . lowercase
+        self.assertTrue(cfg.is_utc("Utc"))  # . titlecase
+        self.assertFalse(cfg.is_utc("uTC"))  # . worng case
+        self.assertTrue(cfg.remove_utc("UTC"))  # . remove utc
+        self.assertFalse(cfg.is_utc("UTC"))
+        self.assertFalse(cfg.is_utc("utc"))
+        self.assertFalse(cfg.is_utc("Utc"))
+        self.assertFalse(len(cfg.utc))
+        self.assertFalse(cfg.remove_utc("UTC"))
+        cfg.replace_utc(new_utc)  # . replace utc
+        self.assertEqual(cfg.utc, new_utc)
+        with self.assertRaises(errors.InvalidConfigsValue):
+            cfg.add_utc("mon")  # conflict with weekday
+        cfg.replace_utc(None)  # . reset utc
+        self.assertEqual(cfg.utc, org_utc)
+
+        # Test TZ
+        org_tz = cfg.tz
+        new_tz = {"abc": -5, "def": 3, "xyz": 0}
+        cfg.replace_tz(dict())  # . clear tz
+        self.assertFalse(len(cfg.tz))
+        self.assertFalse(cfg.is_tz("abc"))
+        cfg.add_tz("abc", seconds=-5)  # . add tz
+        self.assertEqual(len(cfg.tz), 1)
+        self.assertTrue(cfg.is_tz("ABC"))  # . uppercase
+        self.assertTrue(cfg.is_tz("abc"))  # . lowercase
+        self.assertTrue(cfg.is_tz("Abc"))  # . titlecase
+        self.assertFalse(cfg.is_tz("aBC"))  # . worng case
+        self.assertEqual(cfg.get_tz_offset("ABC"), -5)  # uppercase
+        self.assertEqual(cfg.get_tz_offset("abc"), -5)  # lowercase
+        self.assertEqual(cfg.get_tz_offset("Abc"), -5)  # titlecase
+        self.assertEqual(cfg.get_tz_offset("aBC"), -100_000)  # worng case
+        self.assertTrue(cfg.remove_tz("abc"))  # . remove tz
+        self.assertFalse(cfg.is_tz("ABC"))
+        self.assertFalse(cfg.is_tz("abc"))
+        self.assertFalse(cfg.is_tz("Abc"))
+        self.assertEqual(cfg.get_tz_offset("ABC"), -100_000)
+        self.assertEqual(cfg.get_tz_offset("abc"), -100_000)
+        self.assertEqual(cfg.get_tz_offset("Abc"), -100_000)
+        self.assertFalse(len(cfg.tz))
+        self.assertFalse(cfg.remove_tz("abc"))
+        cfg.replace_tz(new_tz)  # . replace tz
+        self.assertEqual(cfg.tz, new_tz)
+        with self.assertRaises(errors.InvalidConfigsValue):
+            cfg.add_tz("mon", 1)  # conflict with weekday
+        with self.assertRaises(errors.InvalidConfigsValue):
+            cfg.add_tz("efg", hours=-25)  # invalid offset
+        cfg.replace_tz(None)  # . reset tz
+        self.assertEqual(cfg.tz, org_tz)
+
+        # Test month
+        org_month = cfg.month
+        new_month = {"jan": 1, "feb": 2, "mar": 3}
+        cfg.replace_month(dict())  # . clear month
+        self.assertFalse(len(cfg.month))
+        self.assertFalse(cfg.is_month("jan"))
+        cfg.add_month("jan", 1)  # . add month
+        self.assertEqual(len(cfg.month), 1)
+        self.assertTrue(cfg.is_month("JAN"))  # . uppercase
+        self.assertTrue(cfg.is_month("jan"))  # . lowercase
+        self.assertTrue(cfg.is_month("Jan"))  # . titlecase
+        self.assertFalse(cfg.is_month("jAN"))  # . worng case
+        self.assertEqual(cfg.get_month("JAN"), 1)  # uppercase
+        self.assertEqual(cfg.get_month("jan"), 1)  # lowercase
+        self.assertEqual(cfg.get_month("Jan"), 1)  # titlecase
+        self.assertEqual(cfg.get_month("jAN"), -1)  # worng case
+        self.assertTrue(cfg.remove_month("jan"))  # . remove month
+        self.assertFalse(cfg.is_month("JAN"))
+        self.assertFalse(cfg.is_month("jan"))
+        self.assertFalse(cfg.is_month("Jan"))
+        self.assertEqual(cfg.get_month("JAN"), -1)
+        self.assertEqual(cfg.get_month("jan"), -1)
+        self.assertEqual(cfg.get_month("Jan"), -1)
+        self.assertFalse(len(cfg.month))
+        self.assertFalse(cfg.remove_month("jan"))
+        cfg.replace_month(new_month)  # . replace month
+        self.assertEqual(cfg.month, new_month)
+        with self.assertRaises(errors.InvalidConfigsValue):
+            cfg.add_month("mon", 1)  # conflict with weekday
+        with self.assertRaises(errors.InvalidConfigsValue):
+            cfg.add_month("efg", 13)  # invalid month number
+        cfg.replace_month(None)  # . reset month
+        self.assertEqual(cfg.month, org_month)
+
+        # Test weekday
+        org_weekday = cfg.weekday
+        new_weekday = {"mon": 0, "tue": 1, "wed": 2}
+        cfg.replace_weekday(dict())  # . clear weekday
+        self.assertFalse(len(cfg.weekday))
+        self.assertFalse(cfg.is_weekday("mon"))
+        cfg.add_weekday("mon", 0)  # . add weekday
+        self.assertEqual(len(cfg.weekday), 1)
+        self.assertTrue(cfg.is_weekday("MON"))  # . uppercase
+        self.assertTrue(cfg.is_weekday("mon"))  # . lowercase
+        self.assertTrue(cfg.is_weekday("Mon"))  # . titlecase
+        self.assertFalse(cfg.is_weekday("mON"))  # . worng case
+        self.assertEqual(cfg.get_weekday("MON"), 0)  # uppercase
+        self.assertEqual(cfg.get_weekday("mon"), 0)  # lowercase
+        self.assertEqual(cfg.get_weekday("Mon"), 0)  # titlecase
+        self.assertEqual(cfg.get_weekday("mON"), -1)  # worng case
+        self.assertTrue(cfg.remove_weekday("mon"))  # . remove weekday
+        self.assertFalse(cfg.is_weekday("MON"))
+        self.assertFalse(cfg.is_weekday("mon"))
+        self.assertFalse(cfg.is_weekday("Mon"))
+        self.assertEqual(cfg.get_weekday("MON"), -1)
+        self.assertEqual(cfg.get_weekday("mon"), -1)
+        self.assertEqual(cfg.get_weekday("Mon"), -1)
+        self.assertFalse(len(cfg.weekday))
+        self.assertFalse(cfg.remove_weekday("mon"))
+        cfg.replace_weekday(new_weekday)  # . replace weekday
+        self.assertEqual(cfg.weekday, new_weekday)
+        with self.assertRaises(errors.InvalidConfigsValue):
+            cfg.add_weekday("jan", 1)  # conflict with month
+        with self.assertRaises(errors.InvalidConfigsValue):
+            cfg.add_weekday("efg", 7)  # invalid weekday number
+        cfg.replace_weekday(None)  # . reset weekday
+        self.assertEqual(cfg.weekday, org_weekday)
+
+        # Test hms
+        org_hms = cfg.hms
+        new_hms = {"hour": 0, "minute": 1}
+        cfg.replace_hms(dict())  # . clear hms
+        self.assertFalse(len(cfg.hms))
+        self.assertFalse(cfg.is_hms("hour"))
+        cfg.add_hms("hour", 0)  # . add hms
+        self.assertEqual(len(cfg.hms), 1)
+        self.assertTrue(cfg.is_hms("HOUR"))  # . uppercase
+        self.assertTrue(cfg.is_hms("hour"))  # . lowercase
+        self.assertTrue(cfg.is_hms("Hour"))  # . titlecase
+        self.assertFalse(cfg.is_hms("hOUR"))  # . worng case
+        self.assertEqual(cfg.get_hms("HOUR"), 0)  # uppercase
+        self.assertEqual(cfg.get_hms("hour"), 0)  # lowercase
+        self.assertEqual(cfg.get_hms("Hour"), 0)  # titlecase
+        self.assertEqual(cfg.get_hms("hOUR"), -1)  # worng case
+        self.assertTrue(cfg.remove_hms("hour"))  # . remove hms
+        self.assertFalse(cfg.is_hms("HOUR"))
+        self.assertFalse(cfg.is_hms("hour"))
+        self.assertFalse(cfg.is_hms("Hour"))
+        self.assertEqual(cfg.get_hms("HOUR"), -1)
+        self.assertEqual(cfg.get_hms("hour"), -1)
+        self.assertEqual(cfg.get_hms("Hour"), -1)
+        self.assertFalse(len(cfg.hms))
+        self.assertFalse(cfg.remove_hms("hour"))
+        cfg.replace_hms(new_hms)  # . replace hms
+        self.assertEqual(cfg.hms, new_hms)
+        with self.assertRaises(errors.InvalidConfigsValue):
+            cfg.add_hms("mon", 1)  # conflict with weekday
+        with self.assertRaises(errors.InvalidConfigsValue):
+            cfg.add_hms("efg", 3)  # invalid hms flag
+        cfg.replace_hms(None)  # . reset hms
+        self.assertEqual(cfg.hms, org_hms)
+
+        # Test ampm
+        org_ampm = cfg.ampm
+        new_ampm = {"am": 0, "pm": 1}
+        cfg.replace_ampm(dict())  # . clear ampm
+        self.assertFalse(len(cfg.ampm))
+        self.assertFalse(cfg.is_ampm("am"))
+        cfg.add_ampm("am", 0)  # . add ampm
+        self.assertEqual(len(cfg.ampm), 1)
+        self.assertTrue(cfg.is_ampm("AM"))  # . uppercase
+        self.assertTrue(cfg.is_ampm("am"))  # . lowercase
+        self.assertTrue(cfg.is_ampm("Am"))  # . titlecase
+        self.assertFalse(cfg.is_ampm("aM"))  # . worng case
+        self.assertEqual(cfg.get_ampm("AM"), 0)  # uppercase
+        self.assertEqual(cfg.get_ampm("am"), 0)  # lowercase
+        self.assertEqual(cfg.get_ampm("Am"), 0)  # titlecase
+        self.assertEqual(cfg.get_ampm("aM"), -1)  # worng case
+        self.assertTrue(cfg.remove_ampm("am"))  # . remove ampm
+        self.assertFalse(cfg.is_ampm("AM"))
+        self.assertFalse(cfg.is_ampm("am"))
+        self.assertFalse(cfg.is_ampm("Am"))
+        self.assertEqual(cfg.get_ampm("AM"), -1)
+        self.assertEqual(cfg.get_ampm("am"), -1)
+        self.assertEqual(cfg.get_ampm("Am"), -1)
+        self.assertFalse(len(cfg.ampm))
+        self.assertFalse(cfg.remove_ampm("am"))
+        cfg.replace_ampm(new_ampm)  # . replace ampm
+        self.assertEqual(cfg.ampm, new_ampm)
+        with self.assertRaises(errors.InvalidConfigsValue):
+            cfg.add_ampm("mon", 1)  # conflict with weekday
+        with self.assertRaises(errors.InvalidConfigsValue):
+            cfg.add_ampm("efg", 2)  # invalid ampm flag
+        cfg.replace_ampm(None)  # . reset ampm
+        self.assertEqual(cfg.ampm, org_ampm)
+
         # Test import from parserinfo
-        try:
-            cfg = Configs.from_parserinfo("xxx")
-        except errors.InvalidParserInfo:
-            pass
-
+        with self.assertRaises(TypeError):
+            cfg = Configs.from_parserinfo("xxx")  # Invalid type
         info = parserinfo()
-        cfg = Configs.from_parserinfo(info)
+        info.JUMP = {"and", None}
+        with self.assertRaises(errors.InvalidConfigsValue):
+            cfg = Configs.from_parserinfo(info)  # Invalid jump value
 
-        # Test word conflicts validation
-        try:
-            cfg.add_hms_flag(1, 123)
-        except errors.InvalidConfigsValue:
-            pass
-        try:
-            cfg.add_hms_flag(1, "AM")
-        except errors.InvalidConfigsValue:
-            pass
-        # Test value validation
-        try:
-            cfg.add_hms_flag(-1, "xxx")
-        except errors.InvalidConfigsValue:
-            pass
+        # Proper import
+        cfg = Configs.from_parserinfo(parserinfo())
 
+        # Print default configs
+        cfg.reset_settings()
+        print(cfg)
         self.log_ended(test)
 
-    def test_timelex(self) -> None:
+    def test_timelex(self, rounds: int) -> None:
+        from timeit import timeit
         from cytimes.parser import timelex
         from dateutil.parser._parser import _timelex
 
+        def remove_spaces(dtstr: str) -> str:
+            res = ""
+            previous_was_space = False
+            for ch in dtstr:
+                if ch == " ":
+                    if not previous_was_space:
+                        res += ch
+                    previous_was_space = True
+                else:
+                    res += ch
+                    previous_was_space = False
+            if res[-1] == " ":
+                res = res[:-1]
+            return res
+
+        def perform_timelex_python() -> None:
+            for dts in self.dts:
+                list(_timelex(dts[0]))
+
+        def perform_timelex_cytimes() -> None:
+            for dts in self.dts:
+                timelex(dts[0])
+
         test = "Timelex"
         self.log_start(test)
+        # cytimes.timelex removes extra spaces between tokens
+        # so we need to normalize the inputs for comparison
+        normalized_dts = [remove_spaces(i) for i, _, _ in self.dts]
 
-        for dts in self.dts:
+        for i, dts in enumerate(self.dts):
             dt = dts[0]
-            cmp = list(_timelex(dt))
+            cmp = list(_timelex(normalized_dts[i]))
             while cmp[0] == " ":
                 cmp.pop(0)
             val = timelex(dt)
-            assert cmp == val, f"{repr(dt)}:\n{cmp}\n{val}"
+            self.assertEqual(cmp, val, f"{repr(dt)}:\n{cmp}\n{val}")
+
+        t1 = timeit(lambda: perform_timelex_python(), number=rounds)
+        print(f"Timelex dateutil: {t1:.4f} seconds for {rounds} rounds")
+        t2 = timeit(lambda: perform_timelex_cytimes(), number=rounds)
+        print(f"Timelex Cytimes : {t2:.4f} seconds for {rounds} rounds")
+        print(f"Speedup         : {t1 / t2:.2f}x")
 
         self.log_ended(test)
 
-    def test_parser(self) -> None:
-        from cytimes.parser import parse, Configs
+    def test_parser(
+        self,
+        rounds: int,
+        isoformat: bool = True,
+        ignoretz: bool = True,
+    ) -> None:
+        from cytimes.parser import Configs, Parser
 
-        test = "Parser"
+        test = (
+            f"Parser | rounds: {rounds} | isoformat: {isoformat} | ignoretz: {ignoretz}"
+        )
         self.log_start(test)
 
+        # Setup
         cfg = Configs()
         cfg.add_tz("AKDT", -8)
         cfg.add_tz("AKST", -9)
@@ -830,29 +1134,61 @@ class TestParser(TestCase):
         cfg.add_tz("EDT", -4)
         cfg.add_tz("MDT", -6)
         cfg.add_tz("PDT", -7)
-
+        parser = Parser(cfg=cfg)
         default = datetime.date(1, 1, 1)
-        for dts in self.dts:
-            try:
-                dt, base_no_tz, base_has_tz = dts
-            except:
-                print(dts)
-                raise
-            no_tz = parse(dt, default=default, ignoretz=True)
-            assert base_no_tz == str(no_tz), "%r:\nBase: %r | Pars: %r" % (
-                dt,
-                base_no_tz,
-                str(no_tz),
+
+        for dtstr, base_no_tz, base_tz in self.dts:
+            res = parser.parse(
+                dtstr,
+                default=default,
+                year1st=False,
+                ignoretz=ignoretz,
+                isoformat=isoformat,
             )
-            has_tz = parse(dt, default=default, ignoretz=False, cfg=cfg)
-            assert base_has_tz == str(has_tz), "%r:\nBase: %r | Pars: %r" % (
-                dt,
-                base_has_tz,
-                str(has_tz),
+            cmp = base_no_tz if ignoretz else base_tz
+            assert cmp == str(res), "%r:\nBase:\t%r\nParse:\t%r" % (
+                dtstr,
+                cmp,
+                str(res),
             )
+
+        for _ in range(rounds):
+            for dtstr, _, _ in self.dts:
+                parser.parse(
+                    dtstr,
+                    default=default,
+                    year1st=False,
+                    ignoretz=ignoretz,
+                    isoformat=isoformat,
+                )
+
+        self.log_ended(test)
+
+    def test_custom_dtclass(self) -> None:
+        from cytimes.parser import parse
+        from pandas import Timestamp
+        from pendulum import DateTime
+
+        test = "Custom datetime class"
+        self.log_start(test)
+
+        dtstr = "August 2, 2023 12:01 UTC"
+        res = parse(dtstr, dtclass=Timestamp)
+        self.assertIsInstance(res, Timestamp)
+        res = parse(dtstr, dtclass=Timestamp, ignoretz=False)
+        self.assertIsInstance(res, Timestamp)
+        res = parse(dtstr, dtclass=DateTime)
+        self.assertIsInstance(res, DateTime)
+        res = parse(dtstr, dtclass=DateTime, ignoretz=False)
+        self.assertIsInstance(res, DateTime)
+
+        with self.assertRaises(errors.ParserBuildError):
+            parse(dtstr, dtclass=datetime.date)
+        with self.assertRaises(errors.ParserBuildError):
+            parse(dtstr, dtclass=int)
 
         self.log_ended(test)
 
 
 if __name__ == "__main__":
-    TestParser().test_all()
+    TestParser().test_all(1000)
