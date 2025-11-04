@@ -764,7 +764,8 @@ class TestParser(TestCase):
         self.test_parser(rounds, isoformat=True, ignoretz=False)
         self.test_parser(rounds, isoformat=False, ignoretz=True)
         self.test_parser(rounds, isoformat=False, ignoretz=False)
-        self.test_custom_dtclass()
+        self.test_parse_function()
+        self.test_parse_obj_function()
 
     def test_configs(self) -> None:
         from cytimes.parser import Configs
@@ -1164,12 +1165,12 @@ class TestParser(TestCase):
 
         self.log_ended(test)
 
-    def test_custom_dtclass(self) -> None:
-        from cytimes.parser import parse
+    def test_parse_function(self) -> None:
         from pandas import Timestamp
         from pendulum import DateTime
+        from cytimes.parser import parse, Configs
 
-        test = "Custom datetime class"
+        test = "Test 'parse' function"
         self.log_start(test)
 
         dtstr = "August 2, 2023 12:01 UTC"
@@ -1186,6 +1187,109 @@ class TestParser(TestCase):
             parse(dtstr, dtclass=datetime.date)
         with self.assertRaises(errors.ParserBuildError):
             parse(dtstr, dtclass=int)
+
+        cfg = Configs()
+        cfg.add_tz("AKDT", -8)
+        cfg.add_tz("AKST", -9)
+        cfg.add_tz("EST", -5)
+        cfg.add_tz("HST", -10)
+        cfg.add_tz("MST", -7)
+        cfg.add_tz("PST", -8)
+        cfg.add_tz("CDT", -5)
+        cfg.add_tz("EDT", -4)
+        cfg.add_tz("MDT", -6)
+        cfg.add_tz("PDT", -7)
+        default = datetime.date(1, 1, 1)
+
+        for dtstr, base_no_tz, base_tz in self.dts:
+            # fmt: off
+            # Isoformat=True & ignoretz=True
+            res = parse(dtstr, default=default, year1st=False, cfg=cfg, isoformat=True, ignoretz=True)
+            assert base_no_tz == str(res), "%r:\nBase:\t%r\nParse:\t%r" % (dtstr, base_no_tz, str(res))
+
+            # Isoformat=True & ignoretz=False
+            res = parse(dtstr, default=default, year1st=False, cfg=cfg, isoformat=True, ignoretz=False)
+            assert base_tz == str(res), "%r:\nBase:\t%r\nParse:\t%r" % (dtstr, base_tz, str(res))
+
+            # Isoformat=False & ignoretz=True
+            res = parse(dtstr, default=default, year1st=False, cfg=cfg, isoformat=False, ignoretz=True)
+            assert base_no_tz == str(res), "%r:\nBase:\t%r\nParse:\t%r" % (dtstr, base_no_tz, str(res))
+
+            # Isoformat=False & ignoretz=False
+            res = parse(dtstr, default=default, year1st=False, cfg=cfg, isoformat=False, ignoretz=False)
+            assert base_tz == str(res), "%r:\nBase:\t%r\nParse:\t%r" % (dtstr, base_tz, str(res))
+
+            # No cfg: Isoformat=True & ignoretz=True
+            res = parse(dtstr, default=default, year1st=False, isoformat=True, ignoretz=True)
+            assert base_no_tz == str(res), "%r:\nBase:\t%r\nParse:\t%r" % (dtstr, base_no_tz, str(res))
+
+            # No cfg: Isoformat=False & ignoretz=True
+            res = parse(dtstr, default=default, year1st=False, isoformat=False, ignoretz=True)
+            assert base_no_tz == str(res), "%r:\nBase:\t%r\nParse:\t%r" % (dtstr, base_no_tz, str(res))
+            # fmt: on
+
+        self.log_ended(test)
+
+    def test_parse_obj_function(self) -> None:
+        import numpy as np
+        from pandas import Timestamp
+        from cytimes.parser import parse_obj
+
+        test = "Test 'parse_obj' function"
+        self.log_start(test)
+
+        dtstr = "2000-08-02"
+        dt = datetime.datetime(2000, 8, 2)
+
+        # Single string
+        res = parse_obj(dtstr)
+        self.assertIs(type(res), datetime.datetime)
+        self.assertEqual(res, dt)
+        res = parse_obj(dtstr, dtclass=Timestamp)
+        self.assertIs(type(res), Timestamp)
+        self.assertEqual(res, dt)
+
+        # Datetime
+        res = parse_obj(dt)
+        self.assertIs(type(res), datetime.datetime)
+        self.assertEqual(res, dt)
+        res = parse_obj(dt, dtclass=Timestamp)
+        self.assertIs(type(res), Timestamp)
+        self.assertEqual(res, dt)
+
+        # Date
+        date = datetime.date(2000, 8, 2)
+        res = parse_obj(date)
+        self.assertIs(type(res), datetime.datetime)
+        self.assertEqual(res, dt)
+        res = parse_obj(date, dtclass=Timestamp)
+        self.assertIs(type(res), Timestamp)
+        self.assertEqual(res, dt)
+
+        # Integer
+        res = parse_obj(1)
+        self.assertIs(type(res), datetime.datetime)
+        self.assertEqual(res, datetime.datetime(1970, 1, 1, 0, 0, 1))
+        res = parse_obj(1, dtclass=Timestamp)
+        self.assertIs(type(res), Timestamp)
+        self.assertEqual(res, datetime.datetime(1970, 1, 1, 0, 0, 1))
+
+        # Float
+        res = parse_obj(1.1)
+        self.assertIs(type(res), datetime.datetime)
+        self.assertEqual(res, datetime.datetime(1970, 1, 1, 0, 0, 1, 100000))
+        res = parse_obj(1.1, dtclass=Timestamp)
+        self.assertIs(type(res), Timestamp)
+        self.assertEqual(res, datetime.datetime(1970, 1, 1, 0, 0, 1, 100000))
+
+        # Numpy datetime64
+        np_dt64 = np.datetime64("2000-08-02T00:00:00.123456789")
+        res = parse_obj(np_dt64)
+        self.assertIs(type(res), datetime.datetime)
+        self.assertEqual(res, datetime.datetime(2000, 8, 2, 0, 0, 0, 123456))
+        res = parse_obj(np_dt64, dtclass=Timestamp)
+        self.assertIs(type(res), Timestamp)
+        self.assertEqual(res, datetime.datetime(2000, 8, 2, 0, 0, 0, 123456))
 
         self.log_ended(test)
 
