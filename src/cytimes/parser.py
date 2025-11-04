@@ -7,18 +7,16 @@ from __future__ import annotations
 # Cython imports
 import cython
 from cython.cimports.libc import math  # type: ignore
-from cython.cimports.libc.stdlib import strtoll  # type: ignore
 from cython.cimports import numpy as np  # type: ignore
 from cython.cimports.cpython import datetime  # type: ignore
 from cython.cimports.cpython.time import localtime  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_READ_CHAR as str_read  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_GET_LENGTH as str_len  # type: ignore
-from cython.cimports.cpython.unicode import PyUnicode_FromOrdinal as str_chr  # type: ignore
-from cython.cimports.cpython.unicode import PyUnicode_Replace as str_replace  # type: ignore
-from cython.cimports.cpython.unicode import PyUnicode_Contains as str_contains  # type: ignore
 from cython.cimports.cpython.set import PySet_Add as set_add  # type: ignore
+from cython.cimports.cpython.set import PySet_Size as set_len  # type: ignore
 from cython.cimports.cpython.set import PySet_Discard as set_discard  # type: ignore
 from cython.cimports.cpython.set import PySet_Contains as set_contains  # type: ignore
+from cython.cimports.cpython.dict import PyDict_Size as dict_len  # type: ignore
 from cython.cimports.cpython.dict import PyDict_SetItem as dict_setitem  # type: ignore
 from cython.cimports.cpython.dict import PyDict_GetItem as dict_getitem  # type: ignore
 from cython.cimports.cpython.dict import PyDict_DelItem as dict_delitem  # type: ignore
@@ -26,7 +24,7 @@ from cython.cimports.cpython.dict import PyDict_Contains as dict_contains  # typ
 from cython.cimports.cpython.list import PyList_GET_SIZE as list_len  # type: ignore
 from cython.cimports.cpython.list import PyList_GET_ITEM as list_getitem  # type: ignore
 from cython.cimports.cpython.list import PyList_SET_ITEM as list_setitem  # type: ignore
-from cython.cimports.cytimes import typeref, utils  # type: ignore
+from cython.cimports.cytimes import utils  # type: ignore
 
 np.import_array()
 np.import_umath()
@@ -35,42 +33,58 @@ datetime.import_datetime()
 # Python imports
 import datetime
 from dateutil.parser._parser import parserinfo
-from cytimes import typeref, utils, errors
+from cytimes import utils, errors
 
-__all__ = ["timelex", "parse", "parse_dtobj", "Configs", "Parser"]
+__all__ = ["timelex", "Configs", "Parser", "parse", "parse_obj"]
 
-# Constants -----------------------------------------------------------------------------------
+
+# Timelex -------------------------------------------------------------------------------------
+@cython.ccall
+def timelex(data: str) -> list[str]:
+    """Tokenize a datetime-like string into lexical units (tokens).
+
+    This lexer performs a single left-to-right pass over `data` and emits tokens
+    based on `maximal runs` of letters or digits, while preserving separators
+    as individual one-character tokens. It is optimized for datetime strings
+    (ISO/RFC-like), and implements special handling for dots and decimal commas.
+
+    :param data `<'str'>`: The datetime string to be tokenized.
+    :returns `<'list[str]'>`: A list of tokens that are either:
+
+        * Maximal runs of letters (Unicode-aware) or ASCII digits
+        * Individual one-character separators (including spaces and punctuation),
+        * A single normalized numeric token.
+    """
+    return _timelex(data, 0, 0)  # type: ignore
+
+
+# Configs -------------------------------------------------------------------------------------
 # . default configs
 # fmt: off
-CONFIG_PERTAIN: set[str] = {"of"}
-CONFIG_JUMP: set[str] = {
+_DEFAULT_PERTAIN: set[str] = {"of"}
+_DEFAULT_JUMP: set[str] = {
     " ", ".", ",", ";", "-", "/", "'",
     "at", "on", "and", "ad", "m", "t", "of",
     "st", "nd", "rd", "th", "年" ,"月", "日"
 }
-CONFIG_UTC: set[str] = {
-    "utc", "gmt", "z"
-}
-CONFIG_TZ: dict[str, int] = {
-    "utc": 0,          # UTC
-    "gmt": 0,          # Greenwich Mean Time
-}
-CONFIG_MONTH: dict[str, int] = {
-    # EN(a)   # EN             # DE            # FR            # IT            # ES             # PT            # NL            # SE            #PL                 # TR          # CN       # Special
+_DEFAULT_UTC: set[str] = {"utc", "gmt", "z"}
+_DEFAULT_TZ: dict[str, int] = {}
+_DEFAULT_MONTH: dict[str, int] = {
+    # EN(a)    # EN            # DE            # FR            # IT            # ES             # PT            # NL            # SE            #PL                 # TR          # CN         # Special
     "jan": 1,  "january": 1,   "januar": 1,    "janvier": 1,   "gennaio": 1,   "enero": 1,      "janeiro": 1,   "januari": 1,   "januari": 1,   "stycznia": 1,      "ocak": 1,    "一月": 1,
-    "feb": 2,  "february": 2,  "februar": 2,   "février": 2,   "febbraio": 2,  "febrero": 2,    "fevereiro": 2, "februari": 2,  "februari": 2,  "lutego": 2,        "şubat": 2,   "二月": 2,  "febr": 2,
+    "feb": 2,  "february": 2,  "februar": 2,   "février": 2,   "febbraio": 2,  "febrero": 2,    "fevereiro": 2, "februari": 2,  "februari": 2,  "lutego": 2,        "şubat": 2,   "二月": 2,    "febr": 2,
     "mar": 3,  "march": 3,     "märz": 3,      "mars": 3,      "marzo": 3,     "marzo": 3,      "março": 3,     "maart": 3,     "mars": 3,      "marca": 3,         "mart": 3,    "三月": 3,
     "apr": 4,  "april": 4,     "april": 4,     "avril": 4,     "aprile": 4,    "abril": 4,      "abril": 4,     "april": 4,     "april": 4,     "kwietnia": 4,      "nisan": 4,   "四月": 4,
     "may": 5,  "may": 5,       "mai": 5,       "mai": 5,       "maggio": 5,    "mayo": 5,       "maio": 5,      "mei": 5,       "maj": 5,       "maja": 5,          "mayıs": 5,   "五月": 5,
     "jun": 6,  "june": 6,      "juni": 6,      "juin": 6,      "giugno": 6,    "junio": 6,      "junho": 6,     "juni": 6,      "juni": 6,      "czerwca": 6,       "haziran": 5, "六月": 6,
     "jul": 7,  "july": 7,      "juli": 7,      "juillet": 7,   "luglio": 7,    "julio": 7,      "julho": 7,     "juli": 7,      "juli": 7,      "lipca": 7,         "temmuz": 7,  "七月": 7,
     "aug": 8,  "august": 8,    "august": 8,    "août": 8,      "agosto": 8,    "agosto": 8,     "agosto": 8,    "augustus": 8,  "augusti": 8,   "sierpnia": 8,      "ağustos": 8, "八月": 8,
-    "sep": 9,  "september": 9, "september": 9, "septembre": 9, "settembre": 9, "septiembre": 9, "setembro": 9,  "september": 9, "september": 9, "września": 9,      "eylül": 9,   "九月": 9,  "sept": 9,
+    "sep": 9,  "september": 9, "september": 9, "septembre": 9, "settembre": 9, "septiembre": 9, "setembro": 9,  "september": 9, "september": 9, "września": 9,      "eylül": 9,   "九月": 9,    "sept": 9,
     "oct": 10, "october": 10,  "oktober": 10,  "octobre": 10,  "ottobre": 10,  "octubre": 10,   "outubro": 10,  "oktober": 10,  "oktober": 10,  "października": 10, "ekim": 10,   "十月": 10,
     "nov": 11, "november": 11, "november": 11, "novembre": 11, "novembre": 11, "noviembre": 11, "novembro": 11, "november": 11, "november": 11, "listopada": 11,    "kasım": 11,  "十一月": 11,
     "dec": 12, "december": 12, "dezember": 12, "décembre": 12, "dicembre": 12, "diciembre": 12, "dezembro": 12, "december": 12, "december": 12, "grudnia": 12,      "aralık": 12, "十二月": 12
 }
-CONFIG_WEEKDAY: dict[str, int] = {
+_DEFAULT_WEEKDAY: dict[str, int] = {
     # EN(a)   # EN            # DE             # FR           # IT            # ES            # NL            # SE          # PL               # TR            # CN        # CN(a)
     "mon": 0, "monday": 0,    "montag": 0,     "lundi": 0,    "lunedì": 0,    "lunes": 0,     "maandag": 0,   "måndag": 0,  "poniedziałek": 0, "pazartesi": 0, "星期一": 0, "周一": 0,
     "tue": 1, "tuesday": 1,   "dienstag": 1,   "mardi": 1,    "martedì": 1,   "martes": 1,    "dinsdag": 1,   "tisdag": 1,  "wtorek": 1,       "salı": 1,      "星期二": 1, "周二": 1,
@@ -80,8 +94,8 @@ CONFIG_WEEKDAY: dict[str, int] = {
     "sat": 5, "saturday": 5,  "samstag": 5,    "samedi": 5,   "sabato": 5,    "sábado": 5,    "zaterdag": 5,  "lördag": 5,  "sobota": 5,       "cumartesi": 5, "星期六": 5, "周六": 5,
     "sun": 6, "sunday": 6,    "sonntag": 6,    "dimanche": 6, "domenica": 6,  "domingo": 6,   "zondag": 6,    "söndag": 6,  "niedziela": 6,    "pazar": 6,     "星期日": 6, "周日": 6
 }
-CONFIG_HMS_FLAG: dict[str, int] = {
-    # EN(a)   # EN         # # DE          # FR           IT            # ES           # PT           # NL           # SE           # PL          # TR            # CN
+_DEFAULT_HMS: dict[str, int] = {
+    # EN(a)   # EN          # DE           # FR           IT            # ES           # PT           # NL           # SE           # PL          # TR            # CN
     "h": 0,   "hour": 0,    "stunde": 0,   "heure": 0,    "ora": 0,     "hora": 0,     "hora": 0,     "uur": 0,      "timme": 0,    "godzina": 0, "saat": 0,      "时": 0,
     "hr": 0,  "hours": 0,   "stunden": 0,  "heures": 0,   "ore": 0,     "horas": 0,    "horas": 0,    "uren": 0,     "timmar": 0,   "godziny": 0, "saatler": 0,   "小时": 0,
     "m": 1,   "minute": 1,  "minute": 1,   "minute": 1,   "minuto": 1,  "minuto": 1,   "minuto": 1,   "minuut": 1,   "minut": 1,    "minuta": 1,  "dakika": 1,    "分": 1,
@@ -90,923 +104,1482 @@ CONFIG_HMS_FLAG: dict[str, int] = {
     "sec": 2, "seconds": 2, "sekunden": 2, "secondes": 2, "secondi": 2, "segundos": 2, "segundos": 2, "seconden": 2, "sekunder": 2, "sekundy": 2, "saniyeler": 2,
                                                                                                                                     "godzin": 0,                                           
 }
-CONFIG_AMPM_FLAG: dict[str, int] = {
-    # EN(a)  # EN(a)  #EN             # DE             # IT             # ES         # PT        # NL          # SE              # PL             # TR          # CN
+_DEFAULT_AMPM: dict[str, int] = {
+    # EN(a)  # EN(b)  #EN             # DE             # IT             # ES         # PT        # NL          # SE              # PL             # TR          # CN
     "a": 0,  "am": 0, "morning": 0,   "morgen": 0,     "mattina": 0,    "mañana": 0, "manhã": 0, "ochtend": 0, "morgon": 0,      "rano": 0,       "sabah": 0,   "上午": 0,
     "p": 1,  "pm": 1, "afternoon": 1, "nachmittag": 1, "pomeriggio": 1, "tarde": 1,  "tarde": 1, "middag": 1,  "eftermiddag": 1, "popołudnie": 1, "öğleden": 1, "下午": 1
 }
 # fmt: on
 
 
-# Timelex -------------------------------------------------------------------------------------
 @cython.ccall
-@cython.wraparound(True)
-def timelex(dtstr: str) -> list[str]:
-    """This function breaks the time string into lexical units (tokens).
-    Lexical units are demarcated by changes in the character set, so any
-    continuous string of letters or number is considered one unit `<'list[str]'>`.
+def configs_fr_parserinfo(info: parserinfo) -> Configs:
+    """Build `Configs` from an existing `dateutil.parser.parserinfo` <'Configs'>`.
+
+    :param info `<'dateutil.parser.parserinfo'>`: An existing parserinfo instance.
+    :returns `<'Configs'>`: A Configs instance constructed from `info`,
+        with equivalent settings.
     """
-    return _timelex(dtstr, 0, 0)
+    if not isinstance(info, parserinfo):
+        raise TypeError(
+            "Expects an instance of 'dateutil.parser.parserinfo', "
+            "instead got %s." % (type(info))
+        )
+    # Construct Configs
+    cfg = Configs(year1st=bool(info.yearfirst), day1st=bool(info.dayfirst))
+    #: The following order matters for conflict checking
+    cfg.clear_settings()
+    if isinstance(info.JUMP, (list, tuple, set)):
+        cfg.replace_jump(set(info.JUMP))
+    if isinstance(info.PERTAIN, (list, tuple, set)):
+        cfg.replace_pertain(set(info.PERTAIN))
+    if isinstance(info.UTCZONE, (list, tuple, set)):
+        cfg.replace_utc(set(info.UTCZONE))
+    if isinstance(info.TZOFFSET, dict):
+        cfg.replace_tz(dict(info.TZOFFSET))
+    if isinstance(info.MONTHS, (list, tuple)):
+        cfg.replace_month({t: i + 1 for i, row in enumerate(info.MONTHS) for t in row})
+    if isinstance(info.WEEKDAYS, (list, tuple)):
+        cfg.replace_weekday({t: i for i, row in enumerate(info.WEEKDAYS) for t in row})
+    if isinstance(info.HMS, (list, tuple)):
+        cfg.replace_hms({t: i for i, row in enumerate(info.HMS) for t in row})
+    if isinstance(info.AMPM, (list, tuple)):
+        cfg.replace_ampm({t: i for i, row in enumerate(info.AMPM) for t in row})
+    return cfg
 
 
-@cython.cfunc
-@cython.inline(True)
-@cython.wraparound(True)
-def _timelex(
-    dtstr: str,
-    start: cython.Py_ssize_t = 0,
-    size: cython.Py_ssize_t = 0,
-) -> list[str]:
-    """(cfunc) This function breaks the time string into lexical units
-    (tokens). Lexical units are demarcated by changes in the character
-    set, so any continuous string of letters or number is considered
-    one unit `<'list[str]'>`.
-
-    :param dtstr `<'str'>`: The datetime string to be broken into lexical tokens.
-    :param start `<'int'>`: The starting index for the 'dtstr' string, defaults to `0`.
-    :param size `<'int'>`: The size of the 'dtstr' string, defaults to `0`.
-        If 'size <= 0', the function measure the size of the 'dtstr' string internal.
-    """
-    # Validate index & size
-    if size <= 0:
-        size = str_len(dtstr)
-    if start < 0:
-        start = 0
-    if size == 0 or start >= size:
-        return []  # exit: eof
-
-    # Setup
-    tokens: list[str] = []
-    idx: cython.Py_ssize_t = start
-    cur_ch: cython.Py_UCS4
-    tmp_ch: cython.Py_UCS4
-    while idx < size and (tmp_ch := str_read(dtstr, idx)) in (" ", 0):
-        idx += 1
-
-    # Main string loop -------------------------------------------------------
-    while idx < size:
-        token: str = None
-        state: cython.int = 0
-
-        # Nested token loop - - - - - - - - - - - - - - - - - - - - - - - - -
-        while idx < size:
-            # Read new charactor for the current token
-            if tmp_ch == 0:
-                idx += 1
-                if idx == size:
-                    # Reached end of the string:
-                    # 1. exit nested token loop
-                    # 2. main loop also ends
-                    break
-                while idx < size and (cur_ch := str_read(dtstr, idx)) == 0:  # null
-                    idx += 1
-                if cur_ch == 0:
-                    # No more valid charactors:
-                    # 1. exit nested token loop
-                    # 2. main loop also ends
-                    break
-            # Use cached charactor for the current token
-            else:
-                cur_ch, tmp_ch = tmp_ch, 0
-
-            # . state 0: start of token
-            if state == 0:
-                token = str_chr(cur_ch)
-                if cur_ch.isalpha():
-                    state = 1  # alpha token
-                elif cur_ch.isdigit():
-                    state = 2  # digit token
-                else:
-                    # exit nested token loop:
-                    # "single charactor token"
-                    break
-
-            # . state 1: alpha token
-            elif state == 1:
-                if cur_ch.isalpha():
-                    token += str_chr(cur_ch)
-                elif cur_ch == ".":
-                    token += "."
-                    state = 3  # alpha[.]
-                else:
-                    # 1. cache for the next token
-                    # 2. exit nested token loop
-                    tmp_ch = cur_ch
-                    break
-
-            # . state 2: digit token
-            elif state == 2:
-                if cur_ch.isdigit():
-                    token += str_chr(cur_ch)
-                elif cur_ch == ".":
-                    token += "."
-                    state = 4  # digit[.]
-                elif cur_ch == "," and str_len(token) >= 2:
-                    token += ","
-                    state = 4  # digit[,]
-                else:
-                    # 1. cache for the next token
-                    # 2. exit nested token loop
-                    tmp_ch = cur_ch
-                    break
-
-            # . state 3: alpha[.]
-            elif state == 3:
-                if cur_ch == ".":
-                    token += "."
-                elif cur_ch.isalpha():
-                    token += str_chr(cur_ch)
-                elif cur_ch.isdigit() and token[-1] == ".":
-                    token += str_chr(cur_ch)
-                    state = 4  # digit[.]
-                else:
-                    # 1. cache for the next token
-                    # 2. exit nested token loop
-                    tmp_ch = cur_ch
-                    break
-
-            # . state 4: digit[.,]
-            elif state == 4:
-                if cur_ch == ".":
-                    token += "."
-                elif cur_ch.isdigit():
-                    token += str_chr(cur_ch)
-                elif cur_ch.isalpha() and token[-1] == ".":
-                    token += str_chr(cur_ch)
-                    state = 3  # alpha[.]
-                else:
-                    # 1. cache for the next token
-                    # 2. exit nested token loop
-                    tmp_ch = cur_ch
-                    break
-            # Nested token loop ----------------------------------------------
-
-        # Further handle token contains "." / ","
-        if state in (3, 4):
-            # . token with extra "." / ","
-            if state == 3 or token[-1] in ".," or utils.str_count(token, ".") > 1:
-                tok: str = None
-                for i in range(str_len(token)):
-                    ch: cython.Py_UCS4 = str_read(token, i)
-                    if ch == ".":
-                        if tok is not None:
-                            tokens.append(tok)
-                            tok = None
-                        tokens.append(".")
-                    elif ch == ",":
-                        if tok is not None:
-                            tokens.append(tok)
-                            tok = None
-                        tokens.append(",")
-                    elif tok is not None:
-                        tok += str_chr(ch)
-                    else:
-                        tok = str_chr(ch)
-                if tok is not None:
-                    tokens.append(tok)
-            # . digit token only contains ","
-            else:
-                if state == 4 and not str_contains(token, "."):
-                    token = str_replace(token, ",", ".", -1)
-                tokens.append(token)
-
-        # Complete token
-        elif token is not None:
-            tokens.append(token)
-
-        # None means: eof
-        else:
-            break
-        # Main tokens loop ---------------------------------------------------
-
-    # Return the time lexical tokens
-    return tokens
-
-
-# Configs -------------------------------------------------------------------------------------
 @cython.cclass
 class Configs:
-    """Represents the configuration for the Parser."""
+    """Configuration for the `<'Parser'>`.
+
+    A `Configs` instance controls how tokens are recognized and how ambiguous
+    year/month/day triples are interpreted. It maintains several token namespaces
+    (e.g., month, weekday, AM/PM, timezone names) and enforces cross-namespace
+    uniqueness rules so a token cannot silently change meaning.
+    """
 
     # Settings
     _year1st: cython.bint
     _day1st: cython.bint
-    _pertain: set[str]
+    # . jump
     _jump: set[str]
+    _jump_ext: set[str]
+    # . pertain
+    _pertain: set[str]
+    _pertain_ext: set[str]
+    # . utc
     _utc: set[str]
+    _utc_ext: set[str]
+    # . tz
     _tz: dict[str, int]
+    _tz_ext: dict[str, int]
+    # . month
     _month: dict[str, int]
+    _month_ext: dict[str, int]
+    # . weekday
     _weekday: dict[str, int]
-    _hms_flag: dict[str, int]
-    _ampm_flag: dict[str, int]
-    # Internal
-    _words: set[str]
+    _weekday_ext: dict[str, int]
+    # . hms
+    _hms: dict[str, int]
+    _hms_ext: dict[str, int]
+    # . ampm
+    _ampm: dict[str, int]
+    _ampm_ext: dict[str, int]
 
     def __init__(
         self,
-        year1st: cython.bint = False,
+        year1st: cython.bint = True,
         day1st: cython.bint = False,
     ) -> None:
-        """The configuration for the Parser.
+        """Configuration for `<'Parser'>`.
 
-        :param year1st `<'bool'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `False`.
+        A `Configs` instance controls how tokens are recognized and how ambiguous
+        year/month/day triples are interpreted. It maintains several token namespaces
+        (e.g., month, weekday, AM/PM, timezone names) and enforces cross-namespace
+        uniqueness rules so a token cannot silently change meaning.
+
+        :param year1st `<'bool'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `True`.
         :param day1st `<'bool'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `False`.
 
-        ### Ambiguous Y/M/D
-        Both the 'year1st' & 'day1st' arguments works together to determine how
-        to interpret ambiguous Y/M/D values. The 'year1st' argument has higher
-        priority than the 'day1st' argument.
+        Ambiguous Y/M/D
+        ---------------
+        Two booleans control ambiguous triplets (e.g. "01/05/09"):
 
-        #### In case when all three values are ambiguous (e.g. `01/05/09`):
-        - If 'year1st=False' & 'day1st=False', interprets as: `2009-01-05` (M/D/Y).
-        - If 'year1st=False' & 'day1st=True', interprets as: `2009-05-01` (D/M/Y).
-        - If 'year1st=True' & 'day1st=False', interprets as: `2001-05-09` (Y/M/D).
-        - If 'year1st=True' & 'day1st=True', interprets as: `2001-09-05` (Y/D/M).
+        - `year1st` has precedence over `day1st` when both are True.
+        - If all three positions are ambiguous, these apply:
+            * year1st=False, day1st=False -> M/D/Y
+            * year1st=False, day1st=True  -> D/M/Y
+            * year1st=True,  day1st=False -> Y/M/D
+            * year1st=True,  day1st=True  -> Y/D/M
+        - If exactly one component is unambiguous (e.g. a number > 12), the parser
+        should infer the order regardless of these flags.
 
-        #### In case when the 'year' value is known (e.g. `32/01/05`):
-        - If 'day1st=False', interpretes as: `2032-01-05` (Y/M/D).
-        - If 'day1st=True', interpretes as: `2032-05-01` (Y/D/M).
+        Namespaces
+        ----------
+        pertain : set[str]
+            Tokenss like "of" that indicate a possessive/pertain relationship.
+        jump : set[str]
+            Low-priority stopwords that may safely be skipped (e.g. "and", "at", "on").
+        utc : set[str]
+            Tokens that explicitly denote UTC (e.g. "utc", "gmt", "z").
+        tz : dict[str, int]
+            Timezone aliases mapped to UTC offset in seconds (e.g. {"est": -18000}).
+        month : dict[str, int]
+            Month names/aliases to month number (1..12).
+        weekday : dict[str, int]
+            Weekday names/aliases to weekday number (0=Mon..6=Sun).
+        hms : dict[str, int]
+            Time unit flags: 0 = hour, 1 = minute, 2 = second.
+        ampm : dict[str, int]
+            AM/PM flags: 0 = AM, 1 = PM.
 
-        #### In case when only one value is ambiguous (e.g. `32/01/20`):
-        - The Parser should automatically figure out the correct Y/M/D order,
-          and both 'year1st' & 'day1st' arguments are ignored.
+        Normalization & Validation
+        --------------------------
+        - All tokens are normalized to lowercase for conflict checking.
+        - Then each token will generate three case variants for recognition:
+            * lowercase
+            * uppercase
+            * titlecase
+        - Integer values are range-checked:
+            * tz offset:  -86,400 .. 86,400  (seconds)
+            * month:       1 .. 12 (January .. December)
+            * weekday:     0 .. 6  (Monday .. Sunday)
+            * hms:         0 .. 2  (hour/minute/second)
+            * ampm:        0 .. 1  (AM/PM)
 
-        ### Settings
-        Configs provides 'add_*()', 'rem_*()' and 'set_*()' methods to modify the following settings:
-        - pertain: Words to recognize as pertain, e.g: `'of'`
-        - jump: Words that should be skipped, e.g: `'and'`, `'at'`, `'on'`
-        - utc: Words to recognize as UTC timezone, e.g: `'utc'`, `'gmt'`
-        - tz: Words to recognize as timezone and the corresponding utc offset in seconds, e.g: `'est'`, `'pst'`
-        - month: Words to recognize as month, e.g: `'january'`, `'february'`
-        - weekday: Words to recognize as weekday, e.g: `'monday'`, `'tuesday'`
-        - hms_flag: Words to recognize as as H/M/S flag, e.g: `'hour'`, `'minute'`
-        - ampm_flag: Words to recognizes as AM/PM flag, e.g: `'am'`, `'pm'`
+        Conflict Policy
+        ---------------
+        - Overlap token is rejected unless explicitly allowed:
+            * `jump` is lowest priority and may overlap with any namespace.
+            * Re-adding a token to the same namespace is allowed.
         """
-        # Settings
         self._year1st = year1st
         self._day1st = day1st
-        self._pertain = CONFIG_PERTAIN
-        self._jump = CONFIG_JUMP
-        self._utc = CONFIG_UTC
-        self._tz = CONFIG_TZ
-        self._month = CONFIG_MONTH
-        self._weekday = CONFIG_WEEKDAY
-        self._hms_flag = CONFIG_HMS_FLAG
-        self._ampm_flag = CONFIG_AMPM_FLAG
-        # Keywords
-        self._construct()
+        #: The following order matters for conflict checking
+        self.reset_settings()
 
     @classmethod
     def from_parserinfo(cls, info: parserinfo) -> Configs:
-        """Create 'Configs' from an existing 'dateutil.parser.parserinfo'.
+        """Build `Configs` from an existing `dateutil.parser.parserinfo` <'Configs'>`.
 
-        ### Example
-        >>> from cytimes import Configs
-        >>> from dateutil.parser import parserinfo
-        >>> info = parserinfo()
-        >>> cfg = Configs.from_parserinfo(info)
+        :param info `<'dateutil.parser.parserinfo'>`: An existing parserinfo instance.
+        :returns `<'Configs'>`: A Configs instance constructed from `info`,
+            with equivalent settings.
+
+        ## Example
+        ```python
+        from cytimes import Configs
+        from dateutil.parser import parserinfo
+        info = parserinfo()
+        cfg = Configs.from_parserinfo(info)
+        ```
         """
-        # Validate perserinfo
-        if not isinstance(info, typeref.PARSERINFO):
-            raise errors.InvalidParserInfo(
-                "<'%s'> Support import from <'dateutil.parser.parserinfo'>, "
-                "instead got %s." % (cls.__name__, type(info))
-            )
+        return configs_fr_parserinfo(info)
 
-        # Import settings
-        cfg = Configs(year1st=info.yearfirst, day1st=info.dayfirst)
-        cfg._pertain = set(info.PERTAIN)
-        cfg._jump = set(info.JUMP)
-        cfg._utc = set(info.UTCZONE)
-        cfg._tz = info.TZOFFSET
-        cfg._month = {w: i + 1 for i, wds in enumerate(info.MONTHS) for w in wds}
-        cfg._weekday = {w: i for i, wds in enumerate(info.WEEKDAYS) for w in wds}
-        cfg._hms_flag = {w: i for i, wds in enumerate(info.HMS) for w in wds}
-        cfg._ampm_flag = {w: i for i, wds in enumerate(info.AMPM) for w in wds}
-        # Reconstruct words
-        cfg._construct()
-        # Return Configs
-        return cfg
-
-    # Property --------------------------------------------------------
+    # Y/M/D -----------------------------------------------------------
     @property
     def year1st(self) -> bool:
-        """Whether to interpret the first ambiguous
-        Y/M/D values as year `<'bool'>`."""
+        """Whether to interpret ambiguous Y/M/D with the first position as `year` `<'bool'>`.
+
+        ## Notice
+        - `year1st` has higher priority than `day1st` when both are set to `True`.
+        """
+        return self._year1st
+
+    @property
+    def yearfirst(self) -> bool:
+        """Alias of `year1st` (compat with `dateutil.parser.parserinfo`)."""
         return self._year1st
 
     @property
     def day1st(self) -> bool:
-        """Whether to interpret the first ambiguous
-        Y/M/D values as day `<'bool'>`."""
+        """Whether to interpret ambiguous Y/M/D with the first position as `day` `<'bool'>`.
+
+        ## Notice
+        - `year1st` has higher priority than `day1st` when both are set to `True`.
+        """
         return self._day1st
 
-    # Pertain ---------------------------------------------------------
     @property
-    def pertain(self) -> set[str]:
-        """The words to recognize as pertain `<'set[str]'>`."""
-        return self._pertain
+    def dayfirst(self) -> bool:
+        """Alias of `day1st` (compat with `dateutil.parser.parserinfo`)."""
+        return self._day1st
 
-    def add_pertain(self, *words: str) -> None:
-        """Add words that should be recognized as pertain.
-
-        ### Example
-        >>> cfg.add_pertain("of", ...)
+    @cython.ccall
+    def order_hint(self) -> str:
+        """Give a hint of the ambiguous Y/M/D order based
+        on `year1st` and `day1st` settings `<'str'>`.
         """
-        for word in words:
-            set_add(self._pertain, self._validate_word("pertain", word))
-
-    def rem_pertain(self, *words: str) -> None:
-        """Remove existing pertain words from Configs.
-
-        ### Example
-        >>> cfg.rem_pertain("of", ...)
-        """
-        for word in words:
-            set_discard(self._pertain, word)
-            set_discard(self._words, word)
-
-    def set_pertain(self, *words: str) -> None:
-        """Set the words that should be recognized as pertain.
-
-        - If 'words' is given, replace all existing pertain words
-          with the specified 'words'.
-        - If 'words' is empty, resets to the default pertain words.
-
-        ### Example
-        >>> cfg.set_pertain("of", ...)
-        """
-        if words:
-            self._pertain = set(words)
+        if self._year1st and self._day1st:
+            return "Y/D/M"
+        elif self._year1st and not self._day1st:
+            return "Y/M/D"
+        elif not self._year1st and self._day1st:
+            return "D/M/Y"
         else:
-            self._pertain = CONFIG_PERTAIN
-        self._construct()
+            return "M/D/Y"
 
     # Jump ------------------------------------------------------------
     @property
     def jump(self) -> set[str]:
-        """The words that should be skipped `<'set[str]'>`."""
-        return self._jump
+        """Set of tokens that should be skipped `<'set[str]'>`."""
+        return set(self._jump)
 
-    def add_jump(self, *words: str) -> None:
-        """Add words that should be skipped.
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def add_jump(self, token: str) -> cython.bint:
+        """Add token that should be skipped `<'bool'>`.
 
-        ### Example
-        >>> cfg.add_jump("at", "on", ...)
+        :param token `<'str'>`: The `jump` token to added (case-insensitive).
+        :returns `<'bool'>`: True if added successfully, otherwise False.
+        :raises `<'InvalidConfigsValue'>`: If `token` is invalid or conflicts with other namespaces.
+
+        ## Example
+        >>> cfg.add_jump("at")
         """
-        for word in words:
-            set_add(self._jump, self._validate_word("jump", word))
+        # Validate token
+        token = self._validate_token("jump", token)
+        # Add to base namespace
+        set_add(self._jump, token)
+        # Add to extend namespace
+        for tok in self._gen_token_case_variants(token):
+            set_add(self._jump_ext, tok)
+        return True
 
-    def rem_jump(self, *words: str) -> None:
-        """Remove jump words from the Configs.
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def remove_jump(self, token: str) -> cython.bint:
+        """Remove `jump` token from the configuration `<'bool'>`.
 
-        ### Example
-        >>> cfg.rem_jump("at", "on", ...)
+        :param token `<'str'>`: The `jump` token to remove (case-insensitive).
+        :returns `<'bool'>`: True if removed successfully, otherwise False (not exists).
+        :raises `<'InvalidConfigsValue'>`: If the `token` is invalid.
+
+        ##  Example
+        >>> cfg.remove_jump("at")
         """
-        for word in words:
-            set_discard(self._jump, word)
-            set_discard(self._words, word)
+        # Lowercase token
+        token = self._lowercase_token("jump", token)
+        # Remove from base namespace
+        removed = set_discard(self._jump, token)
+        # Remove from extend namespace
+        if removed:
+            for tok in self._gen_token_case_variants(token):
+                set_discard(self._jump_ext, tok)
+        return removed
 
-    def set_jump(self, *words: str) -> None:
-        """Set the words that should be skipped.
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def replace_jump(self, tokens: set[str] = None) -> cython.bint:
+        """Replace the set of `jump` tokens `<'bool'>`.
 
-        - If 'words' is given, replace all existing jump words
-          with the specified 'words'.
-        - If 'words' is empty, resets to the default jump words.
+        :param tokens `<'set[str]/None'>`: The new set of `jump` tokens. Defaults to `None`.
+            If `None`, resets to the default `jump` set.
+        :returns `<'bool'>`: True if replaced successfully, otherwise False.
+        :raises `<'InvalidConfigsValue'>`: If any `token` is invalid or conflicts with other namespaces.
 
-        ### Example
-        >>> cfg.set_jump("at", "on", ...)
+        ## Example
+        >>> cfg.replace_jump({"at", "on", ...})
         """
-        if words:
-            self._jump = set(words)
-        else:
-            self._jump = CONFIG_JUMP
-        self._construct()
+        # Reset to default
+        if tokens is None:
+            tokens = _DEFAULT_JUMP
+
+        # Cache tokens
+        old: set = self._jump
+        old_ext: set = self._jump_ext
+
+        # Add tokens
+        self._jump = set()
+        self._jump_ext = set()
+        try:
+            for t in tokens:
+                self.add_jump(self._ensure_str_token("jump", t))
+        except Exception:
+            # Rollback
+            self._jump = old
+            self._jump_ext = old_ext
+            raise
+        return True
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def is_jump(self, token: str) -> cython.bint:
+        """Check if the `token` can be recognized as `jump` `<'bool'>`.
+
+        :param token `<'str'>`: The token to check against.
+            Only recognize in `lowercase`, `uppercase` and `titlecase`.
+        :return `<'bool'>`: True if the token can be recognized, otherwise False.
+        """
+        if token is None:
+            return False
+        return set_contains(self._jump_ext, token)
+
+    # Pertain ---------------------------------------------------------
+    @property
+    def pertain(self) -> set[str]:
+        """Set of tokens to recognize as `pertain` `<'set[str]'>`."""
+        return set(self._pertain)
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def add_pertain(self, token: str) -> cython.bint:
+        """Add token that should be recognized as `pertain` `<'bool'>`.
+
+        :param token `<'str'>`: The `pertain` token to added (case-insensitive).
+        :returns `<'bool'>`: True if added successfully, otherwise False.
+        :raises `<'InvalidConfigsValue'>`: If `token` is invalid or conflicts with other namespaces.
+
+        ## Example
+        >>> cfg.add_pertain("of")
+        """
+        # Validate token
+        token = self._validate_token("pertain", token)
+        # Add to base namespace
+        set_add(self._pertain, token)
+        # Add to extend namespace
+        for tok in self._gen_token_case_variants(token):
+            set_add(self._pertain_ext, tok)
+        return True
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def remove_pertain(self, token: str) -> cython.bint:
+        """Remove `pertain` token from the configuration `<'bool'>`.
+
+        :param token `<'str'>`: The `pertain` token to remove (case-insensitive).
+        :returns `<'bool'>`: True if removed successfully, otherwise False (not exists).
+        :raises `<'InvalidConfigsValue'>`: If the `token` is invalid.
+
+        ##  Example
+        >>> cfg.remove_pertain("of")
+        """
+        # Lowercase token
+        token = self._lowercase_token("pertain", token)
+        # Remove from base namespace
+        removed = set_discard(self._pertain, token)
+        # Remove from extend namespace
+        if removed:
+            for tok in self._gen_token_case_variants(token):
+                set_discard(self._pertain_ext, tok)
+        return removed
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def replace_pertain(self, tokens: set[str] = None) -> cython.bint:
+        """Replace the set of `pertain` tokens `<'bool'>`.
+
+        :param tokens `<'set[str]/None'>`: The new set of `pertain` tokens. Defaults to `None`.
+            If `None`, resets to the default `pertain` set.
+        :returns `<'bool'>`: True if replaced successfully, otherwise False.
+        :raises `<'InvalidConfigsValue'>`: If any `token` is invalid or conflicts with other namespaces.
+
+        ## Example
+        >>> cfg.replace_pertain({"of", "for", ...})
+        """
+        # Reset to default
+        if tokens is None:
+            tokens = _DEFAULT_PERTAIN
+
+        # Cache tokens
+        old: set = self._pertain
+        old_ext: set = self._pertain_ext
+
+        # Add tokens
+        self._pertain = set()
+        self._pertain_ext = set()
+        try:
+            for t in tokens:
+                self.add_pertain(self._ensure_str_token("pertain", t))
+        except Exception:
+            # Rollback
+            self._pertain = old
+            self._pertain_ext = old_ext
+            raise
+        return True
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def is_pertain(self, token: str) -> cython.bint:
+        """Check if the `token` can be recognized as `pertain` `<'bool'>`.
+
+        :param token `<'str'>`: The token to check against.
+            Only recognize in `lowercase`, `uppercase` and `titlecase`.
+        :return `<'bool'>`: True if the token can be recognized, otherwise False.
+        """
+        if token is None:
+            return False
+        return set_contains(self._pertain_ext, token)
 
     # UTC -------------------------------------------------------------
     @property
     def utc(self) -> set[str]:
-        """The words to recognize as UTC timezone `<'set[str]'>`."""
-        return self._utc
+        """Set of tokens to recognize as `UTC` timezone `<'set[str]'>`."""
+        return set(self._utc)
 
-    def add_utc(self, *words: str) -> None:
-        """Add words that should be recognized as UTC timezone.
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def add_utc(self, token: str) -> cython.bint:
+        """Add token that should be recognized as UTC timezone `<'bool'>`.
 
-        ### Example
-        >>> cfg.add_utc("utc", "gmt", "z", ...)
+        :param token `<'str'>`: The `UTC` timezone token to added (case-insensitive).
+        :returns `<'bool'>`: True if added successfully, otherwise False.
+        :raises `<'InvalidConfigsValue'>`: If `token` is invalid or conflicts with other namespaces.
+
+        ## Example
+        >>> cfg.add_utc("gmt")
         """
-        for word in words:
-            set_add(self._utc, self._validate_word("utc", word))
+        # Validate token
+        token = self._validate_token("utc", token)
+        # Add to base namespace
+        set_add(self._utc, token)
+        # Add to extend namespace
+        for tok in self._gen_token_case_variants(token):
+            set_add(self._utc_ext, tok)
+        return True
 
-    def rem_utc(self, *words: str) -> None:
-        """Remove UTC timezone words from the Configs.
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def remove_utc(self, token: str) -> cython.bint:
+        """Remove `UTC` timezone token from the configuration `<'bool'>`.
 
-        ### Example
-        >>> cfg.rem_utc("utc", "gmt", "z", ...)
+        :param token `<'str'>`: The `UTC` timezone token to remove (case-insensitive).
+        :returns `<'bool'>`: True if removed successfully, otherwise False (not exists).
+        :raises `<'InvalidConfigsValue'>`: If the `token` is invalid.
+
+        ##  Example
+        >>> cfg.remove_utc("gmt")
         """
-        for word in words:
-            set_discard(self._utc, word)
-            set_discard(self._words, word)
+        # Lowercase token
+        token = self._lowercase_token("utc", token)
+        # Remove from base namespace
+        removed = set_discard(self._utc, token)
+        # Remove from extend namespace
+        if removed:
+            for tok in self._gen_token_case_variants(token):
+                set_discard(self._utc_ext, tok)
+        return removed
 
-    def set_utc(self, *words: str) -> None:
-        """Set the words that should be recognized as UTC timezone.
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def replace_utc(self, tokens: set[str] = None) -> cython.bint:
+        """Replace the set of `UTC` timezone tokens `<'bool'>`.
 
-        - If 'words' is given, replace all existing UTC timezone words
-          with the specified 'words'.
-        - If 'words' is empty, resets to the default UTC timezone words.
+        :param tokens `<'set[str]/None'>`: The new set of `UTC` timezone tokens. Defaults to `None`.
+            If `None`, resets to the default `UTC` timezone set.
+        :returns `<'bool'>`: True if replaced successfully, otherwise False.
+        :raises `<'InvalidConfigsValue'>`: If any `token` is invalid or conflicts with other namespaces.
 
-        ### Example
-        >>> cfg.set_utc("utc", "gmt", "z", ...)
+        ## Example
+        >>> cfg.replace_utc({"utc", "gmt", ...})
         """
-        if words:
-            self._utc = set(words)
-        else:
-            self._utc = CONFIG_UTC
-        self._construct()
+        # Reset to default
+        if tokens is None:
+            tokens = _DEFAULT_UTC
+
+        # Cache tokens
+        old: set = self._utc
+        old_ext: set = self._utc_ext
+
+        # Add tokens
+        self._utc = set()
+        self._utc_ext = set()
+        try:
+            for t in tokens:
+                self.add_utc(self._ensure_str_token("utc", t))
+        except Exception:
+            # Rollback
+            self._utc = old
+            self._utc_ext = old_ext
+            raise
+        return True
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def is_utc(self, token: str) -> cython.bint:
+        """Check if the `token` can be recognized as `UTC` timezone `<'bool'>`.
+
+        :param token `<'str'>`: The token to check against.
+            Only recognize in `lowercase`, `uppercase` and `titlecase`.
+        :return `<'bool'>`: True if the token can be recognized, otherwise False.
+        """
+        if token is None:
+            return False
+        return set_contains(self._utc_ext, token)
 
     # Timezone --------------------------------------------------------
     @property
     def tz(self) -> dict[str, int]:
-        """The words to recognize as a timezone `<'dict[str, int]'>`
+        """Map of tokens to recognize as a `timezone` `<'dict[str, int]'>`
 
-        Where keys are the timezone words and values are the
-        corresponding utc offset in seconds.
+        - Keys are timezone names and values are UTC offsets in seconds.
         """
-        return self._tz
+        return dict(self._tz)
 
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
     def add_tz(
         self,
-        word: str,
-        hour: int = 0,
-        minute: int = 0,
-        seconds: int = 0,
-    ) -> None:
-        """Add word that should be recognized as a timezone
-        with the corresponding utcoffset offset.
+        token: str,
+        hours: cython.int = 0,
+        minutes: cython.int = 0,
+        seconds: cython.int = 0,
+    ) -> cython.bint:
+        """Add token that should be recognized as `timezone`
+        with the corresponding UTC offset.
 
-        ### Example
-        >>> cfg.add_tz("est", hour=-5)
+        :param token `<'str'>`: The `timezone` token to add (case-insensitive).
+        :param hours `<'int'>`: UTC offset in hours, defaults to `0`.
+        :param minutes `<'int'>`: UTC offset in minutes, defaults to `0`.
+        :param seconds `<'int'>`: UTC offset in seconds, defaults to `0`.
+        :returns `<'bool'>`: True if added successfully, otherwise False.
+        :raises `<'InvalidConfigsValue'>`: If token conflicts with other namespaces,
+            or the UTC offset (hours & minutes & seconds) is invalid.
+
+        ## UTC Offset
+        - offset = hours * 3600 + minutes * 60 + seconds
+
+        ## Example
+        >>> cfg.add_tz("est", hours=-5)
         """
-        dict_setitem(
-            self._tz,
-            self._validate_word("tz", word),
-            self._validate_value_tzoffset(hour * 3_600 + minute * 60 + seconds),
+        # Validate token
+        token = self._validate_token("tz", token)
+        # Validate value
+        value: object = self._validate_value(
+            "tz", hours * 3_600 + minutes * 60 + seconds, -86_400, 86_400
         )
+        # Add to base namespace
+        dict_setitem(self._tz, token, value)
+        # Add to extend namespace
+        for tok in self._gen_token_case_variants(token):
+            dict_setitem(self._tz_ext, tok, value)
+        return True
 
-    def rem_tz(self, *words: str) -> None:
-        """Remove timezone words from the Configs.
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def remove_tz(self, token: str) -> cython.bint:
+        """Remove `timezone` token from the configuration `<'bool'>`.
 
-        ### Example
-        >>> cfg.rem_tz("est", "edt", ...
+        :param token `<'str'>`: The `timezone` token to remove (case-insensitive).
+        :returns `<'bool'>`: True if removed successfully, otherwise False (not exists).
+        :raises `<'InvalidConfigsValue'>`: If the `token` is invalid.
+
+        ##  Example
+        >>> cfg.remove_tz("est")
         """
-        for word in words:
+        # Lowercase token
+        token = self._lowercase_token("tz", token)
+        # Remove from base namespace
+        try:
+            dict_delitem(self._tz, token)
+        except KeyError:
+            return False
+        # Remove from extend namespace
+        for tok in self._gen_token_case_variants(token):
             try:
-                dict_delitem(self._tz, word)
+                dict_delitem(self._tz_ext, tok)
             except KeyError:
                 pass
-            set_discard(self._words, word)
+        return True
 
-    def set_tz(self, **words_and_offsets: int) -> None:
-        """Set the words that should be recognized as timezone
-        and the corresponding utcoffsets.
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def replace_tz(self, mapping: dict[str, int] = None) -> cython.bint:
+        """Replace the `timezone` mapping `<'bool'>`.
 
-        - If 'words_and_offsets' is given, replace all existing timezone words
-          with the specified 'words_and_offsets'.
-        - If 'words_and_offsets' is empty, resets to the default timezone words.
+        :param mapping `<'dict[str,int]/None'>`: The new mapping of `timezone` tokens. Defaults to `None`.
 
-        ### Example
-        >>> cfg.set_tz(**{"est": -18000, "edt": -14400, ... })
+            - Accepts dictionary where keys are `timezone` tokens
+              and values are UTC offsets in seconds.
+            - If `None`, resets to the default `timezone` mapping.
+
+        :returns `<'bool'>`: True if replaced successfully, otherwise False.
+        :raises `<'InvalidConfigsValue'>`: If any `timezone` token conflicts with
+            other namespaces or the UTC offset value is invalid.
+
+        ## Example
+        >>> cfg.replace_tz({"est": -18000, "edt": -14400, ... })
         """
-        if words_and_offsets:
-            self._tz = words_and_offsets
-        else:
-            self._tz = CONFIG_TZ
-        self._construct()
+        # Reset to default
+        if mapping is None:
+            mapping = _DEFAULT_TZ
+
+        # Cache mappings
+        old: dict = self._tz
+        old_ext: dict = self._tz_ext
+
+        # Set tokens & values
+        self._tz = dict()
+        self._tz_ext = dict()
+        try:
+            for t, v in mapping.items():
+                self.add_tz(
+                    self._ensure_str_token("tz", t),
+                    0,
+                    0,
+                    self._ensure_int_value("tz", v),
+                )
+        except Exception:
+            # Rollback
+            self._tz = old
+            self._tz_ext = old_ext
+            raise
+        return True
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def is_tz(self, token: str) -> cython.bint:
+        """Check if the `token` can be recognized as `timezone` `<'bool'>`.
+
+        :param token `<'str'>`: The token to check against.
+            Only recognize in `lowercase`, `uppercase` and `titlecase`.
+        :return `<'bool'>`: True if the token can be recognized, otherwise False.
+        """
+        if token is None:
+            return False
+        return dict_contains(self._tz_ext, token)
+
+    @cython.ccall
+    @cython.exceptval(-200_000, check=False)
+    def get_tz_offset(self, token: str) -> cython.int:
+        """Get the corresponding UTC offset if `token`
+        can be recognized as `timezone` `<'int'>`
+
+        :param token `<'str'>`: Candidate for `timezone` token.
+            Only recognize in `lowercase`, `uppercase` and `titlecase`.
+        :return `<'int'>`: UTC offset in seconds, or `-100_000` if the `token`
+            is not recognizible (-100_000 is the sentinel value for None).
+        """
+        if token is None:
+            return utils.NULL_TZOFFSET
+        value = dict_getitem(self._tz_ext, token)
+        if value == cython.NULL:
+            return utils.NULL_TZOFFSET
+        return cython.cast(object, value)
 
     # Month -----------------------------------------------------------
     @property
     def month(self) -> dict[str, int]:
-        """The words to recognize as month `<'dict[str, int]'>`.
+        """Map of tokens to recognize as `month` `<'dict[str, int]'>`.
 
-        Where keys are the words and values are the corresonding
-        month number: 1(Jan)...12(Dec).
+        - Keys are month names and values are month numbers: 1(Jan)...12(Dec).
         """
-        return self._month
+        return dict(self._month)
 
-    def add_month(self, month: int, *words: str) -> None:
-        """Add words that should be recognized as one specific
-        month: 1(Jan)...12(Dec).
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def add_month(self, token: str, month: cython.int) -> cython.bint:
+        """Add token that should be recognized as `month`
+        with the corresponding month number.
 
-        ### Example
-        >>> cfg.add_month(1, "jan", "january", ...)
+        :param token `<'str'>`: The `month` token to add (case-insensitive).
+        :param month `<'int'>`: The month number (1=Jan...12=Dec).
+        :returns `<'bool'>`: True if added successfully, otherwise False.
+        :raises `<'InvalidConfigsValue'>`: If token conflicts with other namespaces,
+            or the month number is invalid.
+
+        ## Month Number
+        - month: 1=Jan...12=Dec
+
+        ## Example
+        >>> cfg.add_month("jan", 1)
         """
-        month = self._validate_value_month(month)
-        for word in words:
-            dict_setitem(self._month, self._validate_word("month", word), month)
+        # Validate token
+        token = self._validate_token("month", token)
+        # Validate value
+        value: object = self._validate_value("month", month, 1, 12)
+        # Add to base namespace
+        dict_setitem(self._month, token, value)
+        # Add to extend namespace
+        for tok in self._gen_token_case_variants(token):
+            dict_setitem(self._month_ext, tok, value)
+        return True
 
-    def rem_month(self, *words: str) -> None:
-        """Remove month words from the Configs.
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def remove_month(self, token: str) -> cython.bint:
+        """Remove `month` token from the configuration `<'bool'>`.
 
-        ### Example
-        >>> cfg.rem_month("jan", "january", ...)
+        :param token `<'str'>`: The `month` token to remove (case-insensitive).
+        :returns `<'bool'>`: True if removed successfully, otherwise False (not exists).
+        :raises `<'InvalidConfigsValue'>`: If the `token` is invalid.
+
+        ##  Example
+        >>> cfg.remove_month("jan")
         """
-        for word in words:
+        # Lowercase token
+        token = self._lowercase_token("month", token)
+        # Remove from base namespace
+        try:
+            dict_delitem(self._month, token)
+        except KeyError:
+            return False
+        # Remove from extend namespace
+        for tok in self._gen_token_case_variants(token):
             try:
-                dict_delitem(self._month, word)
+                dict_delitem(self._month_ext, tok)
             except KeyError:
                 pass
-            set_discard(self._words, word)
+        return True
 
-    def set_month(self, **words_and_months: int) -> None:
-        """Set the words that should be recognized as month.
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def replace_month(self, mapping: dict[str, int] = None) -> cython.bint:
+        """Replace the `month` mapping `<'bool'>`.
 
-        - If 'words_and_months' is given, replace all existing month words
-          with the specified 'words_and_months'.
-        - If 'words_and_months' is empty, resets to the default month words.
+        :param mapping `<'dict[str,int]/None'>`: The new mapping of `month` tokens. Defaults to `None`.
 
-        ### Example
-        >>> cfg.set_month(
-                **{
-                    "jan": 1, "january": 1,
-                    "feb": 2, "february": 2,
-                    ...
-                }
-            )
+            - Accepts dictionary where keys are `month` tokens
+              and values are month numbers (1=Jan...12=Dec).
+            - If `None`, resets to the default `month` mapping.
+
+        :returns `<'bool'>`: True if replaced successfully, otherwise False.
+        :raises `<'InvalidConfigsValue'>`: If any `month` token conflicts with
+            other namespaces or the month number is invalid.
+
+        ## Example
+        >>> cfg.replace_month({"jan": 1, "feb": 2, ... })
         """
-        if words_and_months:
-            self._month = words_and_months
-        else:
-            self._month = CONFIG_MONTH
-        self._construct()
+        # Reset to default
+        if mapping is None:
+            mapping = _DEFAULT_MONTH
+
+        # Cache mappings
+        old: dict = self._month
+        old_ext: dict = self._month_ext
+
+        # Set tokens & values
+        self._month = dict()
+        self._month_ext = dict()
+        try:
+            for t, v in mapping.items():
+                self.add_month(
+                    self._ensure_str_token("month", t),
+                    self._ensure_int_value("month", v),
+                )
+        except Exception:
+            # Rollback
+            self._month = old
+            self._month_ext = old_ext
+            raise
+        return True
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def is_month(self, token: str) -> cython.bint:
+        """Check if the `token` can be recognized as `month` `<'bool'>`.
+
+        :param token `<'str'>`: The token to check against.
+            Only recognize in `lowercase`, `uppercase` and `titlecase`.
+        :return `<'bool'>`: True if the token can be recognized, otherwise False.
+        """
+        if token is None:
+            return False
+        return dict_contains(self._month_ext, token)
+
+    @cython.ccall
+    @cython.exceptval(-2, check=False)
+    def get_month(self, token: str) -> cython.int:
+        """Get the corresponding month number if `token`
+        can be recognized as `month` `<'int'>`
+
+        :param token `<'str'>`: Candidate for `month` token.
+            Only recognize in `lowercase`, `uppercase` and `titlecase`.
+        :return `<'int'>`: Month number (1=Jan...12=Dec), or `-1` if the
+            token is not recognizable (-1 is the sentinel value for None).
+        """
+        if token is None:
+            return -1
+        value = dict_getitem(self._month_ext, token)
+        if value == cython.NULL:
+            return -1
+        return cython.cast(object, value)
 
     # Weekday ---------------------------------------------------------
     @property
     def weekday(self) -> dict[str, int]:
-        """The words to recognizes as weekday `<'dict[str, int]'>`.
+        """Map of tokens to recognize as `weekday` `<'dict[str, int]'>`.
 
-        Where keys are the words and values are the corresponding
-        weekday number: 0(Monday)...6(Sunday).
+        - Keys are weekday names and values are weekday numbers: 0=Mon...6=Sun.
         """
-        return self._weekday
+        return dict(self._weekday)
 
-    def add_weekday(self, weekday: int, *words: str) -> None:
-        """Add words that should be recognized as one specific
-        weekday: 0(Monday)...6(Sunday).
-
-        ### Example
-        >>> cfg.add_weekday(0, "mon", "monday", ...)
-        """
-        weekday = self._validate_value_weekday(weekday)
-        for word in words:
-            dict_setitem(self._weekday, self._validate_word("weekday", word), weekday)
-
-    def rem_weekday(self, *words: str) -> None:
-        """Remove weekday words from the Configs.
-
-        ### Example
-        >>> cfg.rem_weekday("mon", "monday", ...)
-        """
-        for word in words:
-            try:
-                dict_delitem(self._weekday, word)
-            except KeyError:
-                pass
-            set_discard(self._words, word)
-
-    def set_weekday(self, **words_and_weekdays: int) -> None:
-        """Set the words that should be recognized as weekday.
-
-        - If 'words_and_weekdays' is given, replace all existing weekday words
-          with the specified 'words_and_weekdays'.
-        - If 'words_and_weekdays' is empty, resets to the default weekday words.
-
-        ### Example
-        >>> cfg.set_weekday(
-                **{
-                    "mon": 0, "monday": 0,
-                    "tue": 1, "tuesday": 1,
-                    ...
-                }
-            )
-        """
-        if words_and_weekdays:
-            self._weekday = words_and_weekdays
-        else:
-            self._weekday = CONFIG_WEEKDAY
-        self._construct()
-
-    # HMS flag -------------------------------------------------------
-    @property
-    def hms_flag(self) -> dict[str, int]:
-        """The words to recognize as H/M/S flag `<'dict[str, int]'>`.
-
-        Where keys are the words and values are the corresponding
-        flag number: 0(hour), 1(minute), 2(second).
-        """
-        return self._hms_flag
-
-    def add_hms_flag(self, hms_flag: int, *words: str) -> None:
-        """Add words that should be recognized as one specific
-        H/M/S flag: 0(hour), 1(minute), 2(second).
-
-        ### Example
-        >>> cfg.add_hms_flag(0, "h", "hour", "hours", ...)
-        """
-        hms_flag = self._validate_value_hms_flag(hms_flag)
-        for word in words:
-            dict_setitem(
-                self._hms_flag, self._validate_word("hms_flag", word), hms_flag
-            )
-
-    def rem_hms_flag(self, *words: str) -> None:
-        """Remove H/M/S flag words from the Configs.
-
-        ### Example
-        >>> cfg.rem_hms_flag("h", "hour", "hours", ...)
-        """
-        for word in words:
-            try:
-                dict_delitem(self._hms_flag, word)
-            except KeyError:
-                pass
-            set_discard(self._words, word)
-
-    def set_hms_flag(self, **words_and_hmsflags: int) -> None:
-        """Set the words that should be recognized as H/M/S flag.
-
-        - If 'words_and_hmsflags' is given, replace all existing H/M/S flag words
-          with the specified 'words_and_hmsflags'.
-        - If 'words_and_hmsflags' is empty, resets to the default H/M/S flag words.
-
-        ### Example
-        >>> cfg.set_hms_flag(
-                **{
-                    "h": 0, "hour": 0, "hours": 0, ...
-                    "m": 1, "minute": 1, "minutes": 1, ...
-                    "s": 2, "second": 2, "seconds": 2, ...
-                }
-            )
-        """
-        if words_and_hmsflags:
-            self._hms_flag = words_and_hmsflags
-        else:
-            self._hms_flag = CONFIG_HMS_FLAG
-        self._construct()
-
-    # AM/PM flag -----------------------------------------------------
-    @property
-    def ampm_flag(self) -> dict[str, int]:
-        """The words to recognize as AM/PM flag `<'dict[str, int]'>`.
-
-        Where keys are the words and values are the corresponding
-        flag number: 0(AM), 1(PM).
-        """
-        return self._ampm_flag
-
-    def add_ampm_flag(self, ampm_flag: int, *words: str) -> None:
-        """Add words that should be recognized as one specific
-        AM/PM flag: 0(AM), 1(PM).
-
-        ### Example
-        >>> cfg.add_ampm(0, "am", "a.m.", ...)
-        """
-        ampm_flag = self._validate_value_ampm_flag(ampm_flag)
-        for word in words:
-            dict_setitem(
-                self._ampm_flag, self._validate_word("ampm_flag", word), ampm_flag
-            )
-
-    def rem_ampm_flag(self, *words: str) -> None:
-        """Remove AM/PM flag words from the Configs.
-
-        ### Example
-        >>> cfg.rem_ampm("am", "a.m.", ...)
-        """
-        for word in words:
-            try:
-                dict_delitem(self._ampm_flag, word)
-            except KeyError:
-                pass
-            set_discard(self._words, word)
-
-    def set_ampm(self, **words_and_ampmflags: int) -> None:
-        """Set the words that should be recognized as AM/PM flag.
-
-        - If 'words_and_ampm' is given, replace all existing AM/PM flag words
-          with the specified 'words_and_ampm'.
-        - If 'words_and_ampm' is empty, resets to the default AM/PM flag words.
-
-        ### Example
-        >>> cfg.set_ampm(
-                **{
-                    "am": 0, "a.m.": 0, ...
-                    "pm": 1, "p.m.": 1, ...
-                }
-            )
-        """
-        if words_and_ampmflags:
-            self._ampm_flag = words_and_ampmflags
-        else:
-            self._ampm_flag = CONFIG_AMPM_FLAG
-        self._construct()
-
-    # Internal --------------------------------------------------------
-    @cython.cfunc
-    @cython.inline(True)
+    @cython.ccall
     @cython.exceptval(-1, check=False)
-    def _construct(self) -> cython.bint:
-        """(cfunc) Construct the the Configs."""
-        # Reset words
-        self._words = set()
-        # fmt: off
-        # . month
-        self._month = {
-            self._validate_word("month", word):
-            self._validate_value_month(value)
-            for word, value in self._month.items()
-        }
-        # . weekday
-        self._weekday = {
-            self._validate_word("weekday", word):
-            self._validate_value_weekday(value)
-            for word, value in self._weekday.items()
-        }
-        # . hms flag
-        self._hms_flag = {
-            self._validate_word("hms_flag", word):
-            self._validate_value_hms_flag(value)
-            for word, value in self._hms_flag.items()
-        }
-        # . ampm flag
-        self._ampm_flag = {
-            self._validate_word("ampm_flag", word):
-            self._validate_value_ampm_flag(value)
-            for word, value in self._ampm_flag.items()
-        }
-        # . utc
-        self._utc = {
-            self._validate_word("utc", word)
-            for word in self._utc }
-        # . timezone
-        self._tz = {
-            self._validate_word("tz", word):
-            self._validate_value_tzoffset(value)
-            for word, value in self._tz.items()
-        }
-        # . pertain
-        self._pertain = {
-            self._validate_word("pertain", word)
-            for word in self._pertain }
-        # . jump
-        self._jump = {
-            self._validate_word("jump", word)
-            for word in self._jump }
-        # fmt: on
-        # Finished
+    def add_weekday(self, token: str, weekday: cython.int) -> cython.bint:
+        """Add token that should be recognized as `weekday`
+        with the corresponding weekday number.
+
+        :param token `<'str'>`: The `weekday` token to add (case-insensitive).
+        :param weekday `<'int'>`: The weekday number (0=Mon...6=Sun).
+        :returns `<'bool'>`: True if added successfully, otherwise False.
+        :raises `<'InvalidConfigsValue'>`: If token conflicts with other namespaces,
+            or the weekday number is invalid.
+
+        ## Weekday Number
+        - weekday: 0=Mon...6=Sun
+
+        ## Example
+        >>> cfg.add_weekday("mon", 0)
+        """
+        # Validate token
+        token = self._validate_token("weekday", token)
+        # Validate value
+        value: object = self._validate_value("weekday", weekday, 0, 6)
+        # Add to base namespace
+        dict_setitem(self._weekday, token, value)
+        # Add to extend namespace
+        for tok in self._gen_token_case_variants(token):
+            dict_setitem(self._weekday_ext, tok, value)
         return True
 
-    @cython.cfunc
-    @cython.inline(True)
-    def _validate_word(self, setting: str, word: object) -> str:
-        """(cfunc) Validate if the 'word' conflicts with
-        exsiting words in the Configs `<'str'>`."""
-        # Validate type
-        if type(word) is not str:
-            raise errors.InvalidConfigsValue(
-                "<'%s'> The word for 'Configs.%s' must be a string, instead got %s."
-                % (self.__class__.__name__, setting, type(word))
-            )
-        w: str = word
-        w = w.lower()
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def remove_weekday(self, token: str) -> cython.bint:
+        """Remove `weekday` token from the configuration `<'bool'>`.
 
-        # Check if the word is conflicting with other words
-        if set_contains(self._words, w):
-            conflict: str = None
-            # . exclude jump words, since it has the
-            # . lowest priority and maximum freedom
-            if set_contains(self._jump, w):
+        :param token `<'str'>`: The `weekday` token to remove (case-insensitive).
+        :returns `<'bool'>`: True if removed successfully, otherwise False (not exists).
+        :raises `<'InvalidConfigsValue'>`: If the `token` is invalid.
+
+        ##  Example
+        >>> cfg.remove_weekday("mon")
+        """
+        # Lowercase token
+        token = self._lowercase_token("weekday", token)
+        # Remove from base namespace
+        try:
+            dict_delitem(self._weekday, token)
+        except KeyError:
+            return False
+        # Remove from extend namespace
+        for tok in self._gen_token_case_variants(token):
+            try:
+                dict_delitem(self._weekday_ext, tok)
+            except KeyError:
                 pass
-            # . month
-            elif dict_contains(self._month, w):
-                if setting != "month":
-                    conflict = "month"
-            # . weekday
-            elif dict_contains(self._weekday, w):
-                if setting != "weekday":
-                    conflict = "weekday"
-            # . hms flag
-            elif dict_contains(self._hms_flag, w):
-                if setting != "hms_flag":
-                    conflict = "hms_flag"
-            # . ampm flag
-            elif dict_contains(self._ampm_flag, w):
-                if setting != "ampm_flag":
-                    conflict = "ampm_flag"
-            # . utc
-            elif set_contains(self._utc, w):
-                if setting != "utc" and setting != "tz":
-                    conflict = "utc"
-            # . timezone
-            elif dict_contains(self._tz, w):
-                if setting != "tz":
-                    conflict = "tz"
-            # . pertain
-            elif set_contains(self._pertain, w):
-                if setting != "pertain":
-                    conflict = "pertain"
-            # . raise error
-            if conflict is not None:
-                raise errors.InvalidConfigsValue(
-                    "<'%s'> The word '%s' for 'Configs.%s' conflicts "
-                    "with exsiting words in 'Configs.%s'."
-                    % (self.__class__.__name__, w, setting, conflict)
-                )
-        else:
-            set_add(self._words, w)
+        return True
 
-        # Return the word
-        return w
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def replace_weekday(self, mapping: dict[str, int] = None) -> cython.bint:
+        """Replace the `weekday` mapping `<'bool'>`.
+
+        :param mapping `<'dict[str,int]/None'>`: The new mapping of `weekday` tokens. Defaults to `None`.
+
+            - Accepts dictionary where keys are `weekday` tokens
+              and values are weekday numbers (0=Mon...6=Sun).
+            - If `None`, resets to the default `weekday` mapping.
+
+        :returns `<'bool'>`: True if replaced successfully, otherwise False.
+        :raises `<'InvalidConfigsValue'>`: If any `weekday` token conflicts with
+            other namespaces or the weekday number is invalid.
+
+        ## Example
+        >>> cfg.replace_weekday({"mon": 0, "tue": 1, ... })
+        """
+        # Reset to default
+        if mapping is None:
+            mapping = _DEFAULT_WEEKDAY
+
+        # Cache mappings
+        old: dict = self._weekday
+        old_ext: dict = self._weekday_ext
+
+        # Set tokens & values
+        self._weekday = dict()
+        self._weekday_ext = dict()
+        try:
+            for t, v in mapping.items():
+                self.add_weekday(
+                    self._ensure_str_token("weekday", t),
+                    self._ensure_int_value("weekday", v),
+                )
+        except Exception:
+            # Rollback
+            self._weekday = old
+            self._weekday_ext = old_ext
+            raise
+        return True
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def is_weekday(self, token: str) -> cython.bint:
+        """Check if the `token` can be recognized as `weekday` `<'bool'>`.
+
+        :param token `<'str'>`: The token to check against.
+            Only recognize in `lowercase`, `uppercase` and `titlecase`.
+        :return `<'bool'>`: True if the token can be recognized, otherwise False.
+        """
+        if token is None:
+            return False
+        return dict_contains(self._weekday_ext, token)
+
+    @cython.ccall
+    @cython.exceptval(-2, check=False)
+    def get_weekday(self, token: str) -> cython.int:
+        """Get the corresponding weekday number if `token`
+        can be recognized as `weekday` `<'int'>`
+
+        :param token `<'str'>`: Candidate for `weekday` token.
+            Only recognize in `lowercase`, `uppercase` and `titlecase`.
+        :return `<'int'>`: Weekday number (0=Mon...6=Sun), or `-1` if the
+            token is not recognizable (-1 is the sentinel value for None).
+        """
+        if token is None:
+            return -1
+        value = dict_getitem(self._weekday_ext, token)
+        if value == cython.NULL:
+            return -1
+        return cython.cast(object, value)
+
+    # HMS ------------------------------------------------------------
+    @property
+    def hms(self) -> dict[str, int]:
+        """Map of tokens to recognize as H/M/S flag `<'dict[str, int]'>`.
+
+        - Keys are H/M/S tokens and values are the corresponding
+        flag numbers: 0=hour; 1=minute; 2=second.
+        """
+        return dict(self._hms)
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def add_hms(self, token: str, flag: cython.int) -> cython.bint:
+        """Add token that should be recognized as `H/M/S` flag
+        with the corresponding flag number.
+
+        :param token `<'str'>`: The `H/M/S` token to add (case-insensitive).
+        :param month `<'int'>`: The H/M/S flag number (0=hour; 1=minute; 2=second).
+        :returns `<'bool'>`: True if added successfully, otherwise False.
+        :raises `<'InvalidConfigsValue'>`: If token conflicts with other namespaces,
+            or the H/M/S flag number is invalid.
+
+        ## H/M/S Flag Number
+        - flag: 0=hour; 1=minute; 2=second
+
+        ## Example
+        >>> cfg.add_hms("hour", 0)
+        """
+        # Validate token
+        token = self._validate_token("hms", token)
+        # Validate value
+        value: object = self._validate_value("hms", flag, 0, 2)
+        # Add to base namespace
+        dict_setitem(self._hms, token, value)
+        # Add to extend namespace
+        for tok in self._gen_token_case_variants(token):
+            dict_setitem(self._hms_ext, tok, value)
+        return True
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def remove_hms(self, token: str) -> cython.bint:
+        """Remove `H/M/S` token from the configuration `<'bool'>`.
+
+        :param token `<'str'>`: The `H/M/S` token to remove (case-insensitive).
+        :returns `<'bool'>`: True if removed successfully, otherwise False (not exists).
+        :raises `<'InvalidConfigsValue'>`: If the `token` is invalid.
+
+        ##  Example
+        >>> cfg.remove_hms("hour")
+        """
+        # Lowercase token
+        token = self._lowercase_token("hms", token)
+        # Remove from base namespace
+        try:
+            dict_delitem(self._hms, token)
+        except KeyError:
+            return False
+        # Remove from extend namespace
+        for tok in self._gen_token_case_variants(token):
+            try:
+                dict_delitem(self._hms_ext, tok)
+            except KeyError:
+                pass
+        return True
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def replace_hms(self, mapping: dict[str, int] = None) -> cython.bint:
+        """Replace the `H/M/S` mapping `<'bool'>`.
+
+        :param mapping `<'dict[str,int]/None'>`: The new mapping of `H/M/S` tokens. Defaults to `None`.
+
+            - Accepts dictionary where keys are `H/M/S` tokens
+              and values are H/M/S flag numbers (0=hour; 1=minute; 2=second).
+            - If `None`, resets to the default `H/M/S` mapping.
+
+        :returns `<'bool'>`: True if replaced successfully, otherwise False.
+        :raises `<'InvalidConfigsValue'>`: If any `H/M/S` token conflicts with
+            other namespaces or the H/M/S flag number is invalid.
+
+        ## Example
+        >>> cfg.replace_hms({"hour": 0, "minute": 1, "second": 2, ...})
+        """
+        # Reset to default
+        if mapping is None:
+            mapping = _DEFAULT_HMS
+
+        # Cache mappings
+        old: dict = self._hms
+        old_ext: dict = self._hms_ext
+
+        # Set tokens & values
+        self._hms = dict()
+        self._hms_ext = dict()
+        try:
+            for t, v in mapping.items():
+                self.add_hms(
+                    self._ensure_str_token("hms", t),
+                    self._ensure_int_value("hms", v),
+                )
+        except Exception:
+            # Rollback
+            self._hms = old
+            self._hms_ext = old_ext
+            raise
+        return True
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def is_hms(self, token: str) -> cython.bint:
+        """Check if the `token` can be recognized as `H/M/S` flag `<'bool'>`.
+
+        :param token `<'str'>`: The token to check against.
+            Only recognize in `lowercase`, `uppercase` and `titlecase`.
+        :return `<'bool'>`: True if the token can be recognized, otherwise False.
+        """
+        if token is None:
+            return False
+        return dict_contains(self._hms_ext, token)
+
+    @cython.ccall
+    @cython.exceptval(-2, check=False)
+    def get_hms(self, token: str) -> cython.int:
+        """Get the corresponding H/M/S flag number if `token`
+        can be recognized as `H/M/S` `<'int'>`
+
+        :param token `<'str'>`: Candidate for `H/M/S` token.
+            Only recognize in `lowercase`, `uppercase` and `titlecase`.
+        :return `<'int'>`: H/M/S flag number (0=hour; 1=minute; 2=second), or `-1` if the
+            token is not recognizable (-1 is the sentinel value for None).
+        """
+        if token is None:
+            return -1
+        value = dict_getitem(self._hms_ext, token)
+        if value == cython.NULL:
+            return -1
+        return cython.cast(object, value)
+
+    # AM/PM ----------------------------------------------------------
+    @property
+    def ampm(self) -> dict[str, int]:
+        """Map of tokens to recognize as AM/PM flag `<'dict[str, int]'>`.
+
+        - Keys are the AM/PM tokens and values are the corresponding
+          flag numbers: 0=AM; 1=PM.
+        """
+        return dict(self._ampm)
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def add_ampm(self, token: str, flag: cython.int) -> cython.bint:
+        """Add token that should be recognized as `AM/PM` flag
+        with the corresponding flag number.
+
+        :param token `<'str'>`: The `AM/PM` token to add (case-insensitive).
+        :param month `<'int'>`: The AM/PM flag number (0=AM; 1=PM).
+        :returns `<'bool'>`: True if added successfully, otherwise False.
+        :raises `<'InvalidConfigsValue'>`: If token conflicts with other namespaces,
+            or the AM/PM flag number is invalid.
+
+        ## AM/PM Flag Number
+        - flag: 0=AM; 1=PM
+
+        ## Example
+        >>> cfg.add_ampm("am", 0)
+        """
+        # Validate token
+        token = self._validate_token("ampm", token)
+        # Validate value
+        value: object = self._validate_value("ampm", flag, 0, 1)
+        # Add to base namespace
+        dict_setitem(self._ampm, token, value)
+        # Add to extend namespace
+        for tok in self._gen_token_case_variants(token):
+            dict_setitem(self._ampm_ext, tok, value)
+        return True
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def remove_ampm(self, token: str) -> cython.bint:
+        """Remove `AM/PM` token from the configuration `<'bool'>`.
+
+        :param token `<'str'>`: The `AM/PM` token to remove (case-insensitive).
+        :returns `<'bool'>`: True if removed successfully, otherwise False (not exists).
+        :raises `<'InvalidConfigsValue'>`: If the `token` is invalid.
+
+        ##  Example
+        >>> cfg.remove_ampm("am")
+        """
+        # Lowercase token
+        token = self._lowercase_token("ampm", token)
+        # Remove from base namespace
+        try:
+            dict_delitem(self._ampm, token)
+        except KeyError:
+            return False
+        # Remove from extend namespace
+        for tok in self._gen_token_case_variants(token):
+            try:
+                dict_delitem(self._ampm_ext, tok)
+            except KeyError:
+                pass
+        return True
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def replace_ampm(self, mapping: dict[str, int] = None) -> cython.bint:
+        """Replace the `AM/PM` mapping `<'bool'>`.
+
+        :param mapping `<'dict[str,int]/None'>`: The new mapping of `AM/PM` tokens. Defaults to `None`.
+
+            - Accepts dictionary where keys are `AM/PM` tokens
+              and values are AM/PM flag numbers (0=AM; 1=PM).
+            - If `None`, resets to the default `AM/PM` mapping.
+
+        :returns `<'bool'>`: True if replaced successfully, otherwise False.
+        :raises `<'InvalidConfigsValue'>`: If any `AM/PM` token conflicts with
+            other namespaces or the AM/PM flag number is invalid.
+
+        ## Example
+        >>> cfg.replace_ampm({"am": 0, "pm": 1, ... })
+        """
+        # Reset to default
+        if mapping is None:
+            mapping = _DEFAULT_AMPM
+
+        # Cache mappings
+        old: dict = self._ampm
+        old_ext: dict = self._ampm_ext
+
+        # Set tokens & values
+        self._ampm = dict()
+        self._ampm_ext = dict()
+        try:
+            for t, v in mapping.items():
+                self.add_ampm(
+                    self._ensure_str_token("ampm", t),
+                    self._ensure_int_value("ampm", v),
+                )
+        except Exception:
+            # Rollback
+            self._ampm = old
+            self._ampm_ext = old_ext
+            raise
+        return True
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def is_ampm(self, token: str) -> cython.bint:
+        """Check if the `token` can be recognized as `AM/PM` flag `<'bool'>`.
+
+        :param token `<'str'>`: The token to check against.
+            Only recognize in `lowercase`, `uppercase` and `titlecase`.
+        :return `<'bool'>`: True if the token can be recognized, otherwise False.
+        """
+        if token is None:
+            return False
+        return dict_contains(self._ampm_ext, token)
+
+    @cython.ccall
+    @cython.exceptval(-2, check=False)
+    def get_ampm(self, token: str) -> cython.int:
+        """Get the corresponding AM/PM flag number if `token`
+        can be recognized as `AM/PM` `<'int'>`
+
+        :param token `<'str'>`: Candidate for `AM/PM` token.
+            Only recognize in `lowercase`, `uppercase` and `titlecase`.
+        :return `<'int'>`: AM/PM flag number (0=AM; 1=PM), or `-1` if the
+            token is not recognizable (-1 is the sentinel value for None).
+        """
+        if token is None:
+            return -1
+        value = dict_getitem(self._ampm_ext, token)
+        if value == cython.NULL:
+            return -1
+        return cython.cast(object, value)
+
+    # Clear & Reset ------------------------------------------------
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def clear_settings(self) -> cython.bint:
+        """Clear all token settings.
+
+        - Remove all tokens in namespaces:
+            `jump`, `pertain`, `utc`.
+        - Remove all tokens and corresponding values in namespaces:
+            `tz`, `month`, `weekday`, `hms`, `ampm`.
+        """
+        # . jump
+        self._jump = set()
+        self._jump_ext = set()
+        # . pertain
+        self._pertain = set()
+        self._pertain_ext = set()
+        # . utc
+        self._utc = set()
+        self._utc_ext = set()
+        # . tz
+        self._tz = dict()
+        self._tz_ext = dict()
+        # . month
+        self._month = dict()
+        self._month_ext = dict()
+        # . weekday
+        self._weekday = dict()
+        self._weekday_ext = dict()
+        # . hms
+        self._hms = dict()
+        self._hms_ext = dict()
+        # . ampm
+        self._ampm = dict()
+        self._ampm_ext = dict()
+        return True
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def reset_settings(self) -> cython.bint:
+        """Reset all token settings to `default`.
+
+        - Reset all tokens to default in namespaces:
+            `jump`, `pertain`, `utc`.
+        - Reset all tokens and corresponding values to default in namespaces:
+            `tz`, `month`, `weekday`, `hms`, `ampm`.
+        """
+        self.clear_settings()
+        self.replace_jump(None)
+        self.replace_pertain(None)
+        self.replace_utc(None)
+        self.replace_tz(None)
+        self.replace_month(None)
+        self.replace_weekday(None)
+        self.replace_hms(None)
+        self.replace_ampm(None)
+        return True
+
+    # Internal --------------------------------------------------------
+    # . token
+    @cython.cfunc
+    @cython.inline(True)
+    def _ensure_str_token(self, namespace: str, token: object) -> str:
+        """(internal) Ensure the `token` is a literal string `<'str'>`.
+
+        :param namespace `<'str'>`: The destination namespace of the token:
+            'jump', 'pertain', 'utc', 'tz', 'month', 'weekday', 'hms', 'ampm'.
+        :param token `<'object'>`: The token to ensure is literal string.
+        :returns `<'str'>`: The validated string value.
+        :raises `<'InvalidConfigsValue'>`: If the token is not a string.
+        """
+        if not isinstance(token, str):
+            raise errors.InvalidConfigsValue(
+                "The token for 'Configs.%s' must be a string, instead got %s."
+                % (namespace, type(token))
+            )
+        return token
 
     @cython.cfunc
     @cython.inline(True)
-    def _validate_value(
-        self,
-        setting: str,
-        value: object,
-        min: cython.int,
-        max: cython.int,
-    ) -> object:
-        """(cfunc) Validate if the 'value' of a word is in
-        the valid range (min...max) `<'int'>`."""
-        if type(value) is not int:
+    def _validate_token(self, namespace: str, token: str) -> str:
+        """(internal) Validate and normalize a token for a given namespace `<'str'>`.
+
+        :param namespace `<'str'>`: The destination namespace of the token:
+            'jump', 'pertain', 'utc', 'tz', 'month', 'weekday', 'hms', 'ampm'.
+        :param token `<'str'>`: The user-provided token to register.
+        :returns `<'str'>`: The validated and normalized (lowercased) token.
+        :raises `<'InvalidConfigsValue'>`: If the token is invalid or conflicts per the policy.
+
+        ## Conflict Policy
+        - Namespace `jump` has the lowest priority and can overlap with any other namespace.
+        - Other cross-namespace overlaps are rejected.
+        """
+        # Validate token
+        if token is None:
             raise errors.InvalidConfigsValue(
-                "<'%s'> The value for 'Configs.%s' must be an integer, instead got %s."
-                % (self.__class__.__name__, setting, type(value))
+                "The token for 'Configs.%s' must be a string, instead got None."
+                % namespace
             )
-        v: cython.longlong = value
-        if not min <= v <= max:
+        token: str = self._lowercase_token(namespace, token)
+
+        # Cross-namespace check
+        # . jump: lowest priority → accept overlap
+        if namespace == "jump":
+            return token
+        overlap: str = None
+        # . pertain
+        if set_contains(self._pertain, token):
+            if namespace != "pertain":
+                overlap = "pertain"
+        # . utc
+        elif set_contains(self._utc, token):
+            if namespace != "utc":
+                overlap = "utc"
+        # . tz
+        elif dict_contains(self._tz, token):
+            if namespace != "tz":
+                overlap = "tz"
+        # . month
+        elif dict_contains(self._month, token):
+            if namespace != "month":
+                overlap = "month"
+        # . weekday
+        elif dict_contains(self._weekday, token):
+            if namespace != "weekday":
+                overlap = "weekday"
+        # . hms flag
+        elif dict_contains(self._hms, token):
+            if namespace != "hms":
+                overlap = "hms"
+        # . ampm flag
+        elif dict_contains(self._ampm, token):
+            if namespace != "ampm":
+                overlap = "ampm"
+
+        # Raise error
+        if overlap:
             raise errors.InvalidConfigsValue(
-                "<'%s'> The value for 'Configs.%s' must between %d...%d, instead got %d."
-                % (self.__class__.__name__, setting, min, max, v)
+                "The token '%s' for 'Configs.%s' conflicts with existing tokens in 'Configs.%s'."
+                % (token, namespace, overlap)
+            )
+
+        # Return the token in lowercase
+        return token
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _lowercase_token(self, namespace: str, token: str) -> str:
+        """(internal) Normalize a token to lowercase `<'str'>`.
+
+        :param namespace `<'str'>`: The destination namespace of the token:
+            'jump', 'pertain', 'utc', 'tz', 'month', 'weekday', 'hms', 'ampm'.
+        :param token `<'str'>`: The input token.
+        :returns `<'str'>`: The lowercase variant of the token.
+        """
+        if token is None:
+            raise errors.InvalidConfigsValue(
+                "The token for 'Configs.%s' must be a string, instead got None."
+                % namespace
+            )
+        if str_len(token) == 0:
+            raise errors.InvalidConfigsValue(
+                "The token for 'Configs.%s' cannot be an empty string." % namespace
+            )
+        return token.lower()
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _gen_token_case_variants(self, token: str) -> tuple[str, str, str]:
+        """(internal) Generate case variants of a token `<'tuple'>`.
+
+        :param token `<'str'>`: The input token.
+        :returns `<'tuple[str, str, str]'>`: A tuple containing
+            the lowercase, uppercase, and titlecase variants of the token.
+        """
+        if token is None:
+            raise errors.InvalidConfigsValue("Namespace `token` cannot be None.")
+        return (token.lower(), token.upper(), token.title())
+
+    # . value
+    @cython.cfunc
+    @cython.inline(True)
+    def _ensure_int_value(self, namespace: str, value: object) -> cython.int:
+        """(internal) Ensure the `value` is an integer `<'int'>`.
+
+        :param namespace `<'str'>`: The destination namespace of the value:
+            'jump', 'pertain', 'utc', 'tz', 'month', 'weekday', 'hms', 'ampm'.
+        :param value `<'object'>`: The value to ensure is an integer.
+        :returns `<'int'>`: The validated integer value.
+        :raises `<'InvalidConfigsValue'>`: If the value is not an integer.
+        """
+        if not isinstance(value, int):
+            raise errors.InvalidConfigsValue(
+                "The value for 'Configs.%s' must be an integer, instead got %s."
+                % (namespace, type(value))
             )
         return value
 
     @cython.cfunc
     @cython.inline(True)
-    def _validate_value_month(self, value: object) -> object:
-        """(cfunc) Validate if the 'value' of a month is in
-        the valid range (1...12) `<'int'>`."""
-        return self._validate_value("month", value, 1, 12)
+    def _validate_value(
+        self,
+        namespace: str,
+        value: cython.int,
+        minimum: cython.int,
+        maximum: cython.int,
+    ) -> cython.int:
+        """(internal) Validate an integer value for a given namespace `<'int'>`.
 
-    @cython.cfunc
-    @cython.inline(True)
-    def _validate_value_weekday(self, value: object) -> object:
-        """(cfunc) Validate if the 'value' of a weekday is in
-        the valid range (0...6) `<'int'>`."""
-        return self._validate_value("weekday", value, 0, 6)
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _validate_value_hms_flag(self, value: object) -> object:
-        """(cfunc) Validate if the 'value' of a H/M/S flag is in
-        the valid range (0...2) `<'int'>`."""
-        return self._validate_value("hms_flag", value, 0, 2)
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _validate_value_ampm_flag(self, value: object) -> object:
-        """(cfunc) Validate if the 'value' of a AM/PM flag is in
-        the valid range (0...1) `<'int'>`."""
-        return self._validate_value("ampm_flag", value, 0, 1)
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _validate_value_tzoffset(self, value: object) -> object:
-        """(cfunc) Validate if the 'value' of a timezone offset is in
-        the valid range (-86_340...86_340) `<'int'>`."""
-        return self._validate_value("tz", value, -86_340, 86_340)
+        :param namespace `<'str'>`: The destination namespace of the value:
+            'jump', 'pertain', 'utc', 'tz', 'month', 'weekday', 'hms', 'ampm'.
+        :param value `<'int'>`: The user-provided value to register.
+        :param minimum `<'int'>`: The minimum allowed value (inclusive).
+        :param maximum `<'int'>`: The maximum allowed value (inclusive).
+        :returns `<'int'>`: The validated integer value.
+        :raises `<'InvalidConfigsValue'>`: If the value is out of range.
+        """
+        if not minimum <= value <= maximum:
+            raise errors.InvalidConfigsValue(
+                "The value for 'Configs.%s' must be an integer between %d..%d, instead got %d."
+                % (namespace, minimum, maximum, value)
+            )
+        return value
 
     # Special methods -------------------------------------------------
     def __repr__(self) -> str:
-        reprs: list = [
-            "*year1st* = %s" % self._year1st,
-            "*day1st* = %s" % self._day1st,
-            "*pertain* = %s" % sorted(self._pertain),
-            "*jump* = %s" % sorted(self._jump),
-            "*utc* = %s" % sorted(self._utc),
-            "*tz* = %s" % self._tz,
-            "*month* = %s" % self._month,
-            "*weekday* = %s" % self._weekday,
-            "*hms* = %s" % self._hms_flag,
-            "*ampm* = %s" % self._ampm_flag,
-        ]
-        return "<%s (\n  %s\n)>" % (self.__class__.__name__, ",\n  ".join(reprs))
+        return (
+            "<%s (%s: year1st=%s day1st=%s | "
+            "sizes: jump=%d pertain=%d utc=%d tz=%d month=%d weekday=%d hms=%d ampm=%d)>"
+            % (
+                self.__class__.__name__,
+                self.order_hint(),
+                self._year1st,
+                self._day1st,
+                set_len(self._jump),
+                set_len(self._pertain),
+                set_len(self._utc),
+                dict_len(self._tz),
+                dict_len(self._month),
+                dict_len(self._weekday),
+                dict_len(self._hms),
+                dict_len(self._ampm),
+            )
+        )
+
+
+_DEFAULT_CONFIGS: Configs = Configs()
 
 
 # Parser --------------------------------------------------------------------------------------
 @cython.cclass
 class Result:
-    """Represents the datetime result from the Parser."""
+    """Parsed datetime result container for the Parser.
+
+    This class stores raw date tokens as they are encountered (up to three
+    positional Y/M/D `values`) and, separately, which positions are known to be
+    year/month/day (`role indices`). It then resolves ambiguities to concrete
+    `year`, `month`, and `day`, and also carries time/weekday/tzoffset
+    information when available.
+
+    ## Sentinels
+    - Unset date/time component: `-1`
+    - Unset tzoffset: `-100_000`
+
+    ## Notice
+    This class is designed to be used internally by the Parser
+    only, and all attributes/methods are only available in Cython
+    (`NOT` exposed to Python).
+    """
 
     # Y/M/D
     _ymd: cython.int[3]
@@ -1014,189 +1587,311 @@ class Result:
     _yidx: cython.int
     _midx: cython.int
     _didx: cython.int
+    _resolved: cython.bint
     # Values
     year: cython.int
     month: cython.int
     day: cython.int
-    weekday: cython.int
     hour: cython.int
     minute: cython.int
     second: cython.int
     microsecond: cython.int
+    weekday: cython.int
+    doy: cython.int
     ampm: cython.int
     tzoffset: cython.int
+    tzoffset_finalized: cython.bint
     century_specified: cython.bint
 
     def __cinit__(self) -> None:
         """The datetime result from the Parser."""
-        self.reset()
+        self._reset()
 
     # Y/M/D -----------------------------------------------------------
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
-    def set_ymd_int(self, value: cython.longlong, label: cython.int) -> cython.bint:
-        """(cfunc) Set one Y/M/D value from an integer `<'bool'>`.
+    def set_ymd_int(self, flag: cython.int, value: cython.longlong) -> cython.bint:
+        """(cfunc) Set one Y/M/D candidate value from an integer `<'bool'>`.
 
-        :param value `<'int'>`: One of the Y/M/D value.
-        :param label `<'int'>`: The label for the value:
-            - label=0: unknown
-            - label=1: year
-            - label=2: month
-            - label=3: day
+        :param flag `<'int'>`: The Y/M/D flag (0=UNKNOWN, 1=YEAR, 2=MONTH, 3=DAY).
+        :param value `<'int'>`: An integer value, candidate for Y/M/D.
+        :returns `<'bool'>`: True if value is recorded.
+            False if the corresponding field is set or all slots were full.
+        :raises `<'ValueError'>`: If the value is out of range or violates the basic domain of a labeled token.
 
-        :returns `<'bool'`>: `False` if all slots (max 3) are fully populated.
+        ## Rules
+        - The `value` must be in 0..9999, else raise error.
+        - When flag is `0` (UNKNOWN):
+            * `value > 31` ⇒ treat as year (century is specified if `value > 99`).
+            * `value == 0` ⇒ treat as year (century not specified).
+            * `1..31` remains unknown, to be disambiguated later.
+        - When flag is `1` (YEAR):
+            * century is specified if `value > 99`.
+        - When flag is `2` (MONTH):
+            * `value` must be in 1..12, else raise error.
+        - When flag is `3` (DAY):
+            * `value` must be in 1..31, else raise error.
         """
-        # Y/M/D slots already fully populated
+        # Full: 3 slots already set (idx is 0-based)
         if self._idx >= 2:
             return False
 
-        # Validate Y/M/D 'value'
+        # Range check
+        if not 0 <= value <= 9_999:
+            raise ValueError("Invalid Y/M/D value '%d', must be in 0..9999." % value)
+
+        # Unknown flag
+        if flag == 0:
+            # . definitely a year
+            if value > 31:
+                if value > 99 and not self.is_year_set():
+                    self.century_specified = True
+                flag = 1  # set to YEAR
+            # . definitely a year (0)
+            elif value == 0:
+                flag = 1  # set to YEAR
+
+        # YEAR flag
+        elif flag == 1:
+            if value > 99 and not self.is_year_set():
+                self.century_specified = True
+
+        # MONTH flag
+        elif flag == 2:
+            if not 1 <= value <= 12:
+                raise ValueError("Invalid month value '%d', must be in 1..12." % value)
+
+        # DAY flag
+        elif flag == 3:
+            if not 1 <= value <= 31:
+                raise ValueError("Invalid day value '%d', must be in 1..31." % value)
+
+        # Invalid flag
+        else:
+            raise AssertionError(
+                "Invalid Y/M/D flag value '%d', must be in 0..2" % flag
+            )
+
+        # Record Y/M/D value
+        return self._record_ymd(flag, value)
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def set_ymd_str(
+        self,
+        flag: cython.int,
+        token: str,
+        token_len: cython.Py_ssize_t = -1,
+    ) -> cython.bint:
+        """(cfunc) Set one Y/M/D candidate value from a string `<'bool'>`.
+
+        :param flag `<'int'>`: The Y/M/D flag (0=UNKNOWN, 1=YEAR, 2=MONTH, 3=DAY).
+        :param token `<'str'>`: A string token, candidate for Y/M/D.
+        :param token_len `<'int'>`: Optional precomputed length of `token`. Defaults to `-1`.
+            If `token_len <= 0`, the function computes the length.
+            Otherwise, `token_len` is treated as the token length.
+        :returns `<'bool'>`: True if token `value` is recorded.
+            False if the corresponding field is set or all slots were full.
+        :raises `<'ValueError'>`: If the token is non-numeric or,
+            the integer value is out of range or violates the basic
+            domain of a labeled token.
+
+        ## Rules
+        - The `token` must only contain ACSII dights, else raise error.
+        - The `int(token)` must be in 0..9999, else raise error.
+        - When flag is `0` (UNKNOWN):
+            * `len(token) > 2`  ⇒ treat as year and century specified.
+            * `int(token) > 31` ⇒ treat as year.
+            * `int(token) == 0` ⇒ treat as year.
+            * `1..31` remains unknown, to be disambiguated later.
+        - When flag is `1` (YEAR):
+            * century is specified if `len(token) > 2`.
+        - When flag is `2` (MONTH):
+            * `int(token)` must be in 1..12, else raise error.
+        - When flag is `3` (DAY):
+            * `int(token)` must be in 1..31, else raise error.
+        """
+        # Full: 3 slots already set (idx is 0-based)
+        if self._idx >= 2:
+            return False
+
+        # Parse to value integer
+        if token_len <= 0:
+            token_len = str_len(token)
+        if not utils.is_str_ascii_digits(token, token_len):
+            raise ValueError(
+                "Invalid Y/M/D value '%s', cannot be converted to an integer" % token
+            )
+        value: cython.ulonglong = utils.slice_to_uint(token, 0, token_len, token_len)
+
+        # Range check
         if value > 9_999:
-            raise ValueError("invalid Y/M/D value '%d'." % value)
-        elif value > 31:
-            label = 1
-            if value > 99:
+            raise ValueError("Invalid Y/M/D value '%d', must be in 0..9999." % value)
+
+        # Unknown flag
+        if flag == 0:
+            # . definitely a year (length > 2: '0001')
+            if token_len > 2:
+                if not self.is_year_set():
+                    self.century_specified = True
+                flag = 1  # set to YEAR
+            # . definitely a year (100..9999)
+            elif value > 31:
+                flag = 1  # set to YEAR
+            # . definitely a year (0)
+            elif value == 0:
+                flag = 1  # set to YEAR
+
+        # YEAR flag
+        elif flag == 1:
+            if token_len > 2 and not self.is_year_set():  # e.g '0001'
                 self.century_specified = True
-        elif value < 0:
-            raise ValueError("invalid Y/M/D value '%d'." % value)
 
-        # Set Y/M/D value & index
-        return self._set_ymd(value, label)
+        # MONTH flag
+        elif flag == 2:
+            if not 1 <= value <= 12:
+                raise ValueError("Invalid month value '%d', must be in 1..12." % value)
 
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def set_ymd_str(self, value: str, label: cython.int) -> cython.bint:
-        """(cfunc) Set one Y/M/D value from a string `<'bool'>`.
+        # DAY flag
+        elif flag == 3:
+            if not 1 <= value <= 31:
+                raise ValueError("Invalid day value '%d', must be in 1..31." % value)
 
-        :param value `<'str'>`: One of the Y/M/D value.
-        :param label `<'int'>`: The label for the value:
-            - label=0: unknown
-            - label=1: year
-            - label=2: month
-            - label=3: day
-            
-        :returns `<'bool'`>: `False` if all slots (max 3) are fully populated.
-        """
-        # Y/M/D slots already fully populated
-        if self._idx >= 2:
-            return False
+        # Invalid flag
+        else:
+            raise AssertionError(
+                "Invalid Y/M/D flag value '%d', must be in 0..2" % flag
+            )
 
-        # Validate Y/M/D 'value'
-        try:
-            num: cython.longlong = int(value)
-        except Exception as err:
-            raise ValueError("invalid Y/M/D value '%s'." % value) from err
-        if num > 9_999:
-            raise ValueError("invalid Y/M/D value '%s'." % value)
-        elif num > 31:
-            label = 1
-            if num > 99:
-                self.century_specified = True
-        elif num < 0:
-            raise ValueError("invalid Y/M/D value '%s'." % value)
-        elif str_len(value) > 2:
-            self.century_specified = True
-            label = 1
-
-        # Set Y/M/D value & index
-        return self._set_ymd(num, label)
+        # Record Y/M/D value
+        return self._record_ymd(flag, value)
 
     @cython.cfunc
     @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _set_ymd(self, value: cython.int, label: cython.int) -> cython.bint:
-        """(cfunc) Set one Y/M/D value & its index `<'bool'>`
-
-        #### This method is for internal use only.
-
-        :param value `<'int'>`: One of the Y/M/D value.
-        :param label `<'int'>`: The label for the value:
-            - label=0: unknown
-            - label=1: year
-            - label=2: month
-            - label=3: day
-        """
-        # Set Y/M/D value
-        self._idx += 1
-        self._ymd[self._idx] = value
-        if label == 0:
-            return True
-
-        # Set Y/M/D label index
-        if label == 1:
-            # . year index
-            if self._yidx == -1:
-                self._yidx = self._idx
-        elif label == 2:
-            # . month index
-            if self._midx == -1:
-                self._midx = self._idx
-        elif label == 3:
-            # . day index
-            if self._didx == -1:
-                self._didx = self._idx
-        return True
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def ymd_populated(self) -> cython.int:
-        """(cfunc) Get the number of Y/M/D slots that have already
-        been populated with, expects value between 0...3 `<'int'>`.
-        """
+    @cython.exceptval(check=False)
+    def ymd_slots_filled(self) -> cython.int:
+        """(cfunc) Return the number of Y/M/D slots are recorded so far (0..3) `<'int'>`."""
         return self._idx + 1
 
     @cython.cfunc
     @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def ymd_labeled(self) -> cython.int:
-        """(cfunc) Get the number of Y/M/D slots that have already
-        been labeled (solved), expects value between 0...3 `<'int'>`.
-        """
-        count: cython.int = 0
-        if self._yidx != -1:
-            count += 1
-        if self._midx != -1:
-            count += 1
-        if self._didx != -1:
-            count += 1
-        return count
+    @cython.exceptval(check=False)
+    def ymd_roles_resolved(self) -> cython.int:
+        """(cfunc) Return how many Y/M/D roles are known so far (0..3) `<'int'>`."""
+        return (self._yidx != -1) + (self._midx != -1) + (self._didx != -1)
 
     @cython.cfunc
     @cython.inline(True)
-    @cython.exceptval(-1, check=False)
+    @cython.exceptval(check=False)
     def could_be_day(self, value: cython.longlong) -> cython.bint:
-        """(cfunc) Determine if an integer could be the day,
-        based on the current Y/M/D slot values `<'bool'>`.
+        """(cfunc) Determines whether the `value` could be a day-of-month
+        given current Y/M/D labels `<'bool'>`.
+
+        :param value `<'int'>`: Candidate for day-of-month.
+        :returns `<'bool'>`: True if `value` could represent a valid
+            day-of-month under the current Y/M/D constraints; False otherwise.
         """
-        # Day slot already populated
+        # Day slot already assigned
         if self._didx != -1:
             return False
-        # Month is known & value is in range
-        if self._midx == -1:
-            return 1 <= value <= 31
-        # Year is known & value is in range
-        month = self._ymd[self._midx]
-        if self._yidx == -1:
-            return 1 <= value <= utils.days_in_month(2000, month)
-        # Both Y/M are known & value is in range
-        year = self._ymd[self._yidx]
-        return 1 <= value <= utils.days_in_month(year, month)
 
-    # Values ----------------------------------------------------------
+        # Day is 1-based
+        if value < 1:
+            return False
+
+        # Month unknown ⇒ any 1..31 could be a day
+        if self._midx == -1:
+            return value <= 31
+        month: cython.int = self._ymd[self._midx]
+
+        # Month known but year unknown -> check with a leap year (2000)
+        if self._yidx == -1:
+            return value <= utils.days_in_month(2000, month)
+        year: cython.int = self._ymd[self._yidx]
+
+        # Both month and year are known
+        return value <= utils.days_in_month(year, month)
+
     @cython.cfunc
     @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def prepare(self, year1st: cython.bint, day1st: cython.bint) -> cython.bint:
-        """(cfunc) Prepare the result (solve unlabeld and ambiguous Y/M/D).
-        Returns `True` if the result is valid `<'bool'>`.
+    @cython.exceptval(check=False)
+    def could_be_doy(self, value: cython.longlong) -> cython.bint:
+        """(cfunc) Determines whether the `value` could be a day-of-year
+        given current Y/M/D labels `<'bool'>`.
 
-        #### Must call this method before accessing the result values.
+        :param value `<'int'>`: Candidate for day-of-year.
+        :returns `<'bool'>`: True if `value` could represent a valid
+            day-of-year under the current Y/M/D constraints; False otherwise.
         """
-        populated: cython.int = self.ymd_populated()
-        labeled: cython.int = self.ymd_labeled()
+        # Day of year already assigned
+        if self.doy != -1:
+            return False
+
+        # Day of year is 1-based
+        if value < 1:
+            return False
+
+        # Either month or day is known
+        if self._midx != -1 or self._didx != -1:
+            return False
+
+        # Year unknown
+        if self._yidx == -1:
+            return False
+        year: cython.int = self._ymd[self._yidx]
+
+        # Check Range
+        return value <= utils.days_in_year(year)
+
+    # Resolve ---------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def resolve(self, year1st: cython.bint, day1st: cython.bint) -> cython.bint:
+        """(cfunc) Resolve unlabeled/ambiguous Y/M/D tokens into concrete year/month/day
+        values in-place, using the supplied disambiguation preferences.
+
+        This method inspects the three positional Y/M/D slots together with their
+        known-role indices. It chooses the most plausible assignment according to
+        simple domain rules and the `year1st` / `day1st` preferences, then writes
+        the results to `self.year`, `self.month`, and `self.day`. Components that
+        cannot be inferred remain `-1`.
+
+        After resolving Y/M/D, if `century_specified` is False and `0 <= year < 100`,
+        the year is adjusted to the current century using a ±50-year sliding window
+        relative to today's year.
+
+        :param year1st `<'bool'>`: If True, break remaining ties in favor of
+            interpreting an unlabeled ambiguous token as the year.
+        :param day1st `<bool'>`: If True, break remaining ties in favor of
+            interpreting an unlabeled ambiguous token as the day (when
+            compatible with basic month/day ranges).
+        :returns `<'bool'>`: True if the result contains any datetime information
+            at all (date, time, weekday, or tzoffset) after resolution; False otherwise.
+            Note this is a `presence` check, not a full calendar validity check.
+
+        ## Notes
+        - With one token present, values > 31 are taken as year; otherwise preference
+          is applied (month if labeled, else day).
+        - With two tokens present, obvious year/month ordering is chosen first
+          (e.g., 99-Feb vs Feb-99), else `day1st` influences the decision.
+        - With three tokens present:
+            * If two roles are already labeled, the remaining role is deduced.
+            * If roles are largely unlabeled, heuristics prefer placements that
+              satisfy basic ranges (e.g., day ≤ 31, month ≤ 12) and `year1st`.
+        - This method does not normalize impossible combinations beyond the above
+          rules; unsupported values may remain `-1` for later handling by the parser.
+        - This method must be called before accessing the resolved year/month/day values.
+        """
+        # Already resolved
+        if self._resolved:
+            return self.valid()
+
+        # Resolve Y/M/D
+        slots_filled: cython.int = self.ymd_slots_filled()
+        roles_labeled: cython.int = self.ymd_roles_resolved()
         yidx: cython.int = self._yidx
         midx: cython.int = self._midx
         didx: cython.int = self._didx
@@ -1204,108 +1899,124 @@ class Result:
         v1: cython.int = self._ymd[1]
         v2: cython.int = self._ymd[2]
 
-        # All Y/M/D have been solved already
-        if populated == labeled > 0:
+        # Branch: at least two Y/M/D are filled with labels (no infer)
+        if slots_filled == roles_labeled > 1:
             self.year = self._ymd[yidx] if yidx != -1 else -1
             self.month = self._ymd[midx] if midx != -1 else -1
             self.day = self._ymd[didx] if didx != -1 else -1
 
-        # Has only one Y/M/D value
-        elif populated == 1:
-            if midx != -1:  # month labeled
-                self.month = v0
-            elif v0 > 31:  # must be year
-                self.year = v0
-            else:  # probably day
-                self.day = v0
+        # Branch: one Y/M/D value
+        elif slots_filled == 1:
+            if yidx != -1:
+                self.year = v0  # labeled as year
+                # . day-of-year conversion
+                if self.doy != -1:
+                    _ymd = utils.ymd_fr_day_of_year(v0, self.doy)
+                    self.month, self.day = _ymd.month, _ymd.day
+            elif midx != -1:
+                self.month = v0  # labeled as month
+            elif didx != -1:
+                self.day = v0  # labeled as day
+            elif v0 > 31:
+                self.year = v0  # must be year (> 31)
+            else:
+                self.day = v0  # probably day
 
-        # Have two Y/M/D values
-        elif populated == 2:
+        # Branch: two Y/M/D values
+        elif slots_filled == 2:
             # . month labeled
             if midx != -1:
                 if midx == 0:
                     if v1 > 31 or (v0 == 2 and v1 > 29):
-                        self.month, self.year = v0, v1
-                    else:  # probably day: Jan-01
-                        self.month, self.day = v0, v1
+                        self.month, self.year = v0, v1  # Jan-99
+                    else:
+                        self.month, self.day = v0, v1  # Jan-01 (probably)
                 else:
                     if v0 > 31 or (v1 == 2 and v0 > 29):
-                        self.year, self.month = v0, v1
-                    else:  # probably day: 01-Jan
-                        self.day, self.month = v0, v1
-            # . month not labeled
-            elif v0 > 31 or (v1 == 2 and v0 > 29):  # 99-Feb
-                self.year, self.month = v0, v1
-            elif v1 > 31 or (v0 == 2 and v1 > 29):  # Feb-99
-                self.month, self.year = v0, v1
-            elif day1st and 1 <= v1 <= 12:  # 01-Jan
-                self.day, self.month = v0, v1
-            else:  # Jan-01
-                self.month, self.day = v0, v1
+                        self.year, self.month = v0, v1  # 99-Jan
+                    else:
+                        self.day, self.month = v0, v1  # 01-Jan (probably)
+            # . month not labeled (infer)
+            elif v0 > 31 or (v1 == 2 and v0 > 29):
+                self.year, self.month = v0, v1  # 99-Feb
+            elif v1 > 31 or (v0 == 2 and v1 > 29):
+                self.month, self.year = v0, v1  # Feb-99
+            elif day1st and 1 <= v1 <= 12:
+                self.day, self.month = v0, v1  # 01-Jan
+            else:
+                self.month, self.day = v0, v1  # Jan-01
 
-        # Have three Y/M/D values
-        elif populated == 3:
-            # . lack one label
-            if labeled == 2:
-                if midx != -1:  # month labeled
+        # Branch: three Y/M/D values
+        elif slots_filled == 3:
+            # Case: two labels
+            if roles_labeled == 2:
+                # . month labeled
+                if midx != -1:
                     self.month = self._ymd[midx]
-                    if yidx != -1:  # year labeled
+                    #: the other flag is year
+                    if yidx != -1:
                         self.year = self._ymd[yidx]
                         self.day = self._ymd[3 - yidx - midx]
-                    else:  # day labeled
+                    #: the other flag is day
+                    else:
                         self.day = self._ymd[didx]
                         self.year = self._ymd[3 - midx - didx]
-                elif yidx != -1:  # year labeled
+                # . year labeled
+                elif yidx != -1:
                     self.year = self._ymd[yidx]
-                    if midx != -1:  # month labeled
+                    #: the other flag is month
+                    if midx != -1:
                         self.month = self._ymd[midx]
                         self.day = self._ymd[3 - yidx - midx]
-                    else:  # day labeled
+                    #: the other flag is day
+                    else:
                         self.day = self._ymd[didx]
                         self.month = self._ymd[3 - yidx - didx]
-                else:  # day labeled
+                # . day labeled
+                else:
                     self.day = self._ymd[didx]
-                    if yidx != -1:  # year labeled
+                    #: the other flag is year
+                    if yidx != -1:
                         self.year = self._ymd[yidx]
                         self.month = self._ymd[3 - yidx - didx]
-                    else:  # month labeled
+                    #: the other flag is month
+                    else:
                         self.month = self._ymd[midx]
                         self.year = self._ymd[3 - midx - didx]
-            # . lack more than one labels (guess)
+
+            # Case: month labeled (infer)
             elif midx == 0:
-                if v1 > 31:  # Apr-2003-25
-                    self.month, self.year, self.day = v0, v1, v2
-                else:  # Apr-25-2003
-                    self.month, self.day, self.year = v0, v1, v2
+                if v1 > 31:
+                    self.month, self.year, self.day = v0, v1, v2  # Apr-2003-25
+                else:
+                    self.month, self.day, self.year = v0, v1, v2  # Apr-25-2003
             elif midx == 1:
-                if v0 > 31 or (year1st and 0 < v2 <= 31):  # 99-Jan-01
-                    self.year, self.month, self.day = v0, v1, v2
-                else:  # 01-Jan-99
-                    self.day, self.month, self.year = v0, v1, v2
+                if v0 > 31 or (year1st and 0 < v2 <= 31):
+                    self.year, self.month, self.day = v0, v1, v2  # 99-Jan-01
+                else:
+                    self.day, self.month, self.year = v0, v1, v2  # 01-Jan-99
             elif midx == 2:
-                if v1 > 31:  # 01-99-Jan
-                    self.day, self.year, self.month = v0, v1, v2
-                else:  # 99-01-Jan
-                    self.year, self.day, self.month = v0, v1, v2
+                if v1 > 31:
+                    self.day, self.year, self.month = v0, v1, v2  # 01-99-Jan
+                else:
+                    self.year, self.day, self.month = v0, v1, v2  # 99-01-Jan
+
+            # Case: month not labeled (infer)
             else:
                 if v0 > 31 or yidx == 0 or (year1st and 0 < v1 <= 12 and 0 < v2 <= 31):
-                    if day1st and 0 < v2 <= 12:  # 99-01-Jan
-                        self.year, self.day, self.month = (v0, v1, v2)
-                    else:  # 99-Jan-01
-                        self.year, self.month, self.day = (v0, v1, v2)
-                elif v0 > 12 or (day1st and 0 < v1 <= 12):  # 01-Jan-99
-                    self.day, self.month, self.year = (v0, v1, v2)
-                else:  # Jan-01-99
-                    self.month, self.day, self.year = (v0, v1, v2)
+                    if day1st and 0 < v2 <= 12:
+                        self.year, self.day, self.month = (v0, v1, v2)  # 99-01-Jan
+                    else:
+                        self.year, self.month, self.day = (v0, v1, v2)  # 99-Jan-01
+                elif v0 > 12 or (day1st and 0 < v1 <= 12):
+                    self.day, self.month, self.year = (v0, v1, v2)  # 01-Jan-99
+                else:
+                    self.month, self.day, self.year = (v0, v1, v2)  # Jan-01-99
 
-        # Swap month & day (if necessary)
-        if self.month > 12 and 1 <= self.day <= 12:
-            self.month, self.day = self.day, self.month
-
-        # Adjust year to current century (if necessary)
+        # Century adjustment (if necessary)
         if not self.century_specified and 0 <= self.year < 100:
             year_now: cython.int = localtime().tm_year
-            year: cython.int = self.year + year_now // 100 * 100
+            year: cython.int = self.year + (year_now // 100) * 100
             # . too far into the future
             if year >= year_now + 50:
                 year -= 100
@@ -1315,52 +2026,199 @@ class Result:
             self.year = year
 
         # Check validity
+        self._resolved = True
         return self.valid()
 
     @cython.cfunc
     @cython.inline(True)
-    @cython.exceptval(-1, check=False)
+    @cython.exceptval(check=False)
     def valid(self) -> cython.bint:
-        """(cfunc) Check if the result is valid
-        (contains any datetime values) `<'bool'>`.
+        """(cfunc) Return whether the parsed result currently contains `any`
+        datetime information.
+
+        A result is considered valid if at least one of the following fields
+        has been set to a non-sentinel value: year, month, day, hour, minute,
+        second, microsecond, weekday, or tzoffset (tzoffset != -100_000).
+
+        :returns `<'bool'>`: True if any component is present;
+            False if all components are unset.
         """
         return (
-            self.year != -1
-            or self.month != -1
-            or self.day != -1
-            or self.hour != -1
-            or self.minute != -1
-            or self.second != -1
-            or self.microsecond != -1
-            or self.weekday != -1
-            or self.tzoffset != -100_000
+            self.is_year_set()
+            or self.is_month_set()
+            or self.is_day_set()
+            or self.is_hour_set()
+            or self.is_minute_set()
+            or self.is_second_set()
+            or self.is_microsecond_set()
+            or self.is_weekday_set()
+            or self.is_tzoffset_set()
         )
 
     @cython.cfunc
     @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def reset(self) -> cython.bint:
-        """(cfunc) Reset all results."""
+    @cython.exceptval(check=False)
+    def is_year_set(self) -> cython.bint:
+        """(cfunc) Return whether the `year` value is set `<'bool'>`."""
+        return self._yidx != -1 or self.year != -1
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def is_month_set(self) -> cython.bint:
+        """(cfunc) Return whether the `month` value is set `<'bool'>`."""
+        return self._midx != -1 or self.month != -1
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def is_day_set(self) -> cython.bint:
+        """(cfunc) Return whether the `day` value is set `<'bool'>`."""
+        return self._didx != -1 or self.day != -1
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def is_hour_set(self) -> cython.bint:
+        """(cfunc) Return whether the `hour` value is set `<'bool'>`."""
+        return self.hour != -1
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def is_minute_set(self) -> cython.bint:
+        """(cfunc) Return whether the `minute` value is set `<'bool'>`."""
+        return self.minute != -1
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def is_second_set(self) -> cython.bint:
+        """(cfunc) Return whether the `second` value is set `<'bool'>`."""
+        return self.second != -1
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def is_microsecond_set(self) -> cython.bint:
+        """(cfunc) Return whether the `microsecond` value is set `<'bool'>`."""
+        return self.microsecond != -1
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def is_weekday_set(self) -> cython.bint:
+        """(cfunc) Return whether the `weekday` value is set `<'bool'>`."""
+        return self.weekday != -1
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def is_doy_set(self) -> cython.bint:
+        """(cfunc) Return whether the `doy` (day-of-year) value is set `<'bool'>`."""
+        return self.doy != -1
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def is_ampm_set(self) -> cython.bint:
+        """(cfunc) Return whether the `ampm` value is set `<'bool'>`."""
+        return self.ampm != -1
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def is_tzoffset_set(self) -> cython.bint:
+        """(cfunc) Return whether the `tzoffset` value is set `<'bool'>`."""
+        return self.tzoffset != utils.NULL_TZOFFSET
+
+    # Internal --------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _record_ymd(self, flag: cython.int, value: cython.int) -> cython.bint:
+        """(internal) Record a Y/M/D value and (optionally) its role index `<'bool'>`.
+
+        :param flag `<'int'>`: The Y/M/D flag (0=UNKNOWN, 1=YEAR, 2=MONTH, 3=DAY).
+        :param value `<'int'>`: Validated Y/M/D integer value.
+        :returns `<'bool'>`: True if value is written.
+            False if the corresponding field is set or all slots were full.
+
+        ## Rules
+        - Appends `value` into the next Y/M/D slot.
+        - If `flag` is (1=YEAR, 2=MONTH, 3=DAY) and the corresponding
+          index is not yet assigned, records the index of this value.
+          Otherwise returns False.
+        - If all 3 slots are already used, returns False and does not write.
+        """
+        # Full: 3 slots already set (idx is 0-based)
+        idx: cython.int = self._idx
+        if idx >= 2:
+            return False
+        idx += 1  # advance index
+
+        # Unknown flag
+        if flag == 0:
+            self._ymd[idx] = value
+            self._idx = idx
+            return True
+
+        # YEAR flag
+        if flag == 1:
+            # . year already set
+            if self._yidx != -1:
+                if self.could_be_doy(value):
+                    # candidate for day-of-year
+                    self.doy = value
+                    return True
+                return False
+            # . set year & index
+            self._ymd[idx] = value
+            self._idx = self._yidx = idx
+            return True
+
+        # MONTH flag
+        if flag == 2:
+            # . month already set
+            if self._midx != -1:
+                return False
+            # . set month & index
+            self._ymd[idx] = value
+            self._idx = self._midx = idx
+            return True
+
+        # DAY flag
+        if flag == 3:
+            # . day already set
+            if self._didx != -1:
+                return False
+            # . set day & index
+            self._ymd[idx] = value
+            self._idx = self._didx = idx
+            return True
+
+        # Invalid flag
+        return False
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(check=False)
+    def _reset(self) -> cython.bint:
+        """(internal) Reset the result to inital state."""
         # Y/M/D
         self._ymd = [-1, -1, -1]
-        self._idx = -1
-        self._yidx = -1
-        self._midx = -1
-        self._didx = -1
+        self._idx = self._yidx = self._midx = self._didx = -1
+        self._resolved = False
         # Result
-        self.year = -1
-        self.month = -1
-        self.day = -1
-        self.weekday = -1
-        self.hour = -1
-        self.minute = -1
-        self.second = -1
-        self.microsecond = -1
-        self.ampm = -1
-        #: tzoffset must between -86340...86340,
+        self.year = self.month = self.day = -1
+        self.hour = self.minute = self.second = self.microsecond = -1
+        self.weekday = self.doy = self.ampm = -1
+        #: tzoffset must be between -86400...86400,
         #: -100_000 represents no tzoffset.
-        self.tzoffset = -100_000
+        self.tzoffset = utils.NULL_TZOFFSET
+        self.tzoffset_finalized = False
         self.century_specified = False
+        return True
 
     # Special methods -------------------------------------------------
     def __repr__(self) -> str:
@@ -1368,38 +2226,44 @@ class Result:
 
         # Datetime results
         # . year
-        if self.year != -1:
+        if self.is_year_set():
             reprs.append("year=%d" % self.year)
         elif self._yidx != -1:
             reprs.append("year=%d" % self._ymd[self._yidx])
         # . month
-        if self.month != -1:
+        if self.is_month_set():
             reprs.append("month=%d" % self.month)
         elif self._midx != -1:
             reprs.append("month=%d" % self._ymd[self._midx])
         # . day
-        if self.day != -1:
+        if self.is_day_set():
             reprs.append("day=%d" % self.day)
         elif self._didx != -1:
             reprs.append("day=%d" % self._ymd[self._didx])
         # . rest
-        if self.weekday != -1:
-            reprs.append("weekday=%d" % self.weekday)
-        if self.hour != -1:
+        if self.is_hour_set():
             reprs.append("hour=%d" % self.hour)
-        if self.minute != -1:
+        if self.is_minute_set():
             reprs.append("minute=%d" % self.minute)
-        if self.second != -1:
+        if self.is_second_set():
             reprs.append("second=%d" % self.second)
-        if self.microsecond != -1:
+        if self.is_microsecond_set():
             reprs.append("microsecond=%d" % self.microsecond)
-        if self.ampm != -1:
+        if self.is_weekday_set():
+            reprs.append("weekday=%d" % self.weekday)
+        if self.is_doy_set():
+            reprs.append("doy(day-of-year)=%d" % self.doy)
+        if self.is_ampm_set():
             reprs.append("ampm=%d" % self.ampm)
-        if self.tzoffset != -100_000:
+        if self.is_tzoffset_set():
             reprs.append("tzoffset=%d" % self.tzoffset)
 
         # Construct
-        return "<%s (%s)>" % (self.__class__.__name__, ", ".join(reprs))
+        return "<%s (resolved=%s: %s)>" % (
+            self.__class__.__name__,
+            self._resolved,
+            " ".join(reprs),
+        )
 
     def __bool__(self) -> bool:
         return self.valid()
@@ -1407,64 +2271,58 @@ class Result:
 
 @cython.cclass
 class Parser:
-    """Represents the datetime Parser."""
+    """Flexible date/time parser with ISO fast-path and token heuristics.
 
-    # Settings
+    The `Parser` reads a free-form date/time string and populates an
+    internal `Result` accumulator via two complementary strategies:
+
+    1) `ISO fast-path`: a tuned parser for ISO-8601 calendar/ordinal/week dates
+       with optional time, fractional seconds, and timezone. When the core ISO
+       portion parses but an extra tail remains (e.g., AM/PM, weekday, timezone
+       adornments), a lightweight “ISO-extra” pass consumes the tail.
+    2) `Heuristic token path`: a tokenizer + left→right scan that recognizes
+       numeric blocks, month/weekday names, AM/PM, timezone names, and timezone
+       offsets. Ambiguous Y/M/D triples are resolved later according to the
+       configuration (or explicit flags passed to `parse`).
+
+    The parser defers construction of the final `datetime` object until all
+    fields have been gathered and disambiguated.
+    """
+
     _ignoretz: cython.bint
-    # Configs
-    _year1st: cython.bint
-    _day1st: cython.bint
-    _pertain: set[str]
-    _jump: set[str]
-    _utc: set[str]
-    _tz: dict[str, int]
-    _month: dict[str, int]
-    _weekday: dict[str, int]
-    _hms_flag: dict[str, int]
-    _ampm_flag: dict[str, int]
-    # Result
+    _cfg: Configs
     _res: Result
-    # Process
-    _idx: cython.Py_ssize_t
-    _size: cython.Py_ssize_t
+    _pos: cython.Py_ssize_t
+    _length: cython.Py_ssize_t
     _tokens: list[str]
-    _tk1: str
-    _tk2: str
-    _tk3: str
-    _tk4: str
+    _token1: str
 
     def __init__(self, cfg: Configs = None) -> None:
-        """The datetime Parser.
+        """Flexible date/time parser with ISO fast-path and token heuristics.
 
-        :param cfg `<'Configs/None'>`: The configuration for the Parser, defaults to `None`.
+        The `Parser` reads a free-form date/time string and populates an
+        internal `Result` accumulator via two complementary strategies:
 
-        For more information about `<'Configs'>`, please refer to the Configs class.
+        1) `ISO fast-path`: a tuned parser for ISO-8601 calendar/ordinal/week dates
+        with optional time, fractional seconds, and timezone. When the core ISO
+        portion parses but an extra tail remains (e.g., AM/PM, weekday, timezone
+        adornments), a lightweight “ISO-extra” pass consumes the tail.
+        2) `Heuristic token path`: a tokenizer + left→right scan that recognizes
+        numeric blocks, month/weekday names, AM/PM, timezone names, and timezone
+        offsets. Ambiguous Y/M/D triples are resolved later according to the
+        configuration (or explicit flags passed to `parse`).
+
+        The parser defers construction of the final `datetime` object until all
+        fields have been gathered and disambiguated.
+
+        :param cfg `<'Configs/None'>`: The Parser configuration. Defaults to `None`.
+
+            - If `None`, uses the module's default `Configs`.
+            - For more details, see the `Configs` class documentation.
         """
-        # Configs: default
         if cfg is None:
-            self._year1st = False
-            self._day1st = False
-            self._pertain = CONFIG_PERTAIN
-            self._jump = CONFIG_JUMP
-            self._utc = CONFIG_UTC
-            self._tz = CONFIG_TZ
-            self._month = CONFIG_MONTH
-            self._weekday = CONFIG_WEEKDAY
-            self._hms_flag = CONFIG_HMS_FLAG
-            self._ampm_flag = CONFIG_AMPM_FLAG
-        # Configs: load
-        else:
-            self._year1st = cfg._year1st
-            self._day1st = cfg._day1st
-            self._pertain = cfg._pertain
-            self._jump = cfg._jump
-            self._utc = cfg._utc
-            self._tz = cfg._tz
-            self._month = cfg._month
-            self._weekday = cfg._weekday
-            self._hms_flag = cfg._hms_flag
-            self._ampm_flag = cfg._ampm_flag
-        # Result
+            cfg = _DEFAULT_CONFIGS
+        self._cfg = cfg
         self._res = Result()
 
     # Parse --------------------------------------------------------------------------------
@@ -1475,51 +2333,75 @@ class Parser:
         default: datetime.date | datetime.datetime | None = None,
         year1st: bool | None = None,
         day1st: bool | None = None,
-        ignoretz: cython.bint = False,
+        ignoretz: cython.bint = True,
         isoformat: cython.bint = True,
+        dtclass: type[datetime.datetime] = None,
     ) -> datetime.datetime:
-        """Parse the datetime string into `<'datetime.datetime'>`.
+        """Parse a date/time string into a datetime `<'datetime.datetime'>`.
 
-        :param dtstr `<'str'>`: The string that contains datetime information.
+        ## Parsing Strategies
+        1) `ISO fast-path` (when `isoformat=True`): attempts an ISO 8601 calendar/ordinal/week
+          date plus optional time, fractional seconds, and timezone. If an extra tail remains
+          (e.g., AM/PM, weekday, timezone tail), a lightweight ISO-extra pass handles it.
+        2) `Heuristic token path` (fallback or when `isoformat=False`): tokenizes the string
+          and scans left→right, using specialized handlers for numeric blocks, month/weekday
+          names, AM/PM, timezone names, and timezone offsets.
 
-        :param default `<'datetime/date/None'>`: Default value to fill in missing date fields, defaults to `None`.
-            - `<'date/datetime'>` If the parser fails to extract Y/M/D from the string,
-               use the passed-in 'default' to fill in the missing fields.
-            - If `None`, raises `PaserBuildError` if any Y/M/D fields is missing.
+        After parsing, ambiguous Y/M/D fields are resolved using `year1st`/`day1st` (or the
+        configured defaults when they are `None`). Finally, a datetime is built using parsed
+        fields plus `default` for any missing calendar components.
 
+        :param dtstr `<'str'>`: The input date/time string.
+        :param default `<'datetime/date/None'>`: Fallback source for missing Y/M/D. Defaults to `None`.
+            If `None` and required fields are missing, raises an error.
         :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
-            If 'year1st=None', use `cfg.year1st` if 'cfg' is specified; otherwise, defaults to `False`.
-
+            If 'None', uses `cfg.year1st` if 'cfg' is specified; otherwise, defaults to `True`.
         :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `None`.
-            If 'day1st=None', use `cfg.day1st` if 'cfg' is specified; otherwise, defaults to `False`.
+            If 'None', uses `cfg.day1st` if 'cfg' is specified; otherwise, defaults to `False`.
+        :param ignoretz `<'bool'>`: If `True`, ignore any timezone information and return a naive datetime. Defaults to `True`.
+            When timezone info is not needed, setting to `True` can improve performance.
+        :param isoformat `<'bool'>`: If `True`, attempt ISO parsing first (automatically falls back to token parsing on failure).
+            Otherwise always use token parsing. Defaults to `True`. For most common datetime strings,
+            ISO parsing (when matched even partially) is faster.
+        :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+            If `None` uses python's built-in `datetime.datetime` as the constructor.
+        :returns `<'datetime.datetime'>`: The parsed datetime (or subclass if 'dtclass' is specified).
+        :raises `<'ParserFailedError'>`: If nothing extractable is found (or ISO parsing
+            fails and token scanning yields no fields).
+        :raises `<'ParserBuildError'>`: If fields cannot be assembled into a datetime
+            (e.g., invalid field combination, unsupported custom class).
 
-        :param ignoretz `<'bool'>`: Whether to ignore timezone information, defaults to `False`.
-            - `True`: Ignores any timezone information and returns a timezone-naive datetime (increases parser performance).
-            - `False`: Processes timezone information and generates a timezone-aware datetime if matched by `cfg.utc` & `cfg.tz`.
-
-        :param isoformat `<'bool'>`: Whether try to parse 'dtstr' as ISO format, defaults to `True`.
-            - `True`: First tries to process 'dtstr' as ISO format; if failed, falls back
-                to token parsing (best performance for most strings).
-            - `False`: Only processes 'dtstr' through token parsing (increases performance
-                if 'dtstr' is not ISO format).
+        ## Field Construction
+        - `Y/M/D`: use parsed values; if missing, copy from `default` (if provided), otherwise raise.
+          If `day > 28`, it is clamped to the month's maximum.
+        - `Weekday`: if a weekday was parsed and does not match `(Y, M, D)`, the date is shifted by
+          the difference so the resulting weekday matches the requested one (within the same week as
+          the parsed date).
+        - `Time`: unset H/M/S/us default to `0`. AM/PM is applied when present.
+        - `Timezone`:
+            * If `ignoretz=True`, any parsed timezone info is ignored and a naive datetime
+              (`tzinfo=None`) is returned.
+            * Otherwise, a timezone-aware datetime is returned if a timezone name/offset was parsed:
+              UTC for offset `0`, or a fixed-offset timezone for non-zero offsets.
 
         ## Ambiguous Y/M/D
-        Both 'year1st' and 'day1st' determine how to interpret ambiguous
-        Y/M/D values. 'year1st' has higher priority.
+        Both `year1st` and `day1st` control how ambiguous digit tokens are interpreted;
+        `year1st` has higher priority. When all three are ambiguous (e.g., `01/05/09`):
+        - `year1st=False & day1st=False` → `M/D/Y`  → `2009-01-05`
+        - `year1st=False & day1st=True`  → `D/M/Y`  → `2009-05-01`
+        - `year1st=True  & day1st=False` → `Y/M/D`  → `2001-05-09`
+        - `year1st=True  & day1st=True`  → `Y/D/M`  → `2001-09-05`
 
-        #### When all three values are ambiguous (e.g. `01/05/09`):
-        - If 'year1st=False' & 'day1st=False': interprets as `2009-01-05` (M/D/Y).
-        - If 'year1st=False' & 'day1st=True': interprets as `2009-05-01` (D/M/Y).
-        - If 'year1st=True' & 'day1st=False': interprets as `2001-05-09` (Y/M/D).
-        - If 'year1st=True' & 'day1st=True': interprets as `2001-09-05` (Y/D/M).
-
-        #### When the 'year' value is known (e.g. `32/01/05`):
-        - If 'day1st=False': interpretes as `2032-01-05` (Y/M/D).
-        - If 'day1st=True': interpretes as `2032-05-01` (Y/D/M).
-
-        #### When only one value is ambiguous (e.g. `32/01/20`):
-        - The parser automatically determines the correct order; 'year1st' and 'day1st' are ignored.
+        When the year is already known (e.g., `32/01/05`), `day1st` alone decides between `Y/M/D`
+        vs `Y/D/M`. When only one value is ambiguous, the parser picks the only consistent
+        interpretation and ignores the flags.
         """
+        # Validate dtstr
+        if dtstr is None:
+            raise errors.ParserFailedError(
+                "<'%s'> Cannot parse None." % (self.__class__.__name__)
+            )
+
         # Settings
         self._ignoretz = ignoretz
 
@@ -1527,132 +2409,228 @@ class Parser:
         self._process(dtstr, isoformat)
 
         # Prepare
-        if not self._res.prepare(
-            self._year1st if year1st is None else bool(year1st),
-            self._day1st if day1st is None else bool(day1st),
+        if not self._res.resolve(
+            self._cfg._year1st if year1st is None else bool(year1st),
+            self._cfg._day1st if day1st is None else bool(day1st),
         ):
             raise errors.ParserFailedError(
-                "<'%s'> Failed to parse: '%s'.\n"
-                "Error: cannot recognize any tokens as datetime components."
+                "<'%s'> Failed to parse '%s'.\n"
+                "Error: failed to extract any datetime components."
                 % (self.__class__.__name__, dtstr)
             )
 
         # Build
-        return self._build(dtstr, default)
+        return self._build(dtstr, default, dtclass)
 
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _process(self, dtstr: str, isoformat: cython.bint) -> cython.bint:
-        """(cfunc) Process the datetime string.
+        """(internal) Parse a datetime string, preferring ISO then falling back to tokens `<'bool'>`.
 
-        :raises `<'ParserFailedError'>`: if any error occurs during the process.
+        This is the entrypoint for a single parse pass. It resets internal state, then
+        chooses the parsing strategy:
+        - If `isoformat=True`, try the ISO-8601 path via `_process_iso_format(dtstr)`.
+          That routine `fallsback` automatically to the token (timelex) pipeline when
+          the input is not a clean ISO date/time.
+        - If `isoformat=False`, skip ISO pre-checks and go straight to the token pipeline
+          via `_process_timelex_tokens(dtstr)`.
+
+        Error handling
+        - Format mismatches do `NOT` raise: the ISO path falls back to tokens.
+        - Unexpected internal errors are wrapped and re-raised as `ParserFailedError`
+        with the original exception chained.
+
+        :param dtstr `<'str'>`: Input datetime string.
+        :param isoformat `<'bool'>`: Prefer ISO-8601 parsing first if True;
+            otherwise use the token pipeline directly. Notice even with
+            `isoformat=True`, the parser may still fall back to token parsing
+            if the input is not a valid ISO format. But this gives better
+            performance for most common datetime strings.
+        :returns `<'bool'>`: Always True on completion.
+        :raises `<'ParserFailedError'>`: If an internal error occurs during processing.
         """
-        # Reset result & index & size
-        self._res.reset()
-        self._idx, self._size = 0, str_len(dtstr)
+        # Reset result and (dtstr) position / length
+        self._res._reset()
+        self._pos = 0
+        self._length = str_len(dtstr)
 
         # Process
         try:
             if isoformat:
-                return self._process_iso_format(dtstr)
+                self._process_iso_format(dtstr)
             else:
-                return self._process_timelex_tokens(dtstr)
-        except MemoryError:
+                self._process_timelex_tokens(dtstr)
+        except AssertionError:
             raise
         except Exception as err:
             raise errors.ParserFailedError(
-                "<'%s'> Failed to parse: '%s'.\nError: %s"
-                % (self.__class__.__name__, dtstr, err)
+                "<'%s'> Failed to parse '%s'.\n"
+                "Error: %s" % (self.__class__.__name__, dtstr, err)
             ) from err
+
+        # Finished
+        return True
 
     # Build --------------------------------------------------------------------------------
     @cython.cfunc
     @cython.inline(True)
-    def _build(self, dtstr: str, default: object) -> datetime.datetime:
-        """(cfunc) Build datetime from the processed result `<'datetime.datetime'>`.
+    def _build(
+        self,
+        dtstr: str,
+        default: object,
+        dtclass: type[datetime.datetime],
+    ) -> datetime.datetime:
+        """(internal) Build a datetime from the parsed `Result`, honoring timezone settings `<'datetime.datetime'>`.
 
-        :raises `<'ParserBuildError'>`: if failed to build datetime with the parsed result.
+        Decides timezone strategy, then delegates to `_generate_dt` to materialize the object:
+        - If `self._ignoretz` is True or `self._res.tzoffset` is unset (sentinel -100_000):
+          build a `timezone-naive` datetime (no tzinfo), ignoring any parsed tzname/offset.
+        - Else: build a `timezone-aware` datetime:
+            * `UTC` when `tzoffset == 0`
+            * A fixed-offset `timezone` via the parsed `tzoffset`.
+
+        :param dtstr `<'str'>`: The original input string (used for error context).
+        :param default `<'datetime/date/None'>`: Fallback date/time source for any
+            missing `Y/M/D` components (see `_generate_dt` for rules). If None and
+            a required component is missing, building fails.
+        :param dtclass `<'type[datetime.datetime]'>`: Optional designated subclass
+            of `datetime.datetime` for construction. If provided, it is called like
+            `dtclass(year=..., tzinfo=...)`. If None, construct with python's built-in
+            `datetime.datetime`.
+        :returns `<'datetime.datetime'>`: The built datetime (naive or aware per above).
+        :raises `<'ParserBuildError'>`: If an internal error occurs during building.
         """
         try:
             # Ignore timezone
             if self._ignoretz:
-                return self._generate_dt(default, None)
+                return self._gen_dt(default, None, dtclass)
 
             # Timezone-naive
             offset: cython.int = self._res.tzoffset
-            if offset == -100_000:
-                return self._generate_dt(default, None)
+            if (
+                offset == utils.NULL_TZOFFSET
+            ):  # -100_000 is the sentinel for 'no tzoffset'
+                return self._gen_dt(default, None, dtclass)
 
             # Timezone-aware
             else:
-                tz = utils.UTC if offset == 0 else utils.tz_new(0, 0, offset)
-                return self._generate_dt(default, tz)
+                tzinfo = utils.UTC if offset == 0 else utils.tz_new(0, 0, offset)
+                return self._gen_dt(default, tzinfo, dtclass)
+
         except Exception as err:
             raise errors.ParserBuildError(
-                "<'%s'> Failed to build datetime from: '%s'.\nResult: %s\nErrors: %s"
-                % (self.__class__.__name__, dtstr, self._res, err)
+                "<'%s'> Failed to build datetime from '%s'.\n%s\n"
+                "Error: %s" % (self.__class__.__name__, dtstr, self._res, err)
             ) from err
 
     @cython.cfunc
     @cython.inline(True)
-    def _generate_dt(self, default: object, tz: object) -> datetime.datetime:
-        """(cfunc) Generate datetime from the processed result `<'datetime.datetime'>`."""
+    def _gen_dt(
+        self,
+        default: object,
+        tzinfo: object,
+        dtclass: type[datetime.datetime],
+    ) -> datetime.datetime:
+        """(internal) Generate a datetime from `Result` + `default` and optional tzinfo `<'datetime.datetime'>`.
+
+        ## Field resolution order
+        - Year / Month / Day:
+            * If the field is set in `Result`, use it.
+            * Else, if `default` is a date/datetime, copy the field from `default`.
+            * Else, raise `ValueError` (missing required calendar component).
+            * If `day > 28`, clamp to the month's maximum (e.g., “2023-02-30” → 2023-02-28).
+
+        - Weekday:
+            * If `Result.weekday` is set and does not match the computed weekday of (Y, M, D),
+              shift the date by the difference so that the weekday matches. (Weekday thus
+              takes precedence over an inconsistent calendar date and the resulting date
+              is the requested weekday in the same week as the original Y/M/D.)
+
+        - Time of day
+            * unset components default to zero.
+            * hour → 0, minute → 0, second → 0, microsecond → 0.
+
+        :param default `<'datetime/date/None'>`: Fallback for missing Y/M/D.
+        :param tzinfo `<'tzinfo/None'>`: Timezone info to attach (None yields a naive datetime).
+        :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class.
+            If `None` uses python's built-in `datetime.datetime` as the constructor.
+        :returns `<'datetime.datetime'>`: The constructed datetime.
+        :raises `<'ValueError'>`: If a required Y/M/D component is missing and no `default`.
+        :raises `<'TypeError'>`: If a provided `dtclass` cannot be constructed from the fields.
+        """
         # Check default
         has_default: cython.bint = utils.is_date(default)
 
         # . year
-        if self._res.year != -1:
+        if self._res.is_year_set():
             yy = self._res.year
         elif has_default:
             yy = datetime.datetime_year(default)
         else:
-            raise ValueError("lack of 'year' value.")
+            raise ValueError("Lack of 'year'.")
         # . month
-        if self._res.month != -1:
+        if self._res.is_month_set():
             mm = self._res.month
         elif has_default:
             mm = datetime.datetime_month(default)
         else:
-            raise ValueError("lack of 'month' value.")
+            raise ValueError("Lack of 'month'.")
         # . day
-        if self._res.day != -1:
+        if self._res.is_day_set():
             dd = self._res.day
         elif has_default:
             dd = datetime.datetime_day(default)
         else:
-            raise ValueError("lack of 'day' value.")
+            raise ValueError("Lack of 'day'.")
         if dd > 28:
             dd = min(dd, utils.days_in_month(yy, mm))
         # . weekday
-        if self._res.weekday != -1:
+        if self._res.is_weekday_set():
             wkd: cython.int = utils.ymd_weekday(yy, mm, dd)
             if wkd != self._res.weekday:
-                _ymd = utils.ymd_fr_ordinal(
-                    utils.ymd_to_ordinal(yy, mm, dd) + self._res.weekday - wkd
+                _ymd = utils.ymd_fr_ord(
+                    utils.ymd_to_ord(yy, mm, dd) + self._res.weekday - wkd
                 )
                 yy, mm, dd = _ymd.year, _ymd.month, _ymd.day
         # . hour
-        hh = self._res.hour if self._res.hour != -1 else 0
+        hh = self._res.hour if self._res.is_hour_set() else 0
         # . minute
-        mi = self._res.minute if self._res.minute != -1 else 0
+        mi = self._res.minute if self._res.is_minute_set() else 0
         # . second
-        ss = self._res.second if self._res.second != -1 else 0
+        ss = self._res.second if self._res.is_second_set() else 0
         # . microsecond
-        us = self._res.microsecond if self._res.microsecond != -1 else 0
+        us = self._res.microsecond if self._res.is_microsecond_set() else 0
 
         # Generate datetime
-        return datetime.datetime_new(yy, mm, dd, hh, mi, ss, us, tz, 0)
+        return utils.dt_new(yy, mm, dd, hh, mi, ss, us, tzinfo, 0, dtclass)
 
     # ISO format ---------------------------------------------------------------------------
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _process_iso_format(self, dtstr: str) -> cython.bint:
-        """(cfunc) Process 'dtstr' as ISO format.
+        """(internal) Parse `dtstr` using an ISO-8601-first strategy, with graceful fallback `<'bool'>`.
 
-        Automatically fallback to timelex tokens processor
-        when iso format processor failed.
+        ## Strategy
+        1) `Date: _parse_iso_date(dtstr)` — parses an ISO calendar/ordinal/week date
+        at the beginning of the string and writes Y/M/D. On failure, the method
+        `fallback` to the token (timelex) pipeline.
+
+        2) `Time: _parse_iso_time(dtstr)` — parses `T`/space-separated ISO time,
+        fractional seconds, and (when present) trailing weekday/AM-PM/timezone via
+        `_parse_iso_extra`. On failure, the method `fallback` to the token pipeline.
+
+        ## Notes
+        - This routine never raises on ISO mismatches; it delegates to the token
+          pipeline for flexible, heuristic parsing of non-ISO inputs.
+        - On ISO success, `self._pos` is advanced past the parsed segment(s) and
+          `Result` fields (Y/M/D/H/M/S/us/tz) are updated as applicable.
+        - On fallback, `_process_timelex_tokens(dtstr)` re-tokenizes from the current
+          position and continues parsing with the general handlers.
+
+        :param dtstr `<'str'>`: The original datetime string.
+        :returns `<'bool'>`: Always `True` (either ISO handled it or fallback did).
         """
         # Parse date components
         if not self._parse_iso_date(dtstr):
@@ -1674,74 +2652,90 @@ class Parser:
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _parse_iso_date(self, dtstr: str) -> cython.bint:
-        """(cfunc) Parse the date components of the ISO format `<'bool'>`.
+        """(internal) Parse an ISO-8601 date components and update the current result.
 
-        Returns `True` if successfully process the date components
-        Y/M/D values and updates the current 'self._idx' position.
-        Else `False` if the start of the 'dtstr' does not comply
-        with ISO format, 'self._idx' stays at `0`.
+        Parses an ISO-8601 `date` at the beginning of `dtstr`. On success,
+        writes Y/M/D into `self._res` (and sets `century_specified=True`),
+        and advances `self._pos` to the first character after the date.
+        On failure, returns False and does not modify `position self._pos` or
+        the `Result self._res`.
+
+        :param dtstr <'str'>: Full datetime input string.
+        :return <'bool'>: True if a valid ISO date prefix is parsed; otherwise False.
+
+        Accepted:
+        - Calendar: `'YYYY-MM-DD'`   | `'YYYYMMDD'`
+        - Ordinal : `'YYYY-DDD'`     | `'YYYYDDD'`
+        - Week    : `'YYYY-Www[-D]'` | `'YYYYWww[D]'` | `'YYYYWww[-D]'`
+                    (D=1..7, Monday=1; default D=1 when omitted)
+
+        Not accepted:
+        - Partial dates (e.g., YYYY, YYYY-MM)
+        - Signed/expanded years (e.g., +012345)
+        - Time parts (this function parses date only)
         """
-        # ISO format size must be >= 7: YYYYWww or YYYYDDD
-        size: cython.Py_ssize_t = self._size
-        if size < 7:
+        # ISO format length must be >= 7: YYYYWww or YYYYDDD
+        length: cython.Py_ssize_t = self._length
+        if length < 7:
             return False  # exit: invalid
 
         # ISO format always starts with year (YYYY)
-        year = utils.parse_isoyear(dtstr, 0, size)
+        year: cython.int = utils.parse_isoyear(dtstr, 0, length)
         if year == -1:
             return False  # exit: invalid
 
         # Parse components
         # . YYYY[-]
         ch4: cython.Py_UCS4 = str_read(dtstr, 4)
-        idx: cython.Py_ssize_t
-        if utils.is_isodate_sep(ch4):
-            if size < 8:
-                #: For ISO format with "-" seperator
-                #: The minimum size should be 8.
+        pos: cython.Py_ssize_t
+        if utils.is_date_sep(ch4):
+            if length < 8:
+                #: For ISO format with "-" separator,
+                #: the minimum length should be 8.
                 return False  # exit: invalid
 
             # . YYYY-MM[-]
-            ch7: cython.Py_ssize_t = str_read(dtstr, 7)
-            if utils.is_isodate_sep(ch7):
+            ch7: cython.Py_UCS4 = str_read(dtstr, 7)
+            if utils.is_date_sep(ch7):
                 # . parse month: YYYY-[MM]
-                month = utils.parse_isomonth(dtstr, 5, size)
+                month: cython.int = utils.parse_isomonth(dtstr, 5, length)
                 if month == -1:
                     return False  # exit: invalid
                 # . parse day: YYYY-MM-[DD]
-                day = utils.parse_isoday(dtstr, 8, size)
+                day: cython.int = utils.parse_isoday(dtstr, 8, length)
                 if day == -1:
                     return False  # exit: invalid
-                idx = 10
+                pos = 10  # after: YYYY-MM-DD
 
             # YYYY-[W]
             elif utils.is_isoweek_sep(str_read(dtstr, 5)):
                 # . parse week: YYYY-W[ww]
-                week = utils.parse_isoweek(dtstr, 6, size)
+                week: cython.int = utils.parse_isoweek(dtstr, 6, length)
                 if week == -1:
                     return False  # exit: invalid
-                # . parse weekday: YYYY-Www-[D]
-                if size > 9 and utils.is_isodate_sep(str_read(dtstr, 8)):
-                    weekday = utils.parse_isoweekday(dtstr, 9, size)
-                    if weekday == -1:
+                # . parse weekday: YYYY-Www[-D]
+                if length > 9 and utils.is_date_sep(str_read(dtstr, 8)):
+                    wkd: cython.int = utils.parse_isoweekday(dtstr, 9, length)
+                    if wkd == -1:
                         return False  # exit: invalid
-                    idx = 10
+                    pos = 10  # after: YYYY-Www-D
                 else:
-                    idx, weekday = 8, 1
+                    wkd = 1  # default to Monday
+                    pos = 8  # after: YYYY-Www
                 # . calculate MM/DD
-                _ymd = utils.ymd_fr_isocalendar(year, week, weekday)
+                _ymd = utils.ymd_fr_isocalendar(year, week, wkd)
                 year, month, day = _ymd.year, _ymd.month, _ymd.day
 
             # . YYYY-DD[D]
             elif utils.is_ascii_digit(ch7):
                 # . parse days of the year: YYYY-[DDD]
-                days = utils.parse_isoyearday(dtstr, 5, size)
+                days: cython.int = utils.parse_isodoy(dtstr, 5, length)
                 if days == -1:
                     return False  # exit: invalid
                 # Calculate MM/DD
-                _ymd = utils.ymd_fr_days_of_year(year, days)
+                _ymd = utils.ymd_fr_day_of_year(year, days)
                 month, day = _ymd.month, _ymd.day
-                idx = 8
+                pos = 8  # after: YYYY-DDD
 
             # . Invalid ISO format
             else:
@@ -1750,269 +2744,318 @@ class Parser:
         # . YYYY[W]
         elif utils.is_isoweek_sep(ch4):
             # . parse week: YYYYW[ww]
-            week = utils.parse_isoweek(dtstr, 5, size)
+            week: cython.int = utils.parse_isoweek(dtstr, 5, length)
             if week == -1:
                 return False  # exit: invalid
             # . parse weekday
-            if size > 7:
-                # . YYYYWww-[D]
-                if size > 8 and utils.is_isodate_sep(str_read(dtstr, 7)):
-                    weekday = utils.parse_isoweekday(dtstr, 8, size)
-                    if weekday == -1:
-                        idx, weekday = 7, 1
+            wkd: cython.int
+            if length > 7:
+                # . YYYYWww[-D]
+                if length > 8 and utils.is_date_sep(str_read(dtstr, 7)):
+                    wkd = utils.parse_isoweekday(dtstr, 8, length)
+                    if wkd == -1:
+                        wkd = 1  # default to Monday
+                        pos = 7  # after: YYYYWww
                     else:
-                        idx = 9
+                        pos = 9  # after: YYYYWww-D
                 # . YYYYWww[D]
                 else:
-                    weekday = utils.parse_isoweekday(dtstr, 7, size)
-                    if weekday == -1:
-                        idx, weekday = 7, 1
+                    wkd = utils.parse_isoweekday(dtstr, 7, length)
+                    if wkd == -1:
+                        wkd = 1  # default to Monday
+                        pos = 7  # after: YYYYWww
                     else:
-                        idx = 8
+                        pos = 8  # after: YYYYWwwD
             else:
-                idx, weekday = 7, 1
+                wkd = 1  # default to Monday
+                pos = 7  # after: YYYYWww
             # . calculate MM/DD
-            _ymd = utils.ymd_fr_isocalendar(year, week, weekday)
+            _ymd = utils.ymd_fr_isocalendar(year, week, wkd)
             year, month, day = _ymd.year, _ymd.month, _ymd.day
 
         # . YYYY[D]
         elif utils.is_ascii_digit(ch4):
             # . YYYYMMD[D]
-            if size > 7 and utils.is_ascii_digit(str_read(dtstr, 7)):
+            if length > 7 and utils.is_ascii_digit(str_read(dtstr, 7)):
                 # . parse month: YYYY[MM]
-                month = utils.parse_isomonth(dtstr, 4, size)
+                month: cython.int = utils.parse_isomonth(dtstr, 4, length)
                 if month == -1:
                     return False  # exit: invalid
                 # . parse day: YYYYMM[DD]
-                day = utils.parse_isoday(dtstr, 6, size)
+                day: cython.int = utils.parse_isoday(dtstr, 6, length)
                 if day == -1:
                     return False  # exit: invalid
-                idx = 8
+                pos = 8  # after: YYYYMMDD
             # . YYYYDDD
             else:
+                # . YYYYDDD requires at least 7 characters (already guarded)
                 # . parse days of the year: YYYY[DDD]
-                days = utils.parse_isoyearday(dtstr, 4, size)
+                days: cython.int = utils.parse_isodoy(dtstr, 4, length)
                 if days == -1:
                     return False  # exit: invalid
                 # Calculate MM/DD
-                _ymd = utils.ymd_fr_days_of_year(year, days)
+                _ymd = utils.ymd_fr_day_of_year(year, days)
                 month, day = _ymd.month, _ymd.day
-                idx = 7
+                pos = 7  # after: YYYYDDD
 
         # . Invalid ISO format
         else:
             return False
 
-        # Set index & Y/M/D
-        self._idx = idx
+        # Update position & Set Y/M/D
+        self._pos = pos  # update position
         self._res.century_specified = True
-        self._res.set_ymd_int(year, 1)
-        self._res.set_ymd_int(month, 2)
-        self._res.set_ymd_int(day, 3)
+        self._res.set_ymd_int(1, year)
+        self._res.set_ymd_int(2, month)
+        self._res.set_ymd_int(3, day)
         return True  # exit: complete
 
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _parse_iso_time(self, dtstr: str) -> cython.bint:
-        """(cfunc) Parse the time components of the ISO format `<'bool'>`.
+        """(internal) Parse ISO-8601 time components and update the current result.
 
-        This method should only be called after '_parse_iso_date()'
-        successfully parsed the ISO format date components.
+        This method should be called only after `_parse_iso_date()` has successfully
+        parsed the date portion at the start of `dtstr`. It attempts to parse a time
+        directly following the date at `self._pos` in either extended or basic ISO form,
+        optionally with fractional seconds and a UTC designator or numeric offset.
 
-        Return `True` if successfully parsed the ISO format time
-        components of the 'dtstr' and reach the end of the string.
-        Else `False` if failed to parse the ISO format time components.
-        The 'self._idx' stays at where the date components ends,
-        and the remaining should fall back to timelex tokens
-        processr for further handling.
+        On success, the method returns True. hour/minute/second/microsecond/tzoffset
+        are set to the Result and `self._pos` is advanced to the first character after
+        the time (typically end of string for strict ISO inputs). If there is no time
+        part (EOF right after the date), this is treated as success and nothing is
+        changed.
+
+        On failure, the method returns False and leaves `self._pos` unchanged at the
+        end of the date part. Callers should then fall back to tokenized (timelex)
+        parsing for non-ISO time forms.
+
+        :param dtstr <'str'>: Full datetime input string.
+        :returns <'bool'>: True if a valid ISO time is parsed; otherwise False.
+
+        ## Accepted:
+        - Basic   : `'THHMMSS'`   | `' HHMMSS'`
+        - Extended: `'THH:MM:SS'` | `' HH:MM:SS'`
+        - Fraction: A fractional part right after seconds using '.' or ',' with 1..N digits;
+                    only the first 6 digits are used (microseconds), excess are ignored.
+        - UTC tz  : Trailing 'Z' or 'z' (recognized as UTC offset)
+        - Numeric tz: "+HH:MM", "+HHMM", "-HH:MM", or "-HHMM"
+
+        ## Behavioral notes
+        - This routine requires seconds. Inputs like "THH:MM" are not accepted here and
+        should be handled by the timelex fallback.
+        - If a fractional separator is present with zero digits (e.g. ".") the routine
+        treats the fraction as absent and continues per the implementation.
+        - Microsecond rounding: the first up to 6 fractional digits are scaled to
+        microseconds; additional digits are ignored.
+        - When `self._ignoretz` is True, trailing 'Z' or numeric offsets are not parsed
+        and will be left to the timelex fallback.
         """
         # Validate
-        idx: cython.Py_ssize_t = self._idx
-        size: cython.Py_ssize_t = self._size
-        if idx == size:
+        pos: cython.Py_ssize_t = self._pos
+        length: cython.Py_ssize_t = self._length
+        if pos == length:
             # eof: no time component
-            return True
-        if idx < 7 or size - idx < 7:
+            return True  # exit: success
+        if pos < 7 or length - pos < 7:
             #: The minimum time component is [HHMMSS],
-            #: adding iso seperator "T", the size
+            #: adding iso separator "T", the length
             #: of the 'dtstr' should have at least
-            #: 7 more extra charactors.
-            return False  # fallback
-        if not utils.is_iso_sep(str_read(dtstr, idx)):
+            #: 7 or more characters.
+            return False  # exit: invalid
+        if not utils.is_iso_sep(str_read(dtstr, pos)):
             #: The charactor right after date components
             #: should be either "T" or " ".
-            return False  # fallback
+            return False  # exit: invalid
 
         # Parse HH:MM:SS / HHMMSS
         # . hour: ...T[HH]
-        hour = utils.parse_isohour(dtstr, idx + 1, size)
+        hour: cython.int = utils.parse_isohour(dtstr, pos + 1, length)
         if hour == -1:
-            return False  # fallback
-        # . with seperator: ...THH[:]
-        if utils.is_isotime_sep(str_read(dtstr, idx + 3)):
-            # . THH:MM:SS requires at least 9 charactors.
-            if size - idx < 9:
-                return False  # fallback
+            return False  # exit: invalid
+        # . with separator: ...THH[:]
+        if utils.is_time_sep(str_read(dtstr, pos + 3)):
+            # . THH:MM:SS requires at least 9 characters.
+            if length - pos < 9:
+                return False  # exit: invalid
             # . minute: ...THH:[MM]
-            minute = utils.parse_isominute(dtstr, idx + 4, size)
+            minute: cython.int = utils.parse_isominute(dtstr, pos + 4, length)
             if minute == -1:
-                return False  # fallback
+                return False  # exit: invalid
             # . second: ...THH:MM:[SS]
-            second = utils.parse_isosecond(dtstr, idx + 7, size)
+            second: cython.int = utils.parse_isosecond(dtstr, pos + 7, length)
             if second == -1:
-                return False  # fallback
-            # . set H/M/S & index
-            idx += 9
+                return False  # exit: invalid
+            # . Update position & Set H/M/S
+            pos += 9  # after: ...THH:MM:SS
             self._res.hour = hour
             self._res.minute = minute
             self._res.second = second
             # . eof: ...THH:MM:SS
-            if idx == size:
-                return True  # success
-        # . without seperator: ...THH[]
+            if pos == length:
+                self._pos = pos  # update position
+                return True  # exit: success
+        # . without separator: ...THH[]
         else:
+            # . THHMMSS requires at least 7 characters (already guarded)
             # . minute: ...THH[MM]
-            minute = utils.parse_isominute(dtstr, idx + 3, size)
+            minute: cython.int = utils.parse_isominute(dtstr, pos + 3, length)
             if minute == -1:
-                return False  # fallback
+                return False  # exit: invalid
             # . second: ...THHMM[SS]
-            second = utils.parse_isosecond(dtstr, idx + 5, size)
+            second: cython.int = utils.parse_isosecond(dtstr, pos + 5, length)
             if second == -1:
-                return False  # fallback
-            # . set H/M/S & index
-            idx += 7
+                return False  # exit: invalid
+            # . Update position & Set H/M/S
+            pos += 7  # after: ...THHMMSS
             self._res.hour = hour
             self._res.minute = minute
             self._res.second = second
             # . eof: ...THHMMSS
-            if idx == size:
-                return True  # success
+            if pos == length:
+                self._pos = pos  # update position
+                return True  # exit: success
 
-        # Parse fraction: ...THH:MM:SS[.SSS]
-        if size - idx > 1 and str_read(dtstr, idx) in (".", ","):
-            idx += 1  # skip: [.]
-            buffer: cython.char[7]
+        # Parse fraction: ...THH:MM:SS[.fff] / ...THH:MM:SS[,fff]
+        if length - pos > 1 and str_read(dtstr, pos) in (46, 44):  # '.' or ','
+            pos += 1  # skip: [./,]
+            f_size: cython.int = 0
+            us: cython.int = 0
             ch: cython.Py_UCS4
-            digits: cython.Py_ssize_t = 0
-            # . parse fraction values
-            while idx < size and digits < 6:
-                ch = str_read(dtstr, idx)
+            while pos < length:
+                ch = str_read(dtstr, pos)
                 if not utils.is_ascii_digit(ch):
-                    break
-                buffer[digits] = ch
-                idx += 1
-                digits += 1
-            # . compensate missing digits
-            if digits < 6:
-                if digits == 0:
-                    self._idx = idx - 1  # update index
-                    return self._parse_iso_extra(dtstr)  # fallback
-                ch = "0"
-                for i in range(digits, 6):
-                    buffer[i] = ch
-            # . convert to integer
-            buffer[6] = 0  # null-term
-            us = strtoll(buffer, cython.NULL, 10)
-            self._res.microsecond = us
-            # . skip extra digits & spaces
-            while idx < size and (
-                utils.is_ascii_digit(ch := str_read(dtstr, idx)) or ch == " "
-            ):
-                idx += 1
-            # . eof: ...THH:MM:SS.SSS[SSS]
-            if idx == size:
-                return True  # success
+                    break  # non-digit: end of fraction
+                if f_size < 6:
+                    us = us * 10 + (ord(ch) - 48)
+                    f_size += 1
+                pos += 1  # digit beyond 6 are skipped
+            # . set microsecond
+            self._res.microsecond = utils.scale_fraction_to_us(us, f_size)
+            # . eof: ...THH:MM:SS.ffffff[fff]
+            if pos == length:
+                self._pos = pos  # update position
+                return True  # exit: success
+
         # Skip spaces
-        else:
-            while idx < size and str_read(dtstr, idx) == " ":
-                idx += 1
-            # . eof: ...THH:MM:SS
-            if idx == size:
-                return True  # success
+        while pos < length and str_read(dtstr, pos) == 32:  # ' '
+            pos += 1
+        if pos == length:
+            self._pos = pos  # update position
+            return True  # exit: success
 
-        # Parse UTC: ...THH:MM:SS(.SSSSSS)[+/-HH:MM]
-        if size - idx > 4:
-            # . offset sign
-            ch: cython.Py_UCS4 = str_read(dtstr, idx)
-            if ch == "+":
-                sign: cython.int = 1
-            elif ch == "-":
-                sign: cython.int = -1
-            else:
-                self._idx = idx  # update index
-                return self._parse_iso_extra(dtstr)  # fallback
-            # . offset hour
-            hh: cython.int = utils.parse_isohour(dtstr, idx + 1, size)
-            if hh == -1:
-                self._idx = idx  # update index
-                return self._parse_iso_extra(dtstr)  # fallback
-            # . offset minute
-            ch: cython.Py_UCS4 = str_read(dtstr, idx + 3)
-            if utils.is_isotime_sep(ch):
-                # . +/-HH:[MM]
-                mm: cython.int = utils.parse_isominute(dtstr, idx + 4, size)
-                if mm == -1:
-                    self._idx = idx  # update index
-                    return self._parse_iso_extra(dtstr)  # fallback
-                idx += 6  # skip: [+/-HH:MM]
-            else:
-                # . +/-HH[MM]
-                mm: cython.int = utils.parse_isominute(dtstr, idx + 3, size)
-                if mm == -1:
-                    self._idx = idx  # update index
-                    return self._parse_iso_extra(dtstr)  # fallback
-                idx += 5  # skip: [+/-HHMM]
-            # . set timezone offset
-            self._res.tzoffset = sign * (hh * 3_600 + mm * 60)
-            # . eof: ...THH:MM:SS(.SSSSSS)[+/-HH:MM]
-            if idx == size:
-                return True  # success
+        # Parse UTC offset
+        if not self._ignoretz:
+            ch: cython.Py_UCS4 = str_read(dtstr, pos)
+            # Could be: ...THH:MM:SS[.ffffff][Z]
+            if ch in (90, 122):  # 'Z' or 'z'
+                extra: cython.Py_ssize_t = length - pos
+                # . eof: ...THH:MM:SS[.ffffff]Z
+                if extra == 1:
+                    self._res.tzoffset = 0
+                    self._res.tzoffset_finalized = True  # prevent further changes
+                    self._pos = length  # update position
+                    return True  # exit: success
+                # . Z[space]: ...THH:MM:SS[.ffffff]Z[space]
+                elif extra > 1 and str_read(dtstr, pos + 1) == 32:  # ' '
+                    self._res.tzoffset = 0
+                    self._res.tzoffset_finalized = True  # prevent further changes
+                    pos += 2  # skip: [Z][space]
+                    if pos == length:
+                        self._pos = pos  # update position
+                        return True  # exit: success
 
-        # Parse UTC: ...THH:MM:SS(.SSSSSS)[Z]
-        if (ex := size - idx) > 0 and str_read(dtstr, idx) in ("z", "Z"):
-            # . eof: THH:MM:SS(.SSSSSS)[Z]
-            if ex == 1:
-                self._res.tzoffset = 0
-                return True  # success
-            # . space: ...THH:MM:SS(.SSSSSS)[Z][space]
-            if ex > 1 and str_read(dtstr, idx + 1) == " ":
-                self._res.tzoffset = 0
-                idx += 2  # skip: [Z][space]
-                if idx == size:
-                    return True  # success
+            # Could be: ...[+/-HHMM] / ...[+/-HH:MM]
+            elif length - pos > 4 and utils.is_plus_or_minus_sign(ch):
+                # . offset sign: ...[+/-]
+                sign: cython.int = 1 if utils.is_plus_sign(ch) else -1
+                # . offset hour: ...+[HH]
+                hh: cython.int = utils.parse_isohour(dtstr, pos + 1, length)
+                if hh == -1:
+                    self._pos = pos  # update position
+                    return self._parse_iso_extra(dtstr)  # exit: fallback
+                # . offset minute: ...+HH[:]
+                ch = str_read(dtstr, pos + 3)
+                if utils.is_time_sep(ch):
+                    # . +HH:[MM]
+                    mi: cython.int = utils.parse_isominute(dtstr, pos + 4, length)
+                    if mi == -1:
+                        self._pos = pos  # update position
+                        return self._parse_iso_extra(dtstr)  # exit: fallback
+                    pos += 6  # after: +HH:MM
+                else:
+                    # . +HH[MM]
+                    mi: cython.int = utils.parse_isominute(dtstr, pos + 3, length)
+                    if mi == -1:
+                        self._pos = pos  # update position
+                        return self._parse_iso_extra(dtstr)  # exit: fallback
+                    pos += 5  # after: +HHMM
+                # . set UTC offset
+                self._res.tzoffset = sign * (hh * 3_600 + mi * 60)
+                self._res.tzoffset_finalized = True  # prevent further changes
+                # . eof: ...THH:MM:SS[.ffffff]+HH:MM
+                if pos == length:
+                    self._pos = pos  # update position
+                    return True  # exit: success
 
         # Still have extra characters
-        self._idx = idx  # update index
-        return self._parse_iso_extra(dtstr)  # fallback
+        self._pos = pos  # update position
+        return self._parse_iso_extra(dtstr)  # exit: fallback
 
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _parse_iso_extra(self, dtstr: str) -> cython.bint:
-        """(cfunc) Parser the extra charactors after ISO format `<'bool'>`
+        """(internal) Parse trailing extra characters after a valid ISO time segment `<'bool'>`.
 
-        This method dedicates to parse the extra charactors left after
-        ISO time parser successfully extracted 'HH:MM:SS[.f]', but failed
-        to handle the remains. Since the remaining charactors can only
-        represents 'weekday', 'AM/PM' flag and 'timezone' information,
-        this method is basically a lite version of timelex token parser
-        excluding 'numeric' and 'month' parsing capabilities.
+        This is a cut-down, resilient pass used when the ISO parser successfully extracted
+        the time portion (`HH[:MM[:SS[.f]]]`) but stopped at additional trailing content.
+        It tokenizes from the current `self._pos` and only handles the constructs that
+        are valid after an ISO time by invoking specialized handlers for each token:
+        1) Weekday names           → `_parse_token_weekday`
+        2) AM/PM flags             → `_parse_token_ampm`
+        3) Timezone names          → `_parse_token_tzname`
+        4) Timezone offsets (+/-)  → `_parse_token_tzoffset`
+
+        ## Notes
+        - The `self._pos` is then updated to track the index within `self._tokens`
+          (from `_timelex`), contrary to ISO parsers which track positions in the
+          original `dtstr` string.
+        - Handlers may consume additional lookahead tokens and advance `self._pos`
+          accordingly (e.g., to skip separators and multi-part patterns). The main
+          loop then continues from the updated position. Unrecognized non-space
+          tokens are tolerated and skipped.
+        - This routine is resilient by design: it never raises on unrecognized tokens
+          and always completes the scan.
+
+        :param dtstr `<'str'>`: The original datetime string (used by tokenizer).
+        :returns `<'bool'>`: Always True.
         """
-        # Reset index, size & tokens
-        tokens = _timelex(dtstr.lower(), self._idx, self._size)
-        self._tokens = tokens
-        self._idx, self._size = 0, list_len(tokens)
+        # Reset tokens and (dtstr) position / length
+        self._tokens = _timelex(dtstr, self._pos, self._length)  # type: ignore
+        self._length = list_len(self._tokens)
+        if self._length == 0:
+            return True  # exit: no valid tokens
+
+        # Position start at -1:
+        # '_get_next_token' will advance position
+        self._pos = -1
 
         # Parse tokens
-        while (token := self._token(self._idx)) is not None:
-            # . reset cache
-            self._reset_tokens()
+        while True:
+            # Get next token
+            token: str = self._get_next_token()
+            if token is None:
+                break
+            # . control or space character
+            elif utils.is_str_ascii_ctl_or_space(token):
+                pass
             # . weekday token
-            if self._parse_token_weekday(token):
+            elif self._parse_token_weekday(token):
                 pass
             # . am/pm token
-            elif self._parse_token_ampm_flag(token):
+            elif self._parse_token_ampm(token):
                 pass
             # . tzname token
             elif self._parse_token_tzname(token):
@@ -2020,11 +3063,8 @@ class Parser:
             # . tzoffset token
             elif self._parse_token_tzoffset(token):
                 pass
-            # . next token
-            self._idx += 1
 
         # Success
-        self._reset_tokens()
         self._tokens = None
         return True
 
@@ -2033,27 +3073,66 @@ class Parser:
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _process_timelex_tokens(self, dtstr: str) -> cython.bint:
-        """(cfunc) Process 'dtstr' through timelex token approach."""
-        # Reset index, size & tokens
-        tokens = _timelex(dtstr.lower(), self._idx, self._size)
-        self._tokens = tokens
-        self._idx, self._size = 0, list_len(tokens)
+        """(internal) Tokenize the input `dtstr` and parse tokens with heuristic handlers `<'bool'>`.
+
+        Tokenizes the substring of `dtstr` starting at the current parser
+        position (`self._pos`) via `_timelex`, then scans left→right, invoking
+        specialized handlers for each token:
+        1) Numeric tokens          → `_parse_token_numeric`
+        2) Month names             → `_parse_token_month`
+        3) ISO week fragments      → `_parse_iso_week`
+        4) Weekday names           → `_parse_token_weekday`
+        5) AM/PM flags             → `_parse_token_ampm`
+        6) Timezone names          → `_parse_token_tzname`
+        7) Timezone offsets (+/-)  → `_parse_token_tzoffset`
+
+        ## Notes
+        - The `self._pos` is then updated to track the index within `self._tokens`
+          (from `_timelex`), contrary to ISO parsers which track positions in the
+          original `dtstr` string.
+        - Handlers may consume additional lookahead tokens and advance `self._pos`
+          accordingly (e.g., to skip separators and multi-part patterns). The main
+          loop then continues from the updated position. Unrecognized non-space
+          tokens are tolerated and skipped.
+        - This routine is resilient by design: it never raises on unrecognized tokens
+          and always completes the scan.
+
+        :param dtstr `<'str'>`: The original datetime string (used by tokenizer).
+        :returns `<'bool'>`: Always True on completion.
+        """
+        # Reset tokens and (dtstr) position / length
+        self._tokens = _timelex(dtstr, self._pos, self._length)  # type: ignore
+        self._length = list_len(self._tokens)
+        if self._length == 0:
+            return True  # exit: no valid tokens
+
+        # Position start at -1:
+        # '_get_next_token' will advance position
+        self._pos = -1
 
         # Parse tokens
-        while (token := self._token(self._idx)) is not None:
-            # . reset cache
-            self._reset_tokens()
+        while True:
+            # Get next token
+            token: str = self._get_next_token()
+            if token is None:
+                break
+            # . control or space character
+            elif utils.is_str_ascii_ctl_or_space(token):
+                pass
             # . numeric token
-            if self._parse_token_numeric(token):
+            elif self._parse_token_numeric(token):
                 pass
             # . month token
             elif self._parse_token_month(token):
+                pass
+            # . iso week
+            elif self._parse_iso_week(token):
                 pass
             # . weekday token
             elif self._parse_token_weekday(token):
                 pass
             # . am/pm token
-            elif self._parse_token_ampm_flag(token):
+            elif self._parse_token_ampm(token):
                 pass
             # . tzname token
             elif self._parse_token_tzname(token):
@@ -2061,11 +3140,8 @@ class Parser:
             # . tzoffset token
             elif self._parse_token_tzoffset(token):
                 pass
-            # . next token
-            self._idx += 1
 
         # Success
-        self._reset_tokens()
         self._tokens = None
         return True
 
@@ -2074,274 +3150,457 @@ class Parser:
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _parse_token_numeric(self, token: str) -> cython.bint:
-        """(cfunc) Parse as a 'numeric' token `<'bool'>`.
+        """(internal) Parse a `numeric` token and update the parser `Result` `<'bool'>`.
 
-        Returns `True` if the token represents a 'numeric'
-        value and processed successfully, else `False`.
+        This method recognizes numeric tokens (integers or decimals) and tries to
+        interpret them as compact date/time fields, or as fragments of a larger
+        date/time expression when combined with neighboring tokens (e.g., separators,
+        HMS/AMPM flags). It may set fields on `self._res` and may advance `self._pos`
+        to consume additional look-ahead tokens when a complete pattern is matched.
+
+        :param token `<'str'>`: The current token to parse.
+        :returns `<'bool'>`: The process result.
+
+            - `False` only if `token` is `NOT` numeric (integer or decimal only), signaling
+              that other handlers should try this token.
+            - `True` in all other cases, including when no fields were ultimately set and/or
+              the token was effectively skipped (the numeric handler has decided there is
+              nothing more to do for this token).
+
+        ## Notes
+        - This function is intentionally permissive: once a token is recognized as numeric,
+          it returns `True` even if it ultimately doesn't assign any fields. This prevents
+          re-processing by other handlers that do not accept numeric tokens.
+        - Y/M/D pushed without roles are `unlabeled` on purpose; final disambiguation
+          happens later in the resolver based on context/preferences.
         """
         # Validate if is a numeric token
-        try:
-            t_val: cython.double = float(token)
-        except ValueError:
-            return False  # exit: not a numeric token
-        if not math.isfinite(t_val):
-            #: 'inf' or 'nan' should not be treated
-            #: as numeric values, but aplha instead.
-            return False  # exit: not a numeric token
-        t_len: cython.Py_ssize_t = str_len(token)
-        t_int: cython.int
+        token_len: cython.Py_ssize_t = str_len(token)
+        token_kind: cython.int = utils.parse_numeric_kind(token, token_len)
+        if token_kind == 0:
+            return False  # exit: not numeric token
 
-        # . (Y/M/D)HH[MM]
-        if (
-            t_len in (2, 4)  # HHMM or HHMM
-            and self._res.ymd_populated() == 3  # Y/M/D solved
-            and self._res.hour == -1  # hour not set
-            and (
-                self._idx + 2 > self._size  # has 2 more tokens
-                or (
-                    (t1 := self._token1()) is not None  # next token exists
-                    and t1 != ":"  # next token is not seperator
-                    and self._token_to_hms_flag(t1) == -1  # next token is not hms flag
+        # Pure Integer - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+        if token_kind == 1:
+            # . (Y/M/D)HH[MM]
+            if (
+                token_len in (2, 4)  # HH or HHMM
+                and not self._res.is_hour_set()  # hour not set
+                and self._res.ymd_slots_filled() == 3  # Y/M/D recorded
+                and (
+                    not self._has_token(1)  # no more tokens
+                    or (
+                        # next token is not time-field separator
+                        not utils.is_str_time_sep(self._get_token1())
+                        # next token is not H/M/S flag
+                        and not self._cfg.is_hms(self._get_token1())
+                    )
                 )
-            )
-        ):
-            # . (Y/M/D)[HH]
-            self._res.hour = utils.parse_isohour(token, 0, t_len)
-            if t_len == 4:
-                # . (Y/M/D)HH[MM]
-                self._res.minute = utils.parse_isominute(token, 2, t_len)
-            return True  # exit
+            ):
+                # . (Y/M/D)[HH]
+                self._res.hour = utils.parse_isohour(token, 0, token_len)
+                if token_len == 4:
+                    # . (Y/M/D)HH[MM]
+                    self._res.minute = utils.parse_isominute(token, 2, token_len)
+                return True  # exit
 
-        # . YYMMDD / HHMMSS
-        if t_len == 6 and not str_contains(token, "."):
-            # . [YYMMDD]
-            if self._res.ymd_populated() == 0:
-                self._res.set_ymd_int(utils.slice_to_uint(token, 0, 2), 0)
-                self._res.set_ymd_int(utils.slice_to_uint(token, 2, 2), 0)
-                self._res.set_ymd_int(utils.slice_to_uint(token, 4, 2), 0)
-            # . [HHMMSS]
-            else:
-                self._res.hour = utils.parse_isohour(token, 0, t_len)
-                self._res.minute = utils.parse_isominute(token, 2, t_len)
-                self._res.second = utils.parse_isosecond(token, 4, t_len)
-            return True  # exit
+            # . YYMMDD / HHMMSS
+            if token_len == 6:
+                # . [YYMMDD] (ambiguous Y/M/D)
+                if self._res.ymd_slots_filled() == 0:
+                    self._res.set_ymd_int(
+                        0, utils.slice_to_uint(token, 0, 2, token_len)
+                    )
+                    self._res.set_ymd_int(
+                        0, utils.slice_to_uint(token, 2, 2, token_len)
+                    )
+                    self._res.set_ymd_int(
+                        0, utils.slice_to_uint(token, 4, 2, token_len)
+                    )
+                # . [HHMMSS]
+                else:
+                    self._res.hour = utils.parse_isohour(token, 0, token_len)
+                    self._res.minute = utils.parse_isominute(token, 2, token_len)
+                    self._res.second = utils.parse_isosecond(token, 4, token_len)
+                return True  # exit
 
-        # . HHMMSS.[us]
-        if t_len > 6 and str_read(token, 6) == ".":
-            # . [HHMMSS]
-            self._res.hour = utils.parse_isohour(token, 0, t_len)
-            self._res.minute = utils.parse_isominute(token, 2, t_len)
-            self._res.second = utils.parse_isosecond(token, 4, t_len)
-            # . [us]
-            if t_len > 7:
-                self._res.microsecond = utils.parse_isofraction(token, 7, t_len)
-            return True  # exit
+            # . YYYYMMDD[HHMM[SS]]
+            if token_len in (8, 10, 12, 14):
+                # . [YYYYMMDD] (ambiguous M/D)
+                self._res.set_ymd_int(1, utils.slice_to_uint(token, 0, 4, token_len))
+                self._res.set_ymd_int(0, utils.slice_to_uint(token, 4, 2, token_len))
+                self._res.set_ymd_int(0, utils.slice_to_uint(token, 6, 2, token_len))
+                # . YYYYMMDD[HH]
+                if token_len > 8:
+                    self._res.hour = utils.parse_isohour(token, 8, token_len)
+                    # . YYYYMMDDHH[MM]
+                    if token_len > 10:
+                        self._res.minute = utils.parse_isominute(token, 10, token_len)
+                        # . YYYYMMDDHHMM[SS]
+                        if token_len > 12:
+                            self._res.second = utils.parse_isosecond(
+                                token, 12, token_len
+                            )
+                return True  # exit
 
-        # . YYYYMMDD[HHMM[SS]]
-        if t_len in (8, 12, 14):
-            # . [YYYYMMDD]
-            self._res.set_ymd_int(utils.parse_isoyear(token, 0, t_len), 1)
-            self._res.set_ymd_int(utils.slice_to_uint(token, 4, 2), 0)
-            self._res.set_ymd_int(utils.slice_to_uint(token, 6, 2), 0)
-            # . YYYYMMDD[HHMM]
-            if t_len > 8:
-                self._res.hour = utils.parse_isohour(token, 8, t_len)
-                self._res.minute = utils.parse_isominute(token, 10, t_len)
-                # . YYYYMMDDHHMM[SS]
-                if t_len > 12:
-                    self._res.second = utils.parse_isosecond(token, 12, t_len)
-            return True  # exit
+            # Next token exists
+            if self._has_token(1):
+                token1: str = self._get_token1()
+                # . HH:[MM[:SS[.ss]]]]
+                if (
+                    # token(1) must be time separator
+                    utils.is_str_time_sep(token1)
+                    # try set hour: token(0)
+                    and self._set_hour_by_token(token, token_len, token_kind)
+                ):
+                    # token(0) is hour
+                    # try set minute: token(2)
+                    if not self._set_minute_by_token(self._get_token(2)):
+                        # token(2) is not minute
+                        self._pos += 1  # skip token(1)
+                        return True  # exit
 
-        # . HH[ ]h or MM[ ]m or SS[.ss][ ]s
-        if self._parse_token_hmsf(t_val):
-            return True  # exit
+                    # token(2) is minute / token(4) could be second
+                    if not (
+                        # token(3) must be time separator
+                        utils.is_str_time_sep(self._get_token(3))
+                        # try set second: token(4)
+                        and self._set_second_by_token(self._get_token(4))
+                    ):
+                        # token(4) is not second
+                        self._pos += 2  # skip token(1..2)
+                        return True  # exit
 
-        # . HH:MM[:SS[.ss]]
-        if (tk2 := self._token2()) is not None and self._token1() == ":":
-            # . [HH:MM]
-            self._res.hour = int(t_val)
-            self._set_mmss(float(tk2))
-            # . [:SS[.ss]]
-            if (tk4 := self._token4()) is not None and self._token3() == ":":
-                self._set_ssff(float(tk4))
-                self._idx += 2  # skip 'tk3' & 'tk4'
-            self._idx += 2  # skip 'tk1' & 'tk2'
-            return True  # exit
+                    # all H/M/S are set successfully
+                    self._pos += 4  # skip token(1..4)
+                    return True  # exit
 
-        # . YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD
-        if (tk1 := self._token1()) is not None and tk1 in ("-", "/", "."):
-            # 1st Y/M/D value
-            self._res.set_ymd_int(int(t_val), 0)
+                # . YY-[MM-DD] | YY/[MM/DD] | YY.[MM.DD] (ambiguous)
+                if (
+                    # token(1) must be date separator
+                    utils.is_str_date_sep(token1)
+                    # try set 1st Y/M/D: token(0)
+                    and self._set_ymd_by_token(0, token, token_len, token_kind)
+                ):
+                    # token(0) is Y/M/D
+                    # try set 2nd Y/M/D: token(2)
+                    if not self._set_ymd_by_token(0, self._get_token(2)):
+                        # token(2) is not Y/M/D
+                        self._pos += 1  # skip token(1)
+                        return True
 
-            # 2nd Y/M/D value
-            if tk2 is not None and not self._is_token_jump(tk2):
-                try:
-                    t_int = int(tk2)
-                    # 01-[01]-01
-                    self._res.set_ymd_int(t_int, 0)
-                except ValueError:
-                    # 01-[Jan]-01
-                    t_int = self._token_to_month(tk2)
-                    if t_int != -1:
-                        self._res.set_ymd_int(t_int, 2)  # must be month
-                    else:
-                        self._res.set_ymd_str(tk2, 0)
+                    # token(2) is Y/M/D / token(4) could be Y/M/D
+                    if not (
+                        # token(3) must be date separator
+                        utils.is_str_date_sep(self._get_token(3))
+                        # try set 3rd Y/M/D: token(4)
+                        and self._set_ymd_by_token(0, self._get_token(4))
+                    ):
+                        # token(4) is not Y/M/D
+                        self._pos += 2  # skip token(1..2)
+                        return True  # exit
 
-                # 3rd Y/M/D value
-                if (tk4 := self._token4()) is not None and self._token3() == tk1:
-                    try:
-                        t_int: cython.int = int(tk4)
-                        # 01-01-[01]
-                        self._res.set_ymd_int(t_int, 0)
-                    except ValueError:
-                        # 01-01-[Jan]
-                        t_int: cython.int = self._token_to_month(tk4)
-                        if t_int != -1:
-                            self._res.set_ymd_int(t_int, 2)  # must be month
-                        else:
-                            self._res.set_ymd_str(tk4, 0)
+                    # all Y/M/D are set successfully
+                    self._pos += 4  # skip token(1..4)
+                    return True  # exit
 
-                    self._idx += 2  # skip 'tk3' & 'tk4'
-                self._idx += 1  # skip 'tk2'
-            self._idx += 1  # skip 'tk1'
-            return True  # exit
+        # Pure Decimal - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+        else:
+            # . HHMMSS.[fff]
+            if token_len > 6 and utils.is_dot(str_read(token, 6)):
+                # . [HHMMSS]
+                self._res.hour = utils.parse_isohour(token, 0, token_len)
+                self._res.minute = utils.parse_isominute(token, 2, token_len)
+                self._res.second = utils.parse_isosecond(token, 4, token_len)
+                # . [fff]
+                if token_len > 7:
+                    self._res.microsecond = utils.parse_isofraction(token, 7, token_len)
+                return True  # exit
 
-        # "hour AM" or YY|MM|DD
-        if self._idx + 1 >= self._size or self._is_token_jump(tk1):
-            # . 12 AM
-            if tk2 is not None and (ampm_flag := self._token_to_ampm_flag(tk2)) != -1:
-                self._res.hour = self._adj_hour_ampm(int(t_val), ampm_flag)
-                self._idx += 1  # skip 'tk2'
-            # . YY|MM|DD
-            else:
-                self._res.set_ymd_int(int(t_val), 0)
-            self._idx += 1  # skip 'tk1'
-            return True  # exit
+        # Integer or Decimal - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+        # Next token exists
+        if self._has_token(1):
+            token1: str = self._get_token1()
+            # . HMS with trailing H/M/S flag: [12]h
+            flag: cython.int = self._cfg.get_hms(token1)
+            if flag != -1:
+                # There is a H/M/S flag (e.g: 'h', 'm', 's') trailing the token.
+                # We assign the current token to the indicated H/M/S field.
+                if self._set_hms_by_token(flag, token, token_len, token_kind):
+                    self._pos += 1  # skip token(1)
+                    return True
 
-        # "hourAM"
-        t_int = int(t_val)
-        if 0 <= t_int < 24 and (ampm_flag := self._token_to_ampm_flag(tk1)) != -1:
-            self._res.hour = self._adj_hour_ampm(t_int, ampm_flag)
-            self._idx += 1  # skip 'tk1'
-            return True  # exit
+            # . HMS with trailing AM/PM flag: [12]am
+            flag: cython.int = self._cfg.get_ampm(token1)
+            if flag != -1:
+                # There is an AM/PM flag (e.g: 'am', 'pm') trailing the token.
+                # We assign the current token to hour and adjust by AM/PM flag.
+                if self._set_hour_by_token(token, token_len, token_kind):
+                    self._res.hour = self._adjust_hour_by_ampm(self._res.hour, flag)
+                    self._pos += 1  # skip token(1)
+                    return True  # exit
 
-        # Probably is 'day'
-        if self._res.could_be_day(t_int):
-            self._res.set_ymd_int(t_int, 0)
-            return True  # exit
+        # . HMS with preceding H/M/S flag: h[04]
+        if self._has_token(-1):
+            flag: cython.int = self._cfg.get_hms(self._get_token(-1))
+            if flag in (0, 1):  # 'h' or 'm'
+                # There is a H/M/S flag (e.g: 'h', 'm') preceding the token.
+                # Since the forward case was not hit, there is no flag trailing
+                # this token. We assign a lower resolution flag to the current
+                # token, if the flag is not second: (h -> m) or (m -> s).
+                if self._set_hms_by_token(flag + 1, token, token_len, token_kind):
+                    return True
 
-        # Exit
+        # "hour AM" or YY|MM|DD (ambiguous)
+        if not self._has_token(1) or self._cfg.is_jump(self._get_token1()):
+            flag: cython.int = self._cfg.get_ampm(self._get_token(2))
+            # . [12] AM
+            if flag != -1:
+                # There is an AM/PM flag (e.g: 'am', 'pm') after a jump token.
+                # We assign the current token to hour and adjust by AM/PM flag.
+                if self._set_hour_by_token(token, token_len, token_kind):
+                    self._res.hour = self._adjust_hour_by_ampm(self._res.hour, flag)
+                    self._pos += 2  # skip token(1..2)
+                    return True  # exit
+            # . YY|MM|DD (ambiguous)
+            elif self._set_ymd_by_token(0, token, token_len, token_kind):
+                self._pos += 1  # skip token(1)
+                return True  # exit
+
+        # Integer: last resort
+        if token_kind == 1:
+            # Could be day / day-of-year
+            if token_len <= 3:
+                value: cython.int = utils.slice_to_uint(token, 0, token_len, token_len)
+                if self._res.could_be_day(value) or self._res.could_be_doy(value):
+                    self._res.set_ymd_int(0, value)
+                    return True  # exit
+
+            # Could be year
+            if token_len == 4 and not self._res.is_year_set():
+                value: cython.int = utils.slice_to_uint(token, 0, token_len, token_len)
+                self._res.set_ymd_int(1, value)
+                return True  # exit
+
+        # We reach the end and the numeric token is not processed.
+        # But since the other handlers do not accept any numeric
+        # tokens, we just return True to skip this token.
         return True
 
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _parse_token_month(self, token: str) -> cython.bint:
-        """(cfunc) Parse as a 'month' token `<'bool'>`.
+        """(internal) Parse a `month` token and update the parser `Result` `<'bool'>`.
 
-        Returns `True` if the token represents a 'month'
-        value and processed successfully, else False.
+        Attempts to interpret `token` as a month name/abbreviation using the current
+        `Configs`. On success, writes the month into the `Result` and (when the
+        trailing tokens match supported patterns) also resolves adjacent Y/M/D
+        components and advances the parser position.
+
+        :param token `<'str'>`: The current token to parse.
+        :returns `<'bool'>`: The process result.
+
+            - `False` if the month is already set or `token` cannot be recognized as month.
+            - `True` otherwise (including when the month was recognized but no further
+               components could be resolved and the token is simply consumed).
         """
-        # Validate if is a 'month' token
-        mm: cython.int = self._token_to_month(token)
+        # Month already set
+        if self._res.is_month_set():
+            return False  # exit: skip
+
+        # Validate month token
+        mm: cython.int = self._cfg.get_month(token)
         if mm == -1:
-            return False  # exit: not a 'month' token
-        self._res.set_ymd_int(mm, 2)
+            return False  # exit: not month token
+        if not self._res.set_ymd_int(2, mm):
+            #: This token is a month token. Since the `Configs`
+            #: guards against conflicting keywords in other
+            #: namespaces, it cannot be `weekday` or `hms`, etc.
+            return True  # exit: skip token
 
-        # Try parse 'year' & 'day'
-        if (tk2 := self._token2()) is not None:
-            # . Jan-[01]
-            if (tk1 := self._token1()) in ("-", "/", "."):
-                self._res.set_ymd_str(tk2, 0)
-                # . Jan-01-[01]
-                if (tk4 := self._token4()) is not None and self._token3() == tk1:
-                    self._res.set_ymd_str(tk4, 0)
+        # Not enough tokens for year & day
+        token2: str = self._get_token(2)
+        if token2 is None:
+            return True  # exit: MM
 
-                    self._idx += 2  # skip 'tk4' & 'tk3'
-                self._idx += 2  # skip 'tk2' & 'tk1'
+        # Jan[-]01: token(1) is date separator
+        token1: str = self._get_token1()
+        if utils.is_str_date_sep(token1):
+            # try set 2nd Y/M/D: token(2)
+            if not self._set_ymd_by_token(0, token2):
+                # token(2) is not Y/M/D
+                return True  # exit: MM
 
-            # . Jan of [01] | 01 is clearly year
-            elif (
-                (tk4 := self._token4()) is not None
-                and self._is_token_pertain(tk2)
-                and self._token3() == " "
+            # token(2) is Y/M/D / token(4) could be Y/M/D
+            if not (
+                # token(3) must be date separator
+                utils.is_str_date_sep(self._get_token(3))
+                # try set 3rd Y/M/D: token(4)
+                and self._set_ymd_by_token(0, self._get_token(4))
             ):
-                try:
-                    yy: cython.int = int(tk4)
-                    self._res.set_ymd_int(yy, 1)
-                    self._idx += 4  # skip 'tk1' to 'tk4'
-                except ValueError:
-                    pass  # wrong guess
+                # token(4) is not Y/M/D
+                self._pos += 2  # skip token(1..2)
+                return True  # exit: MM-DD / MM-YYYY
 
-        # Exit
-        return True
+            # all Y/M/D are set successfully
+            self._pos += 4  # skip token(1..4)
+            return True  # exit: MM-DD-YYYY
+
+        # Jan[, ]2000
+        if (
+            # token(1) is comma
+            utils.is_str_comma(token1)
+            # token(2) is space
+            and utils.is_str_ascii_ctl_or_space(token2)
+            # try set year: token(3)
+            and self._set_ymd_by_token(1, self._get_token(3))
+        ):
+            # token(3) is year
+            self._pos += 3  # skip token(1..3)
+            return True  # exit: MM, YYYY
+
+        # Jan[ of ]2000
+        if (
+            # token(1) is space
+            utils.is_str_ascii_ctl_or_space(token1)
+            # token(3) is space
+            and utils.is_str_ascii_ctl_or_space(self._get_token(3))
+            # token(2) is pertain
+            and self._cfg.is_pertain(token2)
+            # try set year: token(4)
+            and self._set_ymd_by_token(1, self._get_token(4))
+        ):
+            # token(4) is year
+            self._pos += 4  # skip token(1..4)
+            return True  # exit: MM of YYYY
+
+        # End of process
+        return True  # exit: MM
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _parse_iso_week(self, token: str) -> cython.bint:
+        """(internal) Parse an ISO week-day fragment and update the parser `Result` `<'bool'>`.
+
+        Attempts to interpret the current token and adjacents as an ISO week-date.
+        On success, resolves the (month, day) from (year, week, weekday), writes
+        into the Result and advances the parser position.
+
+        ## Preconditions
+        - Result has YEAR set, and MONTH/DAY are not yet set.
+        - The current token is the ISO week marker ('W' / 'w').
+
+        ## Patterns
+        - 'W' + 'ww'        (e.g., W05)     → defaults weekday to 1 (Monday)
+        - 'W' + 'ww' + '-D' (e.g., W05-3)   → explicit weekday 1..7
+
+        :param token `<'str'>`: The current token to parse.
+        :returns `<'bool'>`: The process result.
+
+            - `False` if patterns are not matched, tokens are malformed,
+              or values are out of range.
+            - `True` otherwise (including when weekday is absent or invalid
+              and Monday is assumed).
+        """
+        # Validate iso week
+        if (
+            # year not set
+            not self._res.is_year_set()
+            # month is set
+            or self._res.is_month_set()
+            # day is set
+            or self._res.is_day_set()
+            # token(0) is not 'W' or 'w'
+            or not utils.is_str_isoweek_sep(token)
+        ):
+            return False  # exit: not matched
+
+        # W[52]: token(1) must be week number
+        token1: str = self._get_token1()
+        if token1 is None:
+            return False  # exit: invalid
+        token1_len: cython.Py_ssize_t = str_len(token1)
+        if token1_len != 2:
+            return False  # exit: invalid
+        week: cython.int = utils.parse_isoweek(token1, 0, 2)
+        if week == -1:
+            return False  # exit: invalid
+
+        # W52[-7]: token(3) could be weekday
+        wkd: cython.int = 1
+        token3: str = self._get_token(3)
+        if (
+            # has token(3)
+            token3 is not None
+            # token(3) must be single digit
+            and str_len(token3) == 1
+            # token(2) must be date separator
+            and utils.is_str_date_sep(self._get_token(2))
+        ):
+            num: cython.int = utils.parse_isoweekday(token3, 0, 1)
+            if num != -1:
+                wkd = num  # Www-D
+                self._pos += 2  # skip token(2..3)
+        # else: Www-1; defaults to 1 (Monday)
+
+        # Set date by ISO week date
+        year: cython.int = self._res._ymd[self._res._yidx]
+        _ymd = utils.ymd_fr_isocalendar(year, week, wkd)
+        self._res.set_ymd_int(2, _ymd.month)
+        self._res.set_ymd_int(3, _ymd.day)
+        self._pos += 1  # skip token(1)
+        return True  # exit: Www[-D]
 
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _parse_token_weekday(self, token: str) -> cython.bint:
-        """(cfunc) Parse as a 'weekday' token `<'bool'>`.
+        """(internal) Parse a `weekday` token and update the parser `Result` `<'bool'>`.
 
-        Returns `True` if the token represents a 'weekday'
-        value and processed successfully, else `False`.
+        Attempts to interpret `token` as a weekday name/abbreviation using the
+        current `Configs`. On success, writes the weekday into the `Result` and
+        advances the parser position.
+
+        :param token `<'str'>`: The current token to parse.
+        :returns `<'bool'>`: The process result.
+
+            - `False` if the weekday is already set or `token` cannot be recognized as weekday.
+            - `True` otherwise (when the weekday was recognized and set to Result).
         """
-        # Validate if is a 'weekday' token
-        wd: cython.int = self._token_to_weekday(token)
+        # Weekday already set
+        if self._res.is_weekday_set():
+            return False  # exit: skip
 
-        if wd == -1:
-            return False  # exit: not a 'weekday' token
+        # Validate weekday token
+        wkd: cython.int = self._cfg.get_weekday(token)
+        if wkd == -1:
+            return False  # exit: not weekday token
 
-        # Set result
-        self._res.weekday = wd
-        return True  # exit
+        # Set weekday
+        self._res.weekday = wkd
+        return True
 
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
-    def _parse_token_hmsf(self, t_val: cython.double) -> cython.bint:
-        """(cfunc) Parse the token value as one of the H/M/S/f components `<'bool'>`.
+    def _parse_token_ampm(self, token: str) -> cython.bint:
+        """(internal) Parse an `AM/PM` flag token and apply it to the current hour `<'bool'>`.
 
-        Returns `True` if the token value represents one of the
-        H/M/S/f components and processed successfully, else `False`.
-        """
-        hms_flag: cython.int
-        # Forward
-        if (tk1 := self._token1()) is not None and (
-            hms_flag := self._token_to_hms_flag(tk1)
-        ) != -1:
-            # There is an "h", "m", or "s" label following this token.
-            # We take assign the upcoming label to the current token.
-            # e.g. the "12" in 12h"
-            self._set_hmsf(t_val, hms_flag)
-            self._idx += 1  # skip 'tk1'
-            return True
+        Attempts to interpret `token` as an AM/PM designator using the current `Config`.
+        On success, records the AM/PM flag on the result and adjusts the already-parsed
+        hour in-place (e.g., `12 am → 0`, `1 pm → 13`).
 
-        # Backward
-        if (tk1_b := self._token(self._idx - 1)) is not None and (
-            hms_flag := self._token_to_hms_flag(tk1_b)
-        ) != -1:
-            # There is a "h", "m", or "s" preceding this token. Since neither
-            # of the previous cases was hit, there is no label following this
-            # token, so we use the previous label.
-            # e.g. the "04" in "12h04"
-            # looking backwards, flag increase 1
-            self._set_hmsf(t_val, hms_flag + 1)
-            return True
-
-        # Not HMSF token
-        return False
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _parse_token_ampm_flag(self, token: str) -> cython.bint:
-        """(cfunc) Parse as an 'AM/PM' flag token `<'bool'>`.
-
-        Returns `True` if the token represents an `AM/PM` flag
-        and processed successfully, else `False`.
+        :param token `<'str'>`: The current token to parse.
+        :returns `<'bool'>`: The process result.
+            - `False` if AM/PM was already set, the hour is missing / not in 12-hour
+              domain, or `token` is not an AM/PM designator.
+            - `True` otherwise (token is recognized as AM/PM flag and the hour is
+              adjusted accordingly).
         """
         # AM/PM flag already set
-        if self._res.ampm != -1:
+        if self._res.is_ampm_set():
             return False  # exit
 
         # Missing hour / Not a 12 hour clock
@@ -2349,494 +3608,782 @@ class Parser:
         if not 0 <= hour <= 12:
             return False  # exit
 
-        # Validate if is an 'AM/PM' token
-        ampm_flag: cython.int = self._token_to_ampm_flag(token)
-        if ampm_flag == -1:
-            return False  # exit: not an 'AM/PM' token
+        # Validate AM/PM flag token
+        flag: cython.int = self._cfg.get_ampm(token)
+        if flag == -1:
+            return False  # exit: not AM/PM flag token
+        self._res.ampm = flag
 
-        # Adjust hour according to AM/PM
-        self._res.hour = self._adj_hour_ampm(hour, ampm_flag)
-        self._res.ampm = ampm_flag
-        return True  # eixt
+        # Adjust hour according to AM/PM flag
+        self._res.hour = self._adjust_hour_by_ampm(hour, flag)
+        return True  # exit
 
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _parse_token_tzname(self, token: str) -> cython.bint:
-        """(cfunc) Parse as a 'tzname' token `<'bool'>`.
+        """(internal) Parse a timezone *name/alias* token and update the Result `<'bool'>`.
 
-        Returns `True` if the token represents a timezone
-        name and processed successfully, else `False`.
+        Attempts to interpret `token` as a timezone `name` (e.g., `UTC`, `GMT`,
+        `CET`, `BRST`) using the current `Config`.. On success, sets `tzoffset`
+        from the configuration mapping (or `0` for UTC aliases), optionally
+        performs POSIX-style flip for UTC aliases.
+
+        enables a subsequent numeric offset to be applied, and returns `True`. Otherwise returns `False`.
+
+        :param token `<'str'>`: The current token to parse.
+        :returns `<'bool'>`: The process result.
+            - `True` if `token` is a recognized as timezone name/alias and
+              `tzoffset` was updated.
+            - `False` if timezone parsing is disabled, a tzoffset is already finalized,
+              or `token` is not a valid/known timezone name.
+
+        ## POSIX-style flip
+        - If the pattern `UTC/GMT/Z` followed by `+/-` and a 1..4 digit token exists
+          (e.g., `UTC + 3`, `GMT - 0230`), the sign token is `flipped` in the token
+          list so that the subsequent tz-offset parser interprets it as a standard
+          “UTC±HH[MM]” offset.
+        - Non-UTC names do `not` flip the sign (e.g., `CET+03` means CET plus 3 hours
+          relative to UTC; the numeric offset will be `added` to the base CET offset).
+        - Unknown names are rejected via the sentinel `-100_000` returned by the mapping.
         """
-        # Check if need to parse tzname
+        # Check if need to parse timezone name
         if (
-            self._ignoretz  # ignore timezone
-            or self._res.hour == -1  # hour not set
-            or self._res.tzoffset != -100_000  # tzoffset exits
+            # ignore timezone
+            self._ignoretz
+            # tzoffset already set
+            or self._res.is_tzoffset_set()
         ):
-            return False  # exit: tzname no needed
+            return False  # exit: no need
 
-        # Validate if the token could be a tzname
-        # . utc timezone
-        if self._is_token_utc(token):
+        # Validate timezone token
+        # . utc timezone alias
+        is_utc: cython.bint = self._cfg.is_utc(token)
+        if is_utc:
             self._res.tzoffset = 0
-        # . timezone name length must between 3-5
-        if not 3 <= str_len(token) <= 5:
-            return False  # exit: not tzname
         # . timezone name must be ASCCI alpha
-        for ch in token:
-            if not utils.is_ascii_alpha_lower(ch):
-                return False  # exit: not tzname
-            self._res.tzoffset = self._token_to_tzoffset(token)
+        elif not utils.is_str_ascii_letters(token):
+            return False  # exit: invalid
+        # . offset from timezone mapping
+        else:
+            offset: cython.int = self._cfg.get_tz_offset(token)
+            if offset == utils.NULL_TZOFFSET:
+                return False  # exit: not timezone name
+            self._res.tzoffset = offset
 
-        # Check for something like GMT+3, or BRST+3. Notice
-        # that it doesn't mean "I am 3 hours after GMT", but
-        # "my time +3 is GMT". If found, we reverse the logic
-        # so that tzoffset parsing code will get it right.
-        if (tk1 := self._token1()) is not None:
-            if tk1 == "+":
-                list_setitem(self._tokens, self._idx + 1, "-")
-            elif tk1 == "-":
-                list_setitem(self._tokens, self._idx + 1, "+")
-            else:
-                return True  # exit
-            # Reset tzoffset
-            self._res.tzoffset = -100_000  # means None
+        #: For UTC/GMT/Z followed by a numeric offset (e.g., 'UTC + 3' or 'GMT - 0230'):
+        #: POSIX semantics say “my time ±X is UTC”, so flip the following sign token
+        #: to make the numeric tzoffset parser compute the correct absolute offset.
+        if is_utc and self._has_token(2):  # token(2) must exists
+            token1: str = self._get_token1()
+            token2: str = self._get_token(2)
+            token2_len: cython.Py_ssize_t = str_len(token2)
+            if (
+                # . token(2) must be 1, 2 or 4 digits
+                token2_len in (1, 2, 4)
+                and utils.is_str_ascii_digits(token2, token2_len)
+                # . token(1) must be a single char
+                and str_len(token1) == 1
+            ):
+                ch: cython.Py_UCS4 = str_read(token1, 0)
+                if utils.is_plus_sign(ch):
+                    #: we advance position to token(1) and reset
+                    #: peeks before calling tzoffset parser, then
+                    #: flip token(1) from '+' to '-'
+                    self._pos += 1
+                    self._reset_token_peeks()
+                    return self._parse_token_tzoffset("-")  # True
+                if utils.is_minus_sign(ch):
+                    #: we advance position to token(1) and reset
+                    #: peeks before calling tzoffset parser, then
+                    #: flip token(1) from '-' to '+'.
+                    self._pos += 1
+                    self._reset_token_peeks()
+                    return self._parse_token_tzoffset("+")  # True
 
-        return True  # exit
+        #: For non-UTC names (e.g., 'CET + 02:00'): do not flip — numeric offset
+        #: will be added to the base zone offset (additive semantics).
+        self._res.tzoffset_finalized = False
+        return True  # exit: success
 
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def _parse_token_tzoffset(self, token: str) -> cython.bint:
-        """(cfunc) Parse as a 'tzoffset' token `<'bool'>`.
+        """(internal) Parse a timezone `numeric offset` fragment and update the Result `<'bool'>`.
 
-        Returns `True` if the token represents a timezone
-        offset components and processed successfully, else
-        `False`.
+        Interprets a sign token (`'+'`/`'-'`) followed by one or two numeric
+        tokens as a UTC offset. Supports:
+        - `±HHMM`     → sign + 4 digits in the `next` token (e.g. `+ 0530`)
+        - `±HH[:MM]?` → sign + 1-2 digits hour, optional `:` and 1-2 digit minute
+                        in subsequent tokens (e.g. `- 5 : 30`, `+ 02`)
+
+        This method must run even when `ignoretz=True` so that time parsing can
+        continue correctly (the tokens are still consumed/validated). When
+        `ignoretz=True`, the computed offset is simply not written back.
+
+        :param token `<'str'>`: The current token to parse.
+        :returns `<'bool'>`: The process result.
+            - `False` if the pattern does not match or a `tzoffset` is
+              already set and finalized.
+            - `True` otherwise (matched tokens are consumed as needed).
+
+        ## Notes
+        - Sign flipping for UTC-like names (e.g., `UTC + 3`) should be handled
+          earlier in `_parse_token_tzname`; this method simply parses what it sees.
+        - `ignoretz=True` only suppresses `writing` the offset; token advancement
+          and validation still occur for downstream parsers.
         """
-        # Check if need to parse tzoffset
-        if (
-            self._res.hour == -1  # hour not set
-            or self._res.tzoffset != -100_000  # tzoffset exits
-        ):
-            return False  # exit: not 'tzoffset' token
 
-        # Validate if the token is 'tzoffset' component
-        if token == "+":
+        # Check if need to parse timezone offset
+        if self._res.is_tzoffset_set() and self._res.tzoffset_finalized:
+            return False
+
+        #: Cannot bypass the following process even if 'ignoretz=True'
+        #: Timezone offset tokens (if exists) must be skipped to ensure
+        #: H/M/S and AM/PM are parsed properly.
+
+        # token(0): must be a single '+' or '-'
+        if str_len(token) != 1:
+            return False  # exit: invalid
+        ch: cython.Py_UCS4 = str_read(token, 0)
+        if utils.is_plus_sign(ch):
             sign: cython.int = 1
-        elif token == "-":
+        elif utils.is_minus_sign(ch):
             sign: cython.int = -1
         else:
-            return False  # eixt: not 'tzoffset' token
+            return False  # exit: invalid
 
-        # Validate next token
-        if (tk1 := self._token1()) is None:
-            return False  # exit: not 'tzoffset' token
-        try:
-            offset: cython.longlong = int(tk1)
-        except ValueError:
-            return False  # exit: not 'tzoffset' token
+        # token(1): +[HH] / +[HHMM]
+        token1: str = self._get_token1()
+        if token1 is None:
+            return False  # exit: not exists
+        token1_len: cython.Py_ssize_t = str_len(token1)
+        # token(1) must all digits
+        if not utils.is_str_ascii_digits(token1, token1_len):
+            return False  # exit: invalid
 
-        # Calculate offset
-        t_len: cython.Py_ssize_t = str_len(tk1)
-        if t_len == 4:
-            # . +/-[0300]
-            hh: cython.int = utils.parse_isohour(tk1, 0, t_len)
-            mm: cython.int = utils.parse_isominute(tk1, 2, t_len)
-            offset = sign * (hh * 3_600 + mm * 60)
-        elif (tk3 := self._token3()) is not None and self._token2() == ":":
-            try:
-                # . +/-[03]:00
-                mm: cython.int = int(tk3)
-                offset = sign * (offset * 3_600 + mm * 60)
-                self._idx += 2  # skip 'tk2' & 'tk3'
-            except ValueError:
-                # . +/-[03] / Invalid
-                offset = sign * (offset * 3_600) if t_len <= 2 else -100_000
+        # Case: +[HHMM] (exactly 4 digits)
+        if token1_len == 4:
+            hh: cython.int = utils.parse_isohour(token1, 0, token1_len)
+            mi: cython.int = utils.parse_isominute(token1, 2, token1_len)
+            self._pos += 1  # skip token(1)
+        # Case: +[HH[:MM]] ((1–2 digit hour, optional ':' + MM)
+        elif 1 <= token1_len <= 2:
+            hh: cython.int = utils.slice_to_uint(token1, 0, token1_len, token1_len)
+            mi: cython.int = 0
+            # +HH[:MM]
+            if self._has_token(3) and utils.is_str_time_sep(self._get_token(2)):
+                token3: str = self._get_token(3)
+                token3_len: cython.Py_ssize_t = str_len(token3)
+                if (
+                    # token(3) should be max 2 digits
+                    token3_len <= 2
+                    # token(3) must be all digits
+                    and utils.is_str_ascii_digits(token3, token3_len)
+                ):
+                    mi = utils.slice_to_uint(token3, 0, token3_len, token3_len)
+                    self._pos += 2  # skip token(2..3)
+            self._pos += 1  # skip token(1)
+        # Otherwise: unsupported
         else:
-            # . +/-[03] / Invalid
-            offset = sign * (offset * 3_600) if t_len <= 2 else -100_000
+            return False  # exit: invalid
 
-        # Validate offset
-        if not -86_340 <= offset <= 86_340:
-            raise ValueError(
-                "invalid timezone offset %d (seconds), "
-                "must between -86340 and 86340." % (offset)
-            )
-        self._res.tzoffset = offset
-
-        # Exit
-        self._idx += 1  # skip 'tk1'
-        return True  # exit
+        # Compute UTC offset: when timezone is not ignored
+        if not self._ignoretz:
+            offset: cython.int = sign * (hh * 3_600 + mi * 60)
+            if not -86_400 <= offset <= 86_400:
+                raise ValueError(
+                    "Invalid UTC offset '%d' in seconds, "
+                    "must be between -86,400 and 86,400." % (offset)
+                )
+            if self._res.is_tzoffset_set():
+                self._res.tzoffset += offset  # add to base
+            else:
+                self._res.tzoffset = offset  # set base
+            self._res.tzoffset_finalized = True  # prevent further changes
+        return True  # exit: success
 
     # . tokens - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     @cython.cfunc
     @cython.inline(True)
-    def _token(self, idx: cython.Py_ssize_t) -> str:
-        """(cfunc) Get token by index `<'str/None'>`.
+    @cython.exceptval(check=False)
+    def _has_token(self, offset: cython.Py_ssize_t) -> cython.bint:
+        """(internal) Check whether a token `exists` at a position relative to the current index `<'bool'>`.
 
-        #### Returns `None` if index out of range.
+        Interprets `offset` relative to the current token cursor `self._pos` and
+        returns whether that resulting index is within the valid token range.
+        - `offset == 0` → current token
+        - `offset > 0`  → lookahead (`+1` = next token, etc.)
+        - `offset < 0`  → lookbehind (`-1` = previous token, etc.)
+
+        :param offset `<'int'>`: Relative offset from the current token index (`self._pos`).
+        :return `<'bool'>`: True if the token exists, otherwise False.
+
+        ## Notes
+        - This method does `NOT` advance the internal cursor; it simply checks
+          if the token at the specified relative position exists.
         """
-        if 0 <= idx < self._size:
-            return cython.cast(str, list_getitem(self._tokens, idx))
-        else:
+        return 0 <= (self._pos + offset) < self._length
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _get_token(self, offset: cython.Py_ssize_t) -> str:
+        """(internal) Return the token at a position relative to the current index `<'str/None'>`.
+
+        Interprets `offset` relative to the current token cursor `self._pos` and
+        retrieves the token at that index.
+        - `offset == 0` → current token
+        - `offset > 0`  → lookahead (`+1` = next token, etc.)
+        - `offset < 0`  → lookbehind (`-1` = previous token, etc.)
+
+        :param offset `<'int'>`: Relative offset from the current token index (`self._pos`).
+        :returns `<'str/None'>`: The token string at `self._pos + offset`, or `None` if out of bound.
+
+        ## Notes
+        - This method does `NOT` advance the internal cursor; it simply reads
+          the token at the specified relative position.
+        """
+        idx: cython.Py_ssize_t = self._pos + offset
+        if not 0 <= idx < self._length:
             return None
+        return cython.cast(str, list_getitem(self._tokens, idx))
 
     @cython.cfunc
     @cython.inline(True)
-    def _token1(self) -> str:
-        """(cfunc) Get the next (index+1) token `<'str/None'>`.
+    def _get_token1(self) -> str:
+        """(internal) Return the `next` token (at `self._pos + 1`) `<'str/None'>`.
 
-        #### Returns `None` if index out of range.
+        This is a cached “peek” helper. On first call at the current cursor position,
+        it fetches `self._get_token(1)` and stores it in `self._token1`. Subsequent
+        calls at the same position return the cached value. The cache must be invalidated
+        (set to `None`) whenever `self._pos` changes.
+
+        :returns `<'str/None'>`: The token string immediately after the current one,
+            or `None` if the next token does not exists.
+
+        ## Notes
+        - This method does `NOT` advance the internal cursor; it simply reads
+          the next token relative to the current position.
         """
-        if self._tk1 is None:
-            self._tk1 = self._token(self._idx + 1)
-        return self._tk1
+        if self._token1 is None:
+            self._token1 = self._get_token(1)
+        return self._token1
 
     @cython.cfunc
     @cython.inline(True)
-    def _token2(self) -> str:
-        """(cfunc) Get the next (index+2) token `<'str/None'>`.
+    def _get_next_token(self) -> str:
+        """(internal) Advance to and return the next token `<'str/None'>`.
 
-        #### Returns `None` if index out of range.
+        Increments the internal cursor (`self._pos += 1`) and returns the token
+        at the new position. If the advanced index exceeds the token list length,
+        returns `None` to signal EOF.
+
+        :returns `<'str/None'>`: The next token string,
+            or `None` if there are no more tokens.
+
+        ## Notes
+        - Intended usage is to initialize `self._pos = -1` before a read
+          loop and call this at the top of each iteration.
+        - If additional peek caches (e.g., `_token2`) are introduced, they
+          should also be reset here.
         """
-        if self._tk2 is None:
-            self._tk2 = self._token(self._idx + 2)
-        return self._tk2
+        # Reset peeks
+        self._reset_token_peeks()
+
+        # Get next token
+        self._pos += 1
+        idx: cython.Py_ssize_t = self._pos
+        if idx >= self._length:
+            return None
+        return cython.cast(str, list_getitem(self._tokens, idx))
 
     @cython.cfunc
     @cython.inline(True)
-    def _token3(self) -> str:
-        """(cfunc) Get the next (index+3) token `<'str/None'>`.
+    @cython.exceptval(check=False)
+    def _reset_token_peeks(self) -> cython.bint:
+        """(internal) Reset cached token peeks.
 
-        #### Returns `None` if index out of range.
+        This method invalidates any cached token peeks (e.g., `self._token1`)
+        so that subsequent calls to the peek methods will re-fetch from the
+        token list.
+
+        ## Notes
+        - This method should be called whenever the internal cursor
+          (`self._pos`) is changed manually or externally.
         """
-        if self._tk3 is None:
-            self._tk3 = self._token(self._idx + 3)
-        return self._tk3
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _token4(self) -> str:
-        """(cfunc) Get the next (index+4) token `<'str/None'>`.
-
-        #### Returns `None` if index out of range.
-        """
-        if self._tk4 is None:
-            self._tk4 = self._token(self._idx + 4)
-        return self._tk4
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _reset_tokens(self) -> cython.bint:
-        """(cfunc) Reset cached token1...token4."""
-        self._tk1 = None
-        self._tk2 = None
-        self._tk3 = None
-        self._tk4 = None
+        self._token1 = None
         return True
 
-    # . utils - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    # . setters - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
-    def _set_hmsf(self, t_val: cython.double, hms_flag: cython.int) -> cython.bint:
-        """(cfunc) Set the 'HH:MM:SS.f' result based on
-        the given token value and 'hms_flag'."""
-        if hms_flag == 0:  # flag: hour
-            return self._set_hhmm(t_val)
-        if hms_flag == 1:  # flag: minute
-            return self._set_mmss(t_val)
-        if hms_flag == 2:  # flag: second
-            return self._set_ssff(t_val)
-        return False
+    def _set_ymd_by_token(
+        self,
+        flag: cython.int,
+        token: str,
+        token_len: cython.Py_ssize_t = -1,
+        token_kind: cython.int = -1,
+    ) -> cython.bint:
+        """(internal) Try to assign a Y/M/D component from a single token `<'bool'>`.
+
+        Interprets `token` as either:
+        - a pure-integer calendar field (year/month/day)
+        - a month name/abbr (e.g., "Jan", "September")
+
+        :param flag `<'int'>`: The Y/M/D flag (0=UNKNOWN, 1=YEAR, 2=MONTH, 3=DAY).
+            Use 0 when the token is ambiguous (e.g., “12”).
+        :param token `<'str/None'>`: The candidate token for Y/M/D component.
+        :param token_len `<'int'>`: Optional length of `token`.
+            Defaults to `-1` (let the method computes it).
+        :param token_kind `<'int'>`: Optional numeric classification of `token`.
+            Defaults to `-1` (let the method computes it).
+
+            - 0 = non-numeric (may still be month)
+            - 1 = integer
+            - 2 = decimal     (rejected)
+
+        :returns `<'bool'>`: True if a Y/M/D component was written to `Result`; False otherwise.
+        """
+        # Get token length
+        if token is None:
+            return False
+        if token_len <= 0:
+            token_len = str_len(token)
+        if token_len == 0:
+            return False  # exit: invalid
+
+        # Ensure token numeric kind
+        if token_kind < 0:
+            token_kind = utils.parse_numeric_kind(token, token_len)
+        if token_kind == 2:  # Y/M/D token cannot be decimal
+            return False  # exit: invalid
+
+        # Integer token
+        if token_kind == 1:
+            return self._res.set_ymd_str(flag, token, token_len)
+
+        # String: Could be month token
+        month: cython.int = self._cfg.get_month(token)
+        if month != -1 and not self._cfg.is_jump(token):
+            return self._res.set_ymd_int(2, month)
+
+        # Not Y/M/D token
+        return False  # exit: invalid
 
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
-    def _set_hhmm(self, t_val: cython.double) -> cython.bint:
-        """(cfunc) Set 'HH:MM' result based on the given token value."""
-        self._res.hour = int(t_val)
-        if rem := t_val % 1:
-            self._res.minute = math.lround(rem * 60)
-        return True
+    def _set_hms_by_token(
+        self,
+        flag: cython.int,
+        token: str,
+        token_len: cython.Py_ssize_t = -1,
+        token_kind: cython.int = -1,
+    ) -> cython.bint:
+        """(Internal) Try set the H/M/S from a single `numeric` token `<'bool'>`.
+
+        Thie method routes a single numeric `token` to one of the specialized setters:
+        - `flag == 0` → hour   → `_set_hour_by_token(...)`
+        - `flag == 1` → minute → `_set_minute_by_token(...)`
+        - `flag == 2` → second → `_set_second_by_token(...)`
+
+        :param flag `<'int'>`: H/M/S flag (0=hour, 1=minute, 2=second).
+            Any other value is invalid.
+        :param token `<'str/None'>`: The candidate token for H/M/S.
+        :param token_len `<'int'>`: Optional length of `token`.
+            Defaults to `-1` (let the method computes it).
+        :param token_kind `<'int'>`: Optional numeric classification of `token`.
+            Defaults to `-1` (let the method computes it).
+
+            - 0 = non-numeric (rejected)
+            - 1 = integer
+            - 2 = decimal
+
+        :returns `<'bool'>`: True if the designated field was set successfully; False otherwise.
+        """
+        # Hour flag
+        if flag == 0:
+            return self._set_hour_by_token(token, token_len, token_kind)
+        # Minute flag
+        elif flag == 1:
+            return self._set_minute_by_token(token, token_len, token_kind)
+        # Second flag
+        elif flag == 2:
+            return self._set_second_by_token(token, token_len, token_kind)
+        # Invalid flag
+        else:
+            return False
 
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
-    def _set_mmss(self, t_val: cython.double) -> cython.bint:
-        """(cfunc) Set 'MM:SS' result based on the given token value."""
-        self._res.minute = int(t_val)
-        if rem := t_val % 1:
-            self._res.second = math.lround(rem * 60)
-        return True
+    def _set_hour_by_token(
+        self,
+        token: str,
+        token_len: cython.Py_ssize_t = -1,
+        token_kind: cython.int = -1,
+    ) -> cython.bint:
+        """(internal) Try set the hour (and optionally minute) from a single `numeric` token `<'bool'>`.
+
+        Accepts `token` either as:
+        - `Integer hours` (e.g., `'9'`, `'23'`)      → sets `hour`
+        - `Decimal hours` (e.g., `'14.5'`, `'7.25'`) → sets `hour` to the integer part
+          and computes `minute = round(fraction * 60)` (clamp to 59).
+
+        :param token `<'str/None'>`: The candidate token for hour.
+        :param token_len `<'int'>`: Optional length of `token`.
+            Defaults to `-1` (let the method computes it).
+        :param token_kind `<'int'>`: Optional numeric classification of `token`.
+            Defaults to `-1` (let the method computes it).
+
+            - 0 = non-numeric (rejected)
+            - 1 = integer
+            - 2 = decimal
+
+        :returns `<'bool'>`: True if `hour` (and possibly `minute`) was set successfully; False otherwise.
+        """
+        # Get token length
+        if token is None:
+            return False
+        if token_len <= 0:
+            token_len = str_len(token)
+        if token_len == 0:
+            return False  # exit: invalid
+
+        # Ensure is numeric token
+        if token_kind < 0:
+            token_kind = utils.parse_numeric_kind(token, token_len)
+        if token_kind == 0:
+            return False  # exit: invalid
+
+        # Integer token
+        if token_kind == 1:
+            hh: cython.int = utils.slice_to_uint(token, 0, token_len, token_len)
+            if not 0 <= hh < 24:
+                return False  # exit: invalid
+            self._res.hour = hh
+            return True  # exit: success
+
+        # Decimal token
+        frac: cython.double = utils.slice_to_ufloat(token, 0, token_len, token_len)
+        hh: cython.int = int(frac)
+        if not 0 <= hh < 24:
+            return False  # exit: invalid
+        self._res.hour = hh
+        # fraction to minute
+        r: cython.double = frac % 1
+        if r:
+            self._res.minute = min(math.lround(r * 60), 59)
+        return True  # exit: success
 
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
-    def _set_ssff(self, t_val: cython.double) -> cython.bint:
-        """(cfunc) Set 'SS.f' result based on the given token value."""
-        self._res.second = int(t_val)
-        if rem := t_val % 1:
-            self._res.microsecond = math.lround(rem * 1_000_000)
-        return True
+    def _set_minute_by_token(
+        self,
+        token: str,
+        token_len: cython.Py_ssize_t = -1,
+        token_kind: cython.int = -1,
+    ) -> cython.bint:
+        """(internal) Try set the minute (and optionally second) from a single `numeric` token `<'bool'>`.
+
+        Accepts `token` either as:
+        - `Integer minutes` (e.g., `'7'`, `'59'`)      → sets `minute`
+        - `Decimal minutes` (e.g., `'12.5'`, `'3.25'`) → sets `minute to the integer part
+          and computes `second = round(fraction * 60)` (clamp to 59).
+
+        :param token `<'str/None'>`: The candidate token for minute.
+        :param token_len `<'int'>`: Optional length of `token`.
+            Defaults to `-1` (let the method computes it).
+        :param token_kind `<'int'>`: Optional numeric classification of `token`.
+            Defaults to `-1` (let the method computes it).
+
+            - 0 = non-numeric (rejected)
+            - 1 = integer
+            - 2 = decimal
+
+        :returns `<'bool'>`: True if `minute` (and possibly `second`) was set successfully; False otherwise.
+        """
+        # Get token length
+        if token is None:
+            return False
+        if token_len <= 0:
+            token_len = str_len(token)
+        if token_len == 0:
+            return False  # exit: invalid
+
+        # Ensure is numeric token
+        if token_kind < 0:
+            token_kind = utils.parse_numeric_kind(token, token_len)
+        if token_kind == 0:
+            return False  # exit: invalid
+
+        # Integer token
+        if token_kind == 1:
+            mi: cython.int = utils.slice_to_uint(token, 0, token_len, token_len)
+            if not 0 <= mi < 60:
+                return False  # exit: invalid
+            self._res.minute = mi
+            return True  # exit: success
+
+        # Decimal token
+        frac: cython.double = utils.slice_to_ufloat(token, 0, token_len, token_len)
+        mi: cython.int = int(frac)
+        if not 0 <= mi < 60:
+            return False  # exit: invalid
+        self._res.minute = mi
+        # fraction to second
+        r: cython.double = frac % 1
+        if r:
+            self._res.second = min(math.lround(r * 60), 59)
+        return True  # exit: success
 
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
-    def _adj_hour_ampm(self, hour: cython.int, ampm_flag: cython.int) -> cython.int:
-        """(cfunc) Adjust 'hour' value based on the given AM/PM flag `<'int'>`."""
-        if hour < 12:
-            if ampm_flag == 1:
+    def _set_second_by_token(
+        self,
+        token: str,
+        token_len: cython.Py_ssize_t = -1,
+        token_kind: cython.int = -1,
+    ) -> cython.bint:
+        """(internal) Try set the `second` (and optionally `microsecond`) from a single numeric token `<'bool'>`.
+
+        Accepts `token` either as:
+        - `Integer seconds` (e.g., `'7'`, `'59'`)          → sets `second`
+        - `Decimal seconds` (e.g., `'12.5'`, `'3.250001'`) → sets `second` to the integer part
+          and `microsecond` to the fraction (up to 6 digits, exceeding are ignored).
+
+        :param token `<'str/None'>`: The candidate token for second.
+        :param token_len `<'int'>`: Optional length of `token`.
+            Defaults to `-1` (let the method computes it).
+        :param token_kind `<'int'>`: Optional numeric classification of `token`.
+            Defaults to `-1` (let the method computes it).
+
+            - 0 = non-numeric (rejected)
+            - 1 = integer
+            - 2 = decimal
+
+        :returns `<'bool'>`: True if `second` (and possibly `microsecond`) was set successfully; False otherwise.
+        """
+        # Get token length
+        if token is None:
+            return False
+        if token_len <= 0:
+            token_len = str_len(token)
+        if token_len == 0:
+            return False  # exit: invalid
+
+        # Ensure is numeric token
+        if token_kind < 0:
+            token_kind = utils.parse_numeric_kind(token, token_len)
+        if token_kind == 0:
+            return False  # exit: invalid
+
+        # Integer token
+        if token_kind == 1:
+            ss: cython.int = utils.slice_to_uint(token, 0, token_len, token_len)
+            if not 0 <= ss < 60:
+                return False  # exit: invalid
+            self._res.second = ss
+            return True  # exit: success
+
+        # Decimal token
+        _sf = utils.parse_second_and_fraction(token, 0, token_len)
+        if _sf.second == -1:
+            return False  # exit: invalid
+        self._res.second = _sf.second
+        self._res.microsecond = _sf.microsecond
+        return True  # exit: success
+
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _adjust_hour_by_ampm(self, hour: cython.int, flag: cython.int) -> cython.int:
+        """(internal) Adjust `hour` to 24-hour sacle according to an AM/PM flag `<'int'>`.
+
+        :param hour `<'int'>`: The hour value to adjust (0..23).
+        :param flag `<'int'>`: AM/PM flag (0=AM, 1=PM).
+        :returns `<'int'>`: Hour on a 24-hour scale (0..23).
+
+        ## Mapping
+        - `1..11 AM` → unchanged
+        - `12 AM`    → `0`
+        - `1..11 PM` → `+12`
+        - `12 PM`    → unchanged
+        - `0 AM/PM`  → unchanged
+        """
+        if 1 <= hour <= 11:
+            if flag == 1:
                 hour += 12
-            return max(0, hour)
-        elif hour == 12 and ampm_flag == 0:
-            return 0
+            return hour
+        elif hour == 12:
+            return 0 if flag == 0 else 12
         else:
             return hour
 
-    # . configs - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _is_token_pertain(self, token: object) -> cython.bint:
-        """(cfunc) Check if the token should be
-        recognized as a pertain `<'bool'>`.
-        """
-        return set_contains(self._pertain, token)
 
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _is_token_jump(self, token: object) -> cython.bint:
-        """(cfunc) Check if the token should be
-        recognized as a jump word `<'bool'>`.
-        """
-        return set_contains(self._jump, token)
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-1, check=False)
-    def _is_token_utc(self, token: object) -> cython.bint:
-        """(cfunc) Check if the token should be
-        recognized as an UTC timezone `<'bool'>`."""
-        return set_contains(self._utc, token)
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-2, check=False)
-    def _token_to_month(self, token: object) -> cython.int:
-        """(cfunc) Try to convert the token to month number `<'int'>`.
-
-        Returns the month number (1-12) if token matched
-        with 'month' settings in Configs, else -1.
-        """
-        val = dict_getitem(self._month, token)
-        if val == cython.NULL:
-            return -1
-        return cython.cast(object, val)
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-2, check=False)
-    def _token_to_weekday(self, token: object) -> cython.int:
-        """(cfunc) Try to convert the token to weekday number `<'int'>`.
-
-        Returns the weekday value (0-6) if token matched
-        with 'weekday' settings in Configs, else -1.
-        """
-        val = dict_getitem(self._weekday, token)
-        if val == cython.NULL:
-            return -1
-        return cython.cast(object, val)
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-200_000, check=False)
-    def _token_to_tzoffset(self, token: object) -> cython.int:
-        """(cfunc) Try to convert the token to timezone offset in seconds `<'int'>`.
-
-        Returns the timezone offset if token matched with
-        the 'tz' settings in Configs, else -100_000.
-        """
-        val = dict_getitem(self._tz, token)
-        if val == cython.NULL:
-            return -100_000
-        return cython.cast(object, val)
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-2, check=False)
-    def _token_to_hms_flag(self, token: object) -> cython.int:
-        """(cfunc) Try to convert the token to hms flag `<'int'>`.
-
-        Returns the hms flag (0=hour, 1=minute, 2=second) if the token
-        matched with 'hms_flag' settings in Configs, else -1.
-        """
-        val = dict_getitem(self._hms_flag, token)
-        if val == cython.NULL:
-            return -1
-        return cython.cast(object, val)
-
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-2, check=False)
-    def _token_to_ampm_flag(self, token: object) -> cython.int:
-        """(cfunc) Try to convert the token to AM/PM flag `<'int'>`.
-
-        Returns the AM/PM flag (0=am, 1=pm) if the token
-        matched with 'ampm_flag' settings in Configs, else -1.
-        """
-        val = dict_getitem(self._ampm_flag, token)
-        if val == cython.NULL:
-            return -1
-        return cython.cast(object, val)
+_DEFAULT_PARSER: Parser = Parser()
 
 
-_default_parser: Parser = Parser()
-
-
+# Parse --------------------------------------------------------------------------------------
 @cython.ccall
 def parse(
     dtstr: str,
     default: datetime.date | datetime.datetime | None = None,
     year1st: bool | None = None,
     day1st: bool | None = None,
-    ignoretz: cython.bint = False,
+    ignoretz: cython.bint = True,
     isoformat: cython.bint = True,
     cfg: Configs = None,
+    dtclass: type[datetime.datetime] = None,
 ) -> datetime.datetime:
-    """Parse the datetime string into `<'datetime.datetime'>`.
+    """Parse a date/time string into a datetime `<'datetime.datetime'>`.
 
-    :param dtstr `<'str'>`: The string that contains datetime information.
+    This is a convenience wrapper around `Parser.parse()`.
+        - When `cfg` is `None` it uses a module-level default parser for speed.
+        - Otherwise it constructs a temporary `Parser(cfg)`.
 
-    :param default `<'datetime/date/None'>`: Default value to fill in missing date fields, defaults to `None`.
-        - `<'date/datetime'>` If the parser fails to extract Y/M/D from the string,
-            use the passed-in 'default' to fill in the missing fields.
-        - If `None`, raises `PaserBuildError` if any Y/M/D fields is missing.
+    ## Parsing Strategies
+    1) `ISO fast-path` (when `isoformat=True`): attempts an ISO 8601 calendar/ordinal/week
+        date plus optional time, fractional seconds, and timezone. If an extra tail remains
+        (e.g., AM/PM, weekday, timezone tail), a lightweight ISO-extra pass handles it.
+    2) `Heuristic token path` (fallback or when `isoformat=False`): tokenizes the string
+        and scans left→right, using specialized handlers for numeric blocks, month/weekday
+        names, AM/PM, timezone names, and timezone offsets.
 
+    After parsing, ambiguous Y/M/D fields are resolved using `year1st`/`day1st` (or the
+    configured defaults when they are `None`). Finally, a datetime is built using parsed
+    fields plus `default` for any missing calendar components.
+
+    :param dtstr `<'str'>`: The input date/time string.
+    :param default `<'datetime/date/None'>`: Fallback source for missing Y/M/D. Defaults to `None`.
+        If `None` and required fields are missing, raises an error.
     :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
-        If 'year1st=None', use `cfg.year1st` if 'cfg' is specified; otherwise, defaults to `False`.
-
+        If 'None', uses `cfg.year1st` if 'cfg' is specified; otherwise, defaults to `True`.
     :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `None`.
-        If 'day1st=None', use `cfg.day1st` if 'cfg' is specified; otherwise, defaults to `False`.
+        If 'None', uses `cfg.day1st` if 'cfg' is specified; otherwise, defaults to `False`.
+    :param ignoretz `<'bool'>`: If `True`, ignore any timezone information and return a naive datetime. Defaults to `True`.
+        When timezone info is not needed, setting to `True` can improve performance.
+    :param isoformat `<'bool'>`: If `True`, attempt ISO parsing first (automatically falls back to token parsing on failure).
+        Otherwise always use token parsing. Defaults to `True`. For most common datetime strings,
+        ISO parsing (when matched even partially) is faster.
+    :param cfg `<'Configs/None'>`: The Parser configuration. Defaults to `None`.
+        If `None`, uses the module's default `Configs`.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        If `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The parsed datetime (or subclass if 'dtclass' is specified).
+    :raises `<'ParserFailedError'>`: If nothing extractable is found (or ISO parsing
+        fails and token scanning yields no fields).
+    :raises `<'ParserBuildError'>`: If fields cannot be assembled into a datetime
+        (e.g., invalid field combination, unsupported custom class).
 
-    :param ignoretz `<'bool'>`: Whether to ignore timezone information, defaults to `False`.
-        - `True`: Ignores any timezone information and returns a timezone-naive datetime (increases parser performance).
-        - `False`: Processes timezone information and generates a timezone-aware datetime if matched by `cfg.utc` & `cfg.tz`.
-
-    :param isoformat `<'bool'>`: Whether try to parse 'dtstr' as ISO format, defaults to `True`.
-        - `True`: First tries to process 'dtstr' as ISO format; if failed, falls back
-            to token parsing (best performance for most strings).
-        - `False`: Only processes 'dtstr' through token parsing (increases performance
-            if 'dtstr' is not ISO format).
+    ## Field Construction
+    - `Y/M/D`: use parsed values; if missing, copy from `default` (if provided), otherwise raise.
+        If `day > 28`, it is clamped to the month's maximum.
+    - `Weekday`: if a weekday was parsed and does not match `(Y, M, D)`, the date is shifted by
+        the difference so the resulting weekday matches the requested one (within the same week as
+        the parsed date).
+    - `Time`: unset H/M/S/us default to `0`. AM/PM is applied when present.
+    - `Timezone`:
+        * If `ignoretz=True`, any parsed timezone info is ignored and a naive datetime
+            (`tzinfo=None`) is returned.
+        * Otherwise, a timezone-aware datetime is returned if a timezone name/offset was parsed:
+            UTC for offset `0`, or a fixed-offset timezone for non-zero offsets.
 
     ## Ambiguous Y/M/D
-    Both 'year1st' and 'day1st' determine how to interpret ambiguous
-    Y/M/D values. 'year1st' has higher priority.
+    Both `year1st` and `day1st` control how ambiguous digit tokens are interpreted;
+    `year1st` has higher priority. When all three are ambiguous (e.g., `01/05/09`):
+    - `year1st=False & day1st=False` → `M/D/Y`  → `2009-01-05`
+    - `year1st=False & day1st=True`  → `D/M/Y`  → `2009-05-01`
+    - `year1st=True  & day1st=False` → `Y/M/D`  → `2001-05-09`
+    - `year1st=True  & day1st=True`  → `Y/D/M`  → `2001-09-05`
 
-    #### When all three values are ambiguous (e.g. `01/05/09`):
-    - If 'year1st=False' & 'day1st=False': interprets as `2009-01-05` (M/D/Y).
-    - If 'year1st=False' & 'day1st=True': interprets as `2009-05-01` (D/M/Y).
-    - If 'year1st=True' & 'day1st=False': interprets as `2001-05-09` (Y/M/D).
-    - If 'year1st=True' & 'day1st=True': interprets as `2001-09-05` (Y/D/M).
-
-    #### When the 'year' value is known (e.g. `32/01/05`):
-    - If 'day1st=False': interpretes as `2032-01-05` (Y/M/D).
-    - If 'day1st=True': interpretes as `2032-05-01` (Y/D/M).
-
-    #### When only one value is ambiguous (e.g. `32/01/20`):
-    - The parser automatically determines the correct order; 'year1st' and 'day1st' are ignored.
+    When the year is already known (e.g., `32/01/05`), `day1st` alone decides between `Y/M/D`
+    vs `Y/D/M`. When only one value is ambiguous, the parser picks the only consistent
+    interpretation and ignores the flags.
     """
+    # fmt: off
     if cfg is None:
-        return _default_parser.parse(
-            dtstr, default, year1st, day1st, ignoretz, isoformat
-        )
-    return Parser(cfg).parse(dtstr, default, year1st, day1st, ignoretz, isoformat)
+        return _DEFAULT_PARSER.parse(dtstr, default, year1st, day1st, ignoretz, isoformat, dtclass)
+    else:
+        return Parser(cfg).parse(dtstr, default, year1st, day1st, ignoretz, isoformat, dtclass)
+    # fmt: on
 
 
 @cython.ccall
-def parse_dtobj(
+def parse_obj(
     dtobj: object,
     default: datetime.date | datetime.datetime | None = None,
     year1st: bool | None = None,
     day1st: bool | None = None,
-    ignoretz: cython.bint = False,
+    ignoretz: cython.bint = True,
     isoformat: cython.bint = True,
     cfg: Configs = None,
+    dtclass: type[datetime.datetime] = None,
 ) -> datetime.datetime:
-    """Parse from a datetime-like object in to datetime `<'datetime.datetime'>`.
+    """Parse a datetime-like object into a datetime `<'datetime.datetime'>`.
 
-    :param dtobj `<'object'>`: Datetime-like object:
-        - `<'str'>` A datetime string containing datetime information.
-        - `<'datetime.datetime'>` An instance of `datetime.datetime`.
-        - `<'datetime.date'>` An instance of `datetime.date` (time fields set to 0).
-        - `<'int/float'>` Numeric value treated as total seconds since Unix Epoch.
-        - `<'np.datetime64'>` Resolution above microseconds ('us') will be discarded.
-        - `<'None'>` Return the current local datetime.
+    :param dtobj `<'object'>`: A datetime-like object, supports:
 
-    ## Praser Parameters
-    #### Parameters below only take effect when 'dtobj' is of type `<'str'>`.
+        - `<'str'>`                 → parsed via function `parse()`, honoring `default`, `year1st`, `day1st`,
+                                      `ignoretz`, `isoformat`, `cfg`, and `dtclass`.
+        - `<'datetime.datetime'>`   → returns as-is or re-create using optional `dtclass`.
+        - `<'datetime.date'>`       → converts to timezone-naive datetime with the same date fields, optionally using `dtclass`.
+        - `<'int/float'>`           → interprets as `seconds since Unix epoch` and converts to timezone-naive datetime
+                                      (fractional seconds → microseconds).
+        - `<'np.datetime64'>`       → converts to timezone-naive datetime; resolution finer than microseconds is truncated.
 
-    :param default `<'datetime/date/None'>`: Default value to fill in missing date fields, defaults to `None`.
-        - `<'date/datetime'>` If the parser fails to extract Y/M/D from the string,
-          use the passed-in 'default' to fill in the missing fields.
-        - If `None`, raises `PaserBuildError` if any Y/M/D fields is missing.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        If `None` uses python's built-in `datetime.datetime` as the constructor.
 
+    ## Parameters (Only for String Input)
+
+    :param default `<'datetime/date/None'>`: Fallback source for missing Y/M/D. Defaults to `None`.
+        If `None` and required fields are missing, raises an error.
     :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
-        If 'year1st=None', use `cfg.year1st` if 'cfg' is specified; otherwise, defaults to `False`.
-
+        If 'None', uses `cfg.year1st` if 'cfg' is specified; otherwise, defaults to `True`.
     :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `None`.
-        If 'day1st=None', use `cfg.day1st` if 'cfg' is specified; otherwise, defaults to `False`.
+        If 'None', uses `cfg.day1st` if 'cfg' is specified; otherwise, defaults to `False`.
+    :param ignoretz `<'bool'>`: If `True`, ignore any timezone information and return a naive datetime. Defaults to `True`.
+        When timezone info is not needed, setting to `True` can improve performance.
+    :param isoformat `<'bool'>`: If `True`, attempt ISO parsing first (automatically falls back to token parsing on failure).
+        Otherwise always use token parsing. Defaults to `True`. For most common datetime strings,
+        ISO parsing (when matched even partially) is faster.
+    :param cfg `<'Configs/None'>`: The Parser configuration. Defaults to `None`.
+        If `None`, uses the module's default `Configs`.
 
-    :param ignoretz `<'bool'>`: Whether to ignore timezone information, defaults to `False`.
-        - `True`: Ignores any timezone information and returns a timezone-naive datetime (increases parser performance).
-        - `False`: Processes timezone information and generates a timezone-aware datetime if matched by `cfg.utc` & `cfg.tz`.
+    :returns `<'datetime.datetime'>`: The parsed/converted datetime (or subclass if 'dtclass' is specified).
+    :raises `<'ParserFailedError'>`: On unsupported input types or any conversion/parsing failed.
+    :raises `<'ParserBuildError'>`: If a string parse succeeds but fields cannot be assembled (string input).
 
-    :param isoformat `<'bool'>`: Whether try to parse 'dtstr' as ISO format, defaults to `True`.
-        - `True`: First tries to process 'dtstr' as ISO format; if failed, falls back
-          to token parsing (best performance for most strings).
-        - `False`: Only processes 'dtstr' through token parsing (increases performance
-          if 'dtstr' is not ISO format).
-
-    :param cfg `<'Configs/None'>`: Custom parser configurations, defaults to `None`.
-
-    ## Ambiguous Y/M/D
-    Both 'year1st' and 'day1st' determine how to interpret ambiguous
-    Y/M/D values. 'year1st' has higher priority.
-
-    #### When all three values are ambiguous (e.g. `01/05/09`):
-    - If 'year1st=False' & 'day1st=False': interprets as `2009-01-05` (M/D/Y).
-    - If 'year1st=False' & 'day1st=True': interprets as `2009-05-01` (D/M/Y).
-    - If 'year1st=True' & 'day1st=False': interprets as `2001-05-09` (Y/M/D).
-    - If 'year1st=True' & 'day1st=True': interprets as `2001-09-05` (Y/D/M).
-
-    #### When the 'year' value is known (e.g. `32/01/05`):
-    - If 'day1st=False': interpretes as `2032-01-05` (Y/M/D).
-    - If 'day1st=True': interpretes as `2032-05-01` (Y/D/M).
-
-    #### When only one value is ambiguous (e.g. `32/01/20`):
-    - The parser automatically determines the correct order; 'year1st' and 'day1st' are ignored.
+    ## Notes
+    - Non-string inputs do `NOT` use `default`, `year1st`, `day1st`, `ignoretz`, `isoformat` or `cfg`.
     """
     # . datetime string
     if isinstance(dtobj, str):
-        return parse(dtobj, default, year1st, day1st, ignoretz, isoformat, cfg)
-    # . datetime.datetime
-    if utils.is_dt(dtobj):
-        return dtobj
-    # . datetime.date
-    if utils.is_date(dtobj):
-        return utils.dt_fr_date(dtobj, None)
-    # . numeric
-    if isinstance(dtobj, (int, float)):
-        return utils.dt_fr_seconds(dtobj, None)
-    # . np.datetime64
-    if utils.is_dt64(dtobj):
-        return utils.dt64_to_dt(dtobj, None)
-    # . None
-    if dtobj is None:
-        return utils.dt_now(None)
+        return parse(dtobj, default, year1st, day1st, ignoretz, isoformat, cfg, dtclass)
+    try:
+        # . datetime.datetime
+        if utils.is_dt(dtobj):
+            return utils.dt_fr_dt(dtobj, dtclass)
+        # . datetime.date
+        if utils.is_date(dtobj):
+            return utils.dt_fr_date(dtobj, None, dtclass)
+        # . numeric
+        if isinstance(dtobj, (int, float)):
+            return utils.dt_fr_sec(dtobj, None, dtclass)
+        # . np.datetime64
+        if utils.is_dt64(dtobj):
+            return utils.dt64_to_dt(dtobj, None, dtclass)
+    except Exception as err:
+        raise errors.ParserFailedError(
+            "<'%s'> Failed to parse %r.\nError: %s" % (Parser.__name__, dtobj, err)
+        ) from err
     # . invalid
-    raise errors.ParserFailedError("unsupported 'dtobj' type %s." % type(dtobj))
+    raise errors.ParserFailedError(
+        "<'%s'> Failed to parse %r.\n"
+        "Error: Unsupported data type %s." % (Parser.__name__, dtobj, type(dtobj))
+    )
