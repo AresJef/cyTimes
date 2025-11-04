@@ -406,9 +406,9 @@ class Delta:
             return self._add_delta(delta_fr_relativedelta(o))
         # . uncommon
         if utils.is_dt64(o):
-            return self._add_datetime(utils.dt64_to_dt(o, None))
+            return self._add_datetime(utils.dt64_to_dt(o, None, None))
         if utils.is_td64(o):
-            return self._add_timedelta(utils.td64_to_td(o))
+            return self._add_timedelta(utils.td64_to_td(o, None))
         # . unsupported
         return NotImplemented
 
@@ -442,6 +442,7 @@ class Delta:
             self._second,
             -1,
             self._microsecond,
+            None if utils.is_date_exact(o) else o.__class__,
         )
 
     @cython.cfunc
@@ -474,6 +475,7 @@ class Delta:
             self._second,
             -1,
             self._microsecond,
+            None if utils.is_dt_exact(o) else o.__class__,
         )
 
     @cython.cfunc
@@ -570,9 +572,9 @@ class Delta:
         # np.datetime64 and np.timedelta64 are converted to
         # datetime and timedelta or integer [ns] before reaching
         if utils.is_dt64(o):
-            return self._add_datetime(utils.dt64_to_dt(o, None))
+            return self._add_datetime(utils.dt64_to_dt(o, None, None))
         if utils.is_td64(o):
-            return self._add_timedelta(utils.td64_to_td(o))
+            return self._add_timedelta(utils.td64_to_td(o, None))
         # . unsupported
         return NotImplemented
 
@@ -595,7 +597,7 @@ class Delta:
             return self._sub_delta(delta_fr_relativedelta(o))
         # . uncommon
         if utils.is_td64(o):
-            return self._sub_timedelta(utils.td64_to_td(o))
+            return self._sub_timedelta(utils.td64_to_td(o, None))
         # . unsupported
         return NotImplemented
 
@@ -692,9 +694,9 @@ class Delta:
         # np.datetime64 and np.timedelta64 are converted to
         # datetime and timedelta or integer [ns] before reaching
         if utils.is_dt64(o):
-            return self._rsub_datetime(utils.dt64_to_dt(o, None))
+            return self._rsub_datetime(utils.dt64_to_dt(o, None, None))
         if utils.is_td64(o):
-            return self._rsub_timedelta(utils.td64_to_td(o))
+            return self._rsub_timedelta(utils.td64_to_td(o, None))
         # . unsupported
         return NotImplemented
 
@@ -728,6 +730,7 @@ class Delta:
             self._second,
             -1,
             self._microsecond,
+            None if utils.is_date_exact(o) else o.__class__,
         )
 
     @cython.cfunc
@@ -760,6 +763,7 @@ class Delta:
             self._second,
             -1,
             self._microsecond,
+            None if utils.is_dt_exact(o) else o.__class__,
         )
 
     @cython.cfunc
@@ -894,7 +898,7 @@ class Delta:
             return self._eq_delta(delta_fr_relativedelta(o))
         # . uncommon
         if utils.is_td64(o):
-            return self._eq_timedelta(utils.td64_to_td(o))
+            return self._eq_timedelta(utils.td64_to_td(o, None))
         # . unsupported
         return NotImplemented
 
