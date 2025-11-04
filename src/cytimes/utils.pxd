@@ -2460,49 +2460,38 @@ cdef inline int combine_absolute_ms_us(int ms, int us) noexcept nogil:
 
 # datetime.date ----------------------------------------------------------------------------------------
 # . generate
-cdef inline datetime.date date_new(int year=1, int month=1, int day=1):
-    """Create a `datetime.date`, **clamping** invalid Y/M/D to 
-    the valid Gregorian range `<'datetime.date'>`.
-
-    Unlike `datetime.date(year, month, day)`, this function does **not** raise on
-    out-of-range inputs. Instead it clamps as follows:
-
-        - Year  → [0001 .. 9999]
-        - Month → [1 .. 12]
-        - Day   → [1 .. last-day-of-month(year, month)]
+cdef inline datetime.date date_new(int year=1, int month=1, int day=1, object dclass=None):
+    """Create a new date `<'datetime.date'>`.
 
     :param year  `<'int'>`: Gregorian year number. Defaults to `1`.
-    :param month `<'int'>`: Month (clamped to 1..12). Defaults to `1`.
-    :param day   `<'int'>`: Day (clamped to month's last day). Defaults to `1`.
-    :returns `<'datetime.date'>`: The resulting date.
+    :param month `<'int'>`: Month [1..12]. Defaults to `1`.
+    :param day   `<'int'>`: Day [1..31]. Defaults to `1`.
+    :param dclass `<'type[datetime.date]/None'>`: Optional custom date class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.date` as the constructor.
+    :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified).
     """
-    # Clamp year
-    if year < 1:
-        return datetime.date_new(1, 1, 1)
-    if year > 9999:
-        return datetime.date_new(9999, 12, 31)
-
-    # Clamp month & day
-    month = min(max(month, 1), 12)
-    if day > 28:
-        day = min(day, days_in_month(year, month))
-    elif day < 1:
-        day = 1
-
-    # New date        
+    # Construct date
+    if dclass is not None and dclass is not datetime.date:
+        try:
+            return dclass(year=year, month=month, day=day)
+        except Exception as err:
+            raise TypeError("Cannot create date using custom 'dclass' %s, %s" % (dclass, err)) from err
     return datetime.date_new(year, month, day)
 
-cdef inline datetime.date date_now(object tz=None):
+cdef inline datetime.date date_now(object tzinfo=None, object dclass=None):
     """Get today's date `<'datetime.date'>`.
 
-    :param tz `<'tzinfo/None'>`: Optional timezone. Defaults to `None`.
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone. Defaults to `None`.
 
         - If specified, return the current date in that timezone.
         - Otherwise, return the current local date (equivalent to `datetime.date.today()`).
 
-    :returns `<'datetime.date'>`: Today's date.
+    :param dclass `<'type[datetime.date]/None'>`: Optional custom date class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.date` as the constructor.
+
+    :returns `<'datetime.date'>`: Today's date (or subclass if `dclass` is specified).
     """
-    return date_fr_dt(dt_now(tz))
+    return date_fr_dt(dt_now(tzinfo, None), dclass)
 
 # . type check
 cdef inline bint is_date(object obj) except -1:
@@ -2613,70 +2602,86 @@ cdef inline long long date_to_ord(datetime.date date) noexcept:
     return ymd_to_ord(date.year, date.month, date.day)
 
 # . conversion: from
-cdef inline datetime.date date_fr_us(long long value):
-    """Create `datetime.date` from microseconds since the Unix epoch `<'datetime.date'>`.
+cdef inline datetime.date date_fr_us(long long value, object dclass=None):
+    """Create date from microseconds since the Unix epoch `<'datetime.date'>`.
 
     :param value `<'int'>`: Microseconds since epoch.
-    :returns `<'datetime.date'>`: Gregorian calendar date. 
-    :raises `<'ValueError'>`: If the resulting Y/M/D is outside [0001..9999].
+    :param dclass `<'type[datetime.date]/None'>`: Optional custom date class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.date` as the constructor.
+    :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified).
     """
     cdef ymd _ymd = ymd_fr_us(value)
-    return datetime.date_new(_ymd.year, _ymd.month, _ymd.day)
+    return date_new(_ymd.year, _ymd.month, _ymd.day, dclass)
 
-cdef inline datetime.date date_fr_sec(double value):
-    """Create `datetime.date` from seconds since the Unix epoch `<'datetime.date'>`.
+cdef inline datetime.date date_fr_sec(double value, object dclass=None):
+    """Create date from seconds since the Unix epoch `<'datetime.date'>`.
 
     :param value `<'float'>`: Seconds since epoch.
-    :returns `<'datetime.date'>`: Gregorian calendar date. 
-    :raises `<'ValueError'>`: If the resulting Y/M/D is outside [0001..9999].
+    :param dclass `<'type[datetime.date]/None'>`: Optional custom date class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.date` as the constructor.
+    :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified).
     """
     cdef ymd _ymd = ymd_fr_sec(value)
-    return datetime.date_new(_ymd.year, _ymd.month, _ymd.day)
+    return date_new(_ymd.year, _ymd.month, _ymd.day, dclass)
 
-cdef inline datetime.date date_fr_ord(int value):
-    """Create `datetime.date` from a Gregorian ordinal (0001-01-01 = 1) `<'datetime.date'>`.
+cdef inline datetime.date date_fr_ord(int value, object dclass=None):
+    """Create date from a Gregorian ordinal (0001-01-01 = 1) `<'datetime.date'>`.
 
     :param value `<'int'>`: Gregorian ordinal day.
-    :returns `<'datetime.date'>`: Gregorian calendar date. 
-    :raises `<'ValueError'>`: If the resulting Y/M/D is outside [0001..9999].
+    :param dclass `<'type[datetime.date]/None'>`: Optional custom date class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.date` as the constructor.
+    :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified).
     """
     cdef ymd _ymd = ymd_fr_ord(value)
-    return datetime.date_new(_ymd.year, _ymd.month, _ymd.day)
+    return date_new(_ymd.year, _ymd.month, _ymd.day, dclass)
 
-cdef inline datetime.date date_fr_ts(double value):
-    """Create `datetime.date` from a POSIX timestamp in **local** time `<'datetime.date'>`.
+cdef inline datetime.date date_fr_ts(double value, object dclass=None):
+    """Create date from a POSIX timestamp in **local** time `<'datetime.date'>`.
 
     :param value `<'float'>`: POSIX timestamp in **local** time.
-    :returns `<'datetime.date'>`: Gregorian date in the system **local** time zone.
+    :param dclass `<'type[datetime.date]/None'>`: Optional custom date class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.date` as the constructor.
+    :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified) 
+        in the system **local** time zone.
     """
-    return datetime.date_from_timestamp(value)
+    cdef datetime.date date = datetime.date_from_timestamp(value)
+    return date if dclass is None else date_fr_date(date, dclass)
 
-cdef inline datetime.date date_fr_date(datetime.date date):
-    """Create `datetime.date` from another date (or subclass) `<'datetime.date'>`.
+cdef inline datetime.date date_fr_date(datetime.date date, object dclass=None):
+    """Create date from another date (or subclass) `<'datetime.date'>`.
     
     :param date `<'datetime.date'>`: The source date (including subclasses).
-    :returns `<'datetime.date'>`: A new date with the same Y/M/D.
+    :param dclass `<'type[datetime.date]/None'>`: Target date class. Defaults to `None`.
+        If `None` set to python's built-in `datetime.date`.
+        If `date` is already of type `dclass`, returns `date` directly.
+    :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified) 
+        with the same date fields.
     """
-    return datetime.date_new(date.year, date.month, date.day)
+    if dclass is None:
+        dclass = datetime.date
+    if dclass is type(date):
+        return date
+    return date_new(date.year, date.month, date.day, dclass)
 
-cdef inline datetime.date date_fr_dt(datetime.datetime dt):
-    """Create `datetime.date` from a datetime (include subclass) `<'datetime.date'>`.
+cdef inline datetime.date date_fr_dt(datetime.datetime dt, object dclass=None):
+    """Create date from a datetime (include subclass) `<'datetime.date'>`.
     
     :param dt `<'datetime.datetime'>`: Datetime to extract the date from (including subclasses).
-    :returns `<'datetime.date'>`: A new date with the same Y/M/D.
+    :param dclass `<'type[datetime.date]/None'>`: Optional custom date class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.date` as the constructor.
+    :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified) 
+        with the same date fields.
     """
-    return datetime.date_new(dt.year, dt.month, dt.day)
+    return date_new(dt.year, dt.month, dt.day, dclass)
 
 # . manipulation
 cdef inline datetime.date date_add_delta(datetime.date date,
-    int years=0, int quarters=0, int months=0, int weeks=0, 
-    long long days=0, long long hours=0, long long minutes=0, 
-    long long seconds=0, long long milliseconds=0, long long microseconds=0,
-    int year=-1, int month=-1, int day=-1, int weekday=-1,
-    int hour=-1, int minute=-1, int second=-1, int millisecond=-1, int microsecond=-1,
+    int years=0, int quarters=0, int months=0, int weeks=0, long long days=0, long long hours=0,
+    long long minutes=0, long long seconds=0, long long milliseconds=0, long long microseconds=0,
+    int year=-1, int month=-1, int day=-1, int weekday=-1, int hour=-1, int minute=-1,
+    int second=-1, int millisecond=-1, int microsecond=-1, object dclass=None
 ):
-    """Add relative and absolute deltas to `datetime.date`, preserving 
-    the original subclass when possible `<'datetime.date'>`.
+    """Add relative and absolute deltas to date `<'datetime.date'>`.
 
     ## Absolute Deltas (Replace specified fields)
 
@@ -2704,9 +2709,13 @@ cdef inline datetime.date date_add_delta(datetime.date date,
     :param milliseconds `<'int'>`: Relative milliseconds (1,000 us). Defaults to `0`.
     :param microseconds `<'int'>`: Relative microseconds. Defaults to `0`.
 
-    :returns `<'datetime.date'>`: New date with applied deltas (or the input's subclass 
-        instance when possible). If all relative and absolute deltas net to the same date 
-        (including weekday), the original `date` is returned unchanged.
+    ## Date Class
+    
+    :param dclass `<'type[datetime.date]/None'>`: Optional custom date class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.date` as the constructor.
+
+    :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified)
+        after applying the specified deltas.
     """
     # Date fields
     # ----------------------------------------------------
@@ -2766,87 +2775,78 @@ cdef inline datetime.date date_add_delta(datetime.date date,
 
     # Compare new dates
     if yy == o_yy and mm == o_mm and dd == o_dd:
-        return date  # exit: no change
+        return date_fr_date(date, dclass)
 
     # Clamp day to valid days in month
     if dd > 28:
         dd = min(dd, days_in_month(yy, mm))
 
     # New date
-    if not is_date_exact(date):
-        try:
-            return date.__class__(year=yy, month=mm, day=dd)
-        except Exception:
-            pass
-    # . fallback to native date
-    return datetime.date_new(yy, mm, dd)
+    return date_new(yy, mm, dd, dclass)
 
 # datetime.datetime ------------------------------------------------------------------------------------
 # . generate
 cdef inline datetime.datetime dt_new(
-    int year=1, int month=1, int day=1,
-    int hour=0, int minute=0, int second=0,
-    int microsecond=0, object tz=None, int fold=0,
+    int year=1, int month=1, int day=1, int hour=0, int minute=0, int second=0, 
+    int microsecond=0, object tzinfo=None, int fold=0, object dtclass=None,
 ):
-    """Create a `datetime.datetime`, **clamping** invalid value to 
-    the valid Gregorian range `<'datetime.datetime'>`.
+    """Create a new datetime `<'datetime.datetime'>`.
 
     :param year  `<'int'>`: Gregorian year number. Defaults to `1`.
-    :param month `<'int'>`: Month (clamped to 1..12). Defaults to `1`.
-    :param day   `<'int'>`: Day (clamped to month's last day). Defaults to `1`.
-    :param hour `<'int'>`: Hour (clamped to 0..23). Defaults to `0`.
-    :param minute `<'int'>`: Minute (clamped to 0..59). Defaults to `0`.
-    :param second `<'int'>`: Second (clamped to 0..59). Defaults to `0`.
-    :param microsecond `<'int'>`: Microsecond (clamped to 0..999999). Defaults to `0`.
-    :param tz `<'tzinfo/None'>`: Optional timezone. Defaults to `None`.
+    :param month `<'int'>`: Month [1..12]. Defaults to `1`.
+    :param day   `<'int'>`: Day [1..31]. Defaults to `1`.
+    :param hour `<'int'>`: Hour [0..23]. Defaults to `0`.
+    :param minute `<'int'>`: Minute [0..59]. Defaults to `0`.
+    :param second `<'int'>`: Second [0..59]. Defaults to `0`.
+    :param microsecond `<'int'>`: Microsecond [0..999999]. Defaults to `0`.
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone. Defaults to `None`.
     :param fold `<'int'>`: Optional fold flag for ambiguous times (0 or 1). Defaults to `0`.
-        Only relevant if 'tz' is not `None`, and values other than `1` are treated as `0`.
-    :returns `<'datetime.datetime'>`: The resulting datetime.
+        Only relevant if `tzinfo` is not `None`, and values other than `1` are treated as `0`.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
     """
     # Normalize fold (0/1 only)
-    if tz is None:
-        fold = 0
-    else:
-        fold = 1 if fold == 1 else 0
+    fold = 0 if tzinfo is None else fold == 1
 
-    # Clamp year
-    if year < 1:
-        return datetime.datetime_new(1, 1, 1, 0, 0, 0, 0, tz, fold)
-    if year > 9_999:
-        return datetime.datetime_new(9_999, 12, 31, 23, 59, 59, 999999, tz, fold)
-    
-    # Clamp month & day
-    month = min(max(month, 1), 12)
-    if day > 28:
-        day = min(day, days_in_month(year, month))
-    elif day < 1:
-        day = 1
+    # Construct datetime
+    if dtclass is not None and dtclass is not datetime.datetime:
+        try:
+            return dtclass(
+                year=year,
+                month=month,
+                day=day,
+                hour=hour,
+                minute=minute,
+                second=second,
+                microsecond=microsecond,
+                tzinfo=tzinfo,
+                fold=fold,
+            )
+        except Exception as err:
+            raise TypeError("Cannot create datetime using custom 'dtclass' %s, %s" % (dtclass, err)) from err
+    return datetime.datetime_new(year, month, day, hour, minute, second, microsecond, tzinfo, fold)
 
-    # Clamp time-of-day
-    hour = min(max(hour, 0), 23)
-    minute = min(max(minute, 0), 59)
-    second = min(max(second, 0), 59)
-    microsecond = min(max(microsecond, 0), 999_999)
-
-    # New datetime
-    return datetime.datetime_new(year, month, day, hour, minute, second, microsecond, tz, fold)
-
-cdef inline datetime.datetime dt_now(object tz=None):
+cdef inline datetime.datetime dt_now(object tzinfo=None, object dtclass=None):
     """Get the current datetime `<'datetime.datetime'>`.
 
-    :param tz `<'tzinfo/None'>`: Optional timezone. Defaults to `None`.
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone. Defaults to `None`.
 
         - If specified, return an aware datetime in that timezone.
         - Otherwise, return a naive local-time datetime.
 
-    :returns `<'datetime.datetime'>`: The current datetime.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
 
     ## Equivalent
-    >>> datetime.datetime.now(tz)
+    >>> datetime.datetime.now(tzinfo)
     """
     cdef double tic = unix_time()
-    return datetime.datetime_from_timestamp(tic, tz)
-
+    cdef datetime.datetime dt = datetime.datetime_from_timestamp(tic, tzinfo)
+    return dt if dtclass is None else dt_fr_dt(dt, dtclass)
+    
 # . type check
 cdef inline bint is_dt(object obj) except -1:
     """Check if an object is an instance or subclass of `datetime.datetime` `<'bool'>`.
@@ -2885,7 +2885,7 @@ cdef inline long long dt_local_mktime(datetime.datetime dt) except *:
         long long ord, t, hh, mi, ss
         long long adj1, adj2, u1, u2, t1, t2
 
-    # Seconds since epoch from local wall fields (no tz adjustment here)
+    # Seconds since epoch from local wall fields (no timezone adjustment here)
     ord = dt_to_ord(dt, False)            # <-- make sure this is the right helper
     hh, mi, ss = dt.hour, dt.minute, dt.second
     t = (ord - EPOCH_DAY) * SS_DAY + hh * SS_HOUR + mi * SS_MINUTE + ss
@@ -3056,27 +3056,27 @@ cdef inline tm dt_to_tm(datetime.datetime dt, bint utc=False) except *:
         int hh = dt.hour
         int mi = dt.minute
         int ss = dt.second
-        object tz = dt.tzinfo
+        object tzinfo = dt.tzinfo
         int isdst
         datetime.timedelta off
         tm out
 
     # Naive: utc=True -> treat as UTC
-    if tz is None:
+    if tzinfo is None:
         isdst = 0 if utc else -1
 
     # Aware -> UTC: subtract utcoffset
     elif utc:
-        off = tz_utcoffset(tz, dt)
+        off = tz_utcoffset(tzinfo, dt)
         if off is not None:
-            dt = dt_add(dt, -off.day, -off.second, -off.microsecond)
+            dt = dt_add(dt, -off.day, -off.second, -off.microsecond, None)
             yy, mm, dd = dt.year, dt.month, dt.day
             hh, mi, ss = dt.hour, dt.minute, dt.second
         isdst = 0
     
-    # Aware, local wall time: set DST flag from tz.dst(dt)
+    # Aware, local wall time: set DST flag from tzinfo.dst(dt)
     else:
-        off = tz_dst(tz, dt)
+        off = tz_dst(tzinfo, dt)
         if off is not None:
             isdst = 1 if td_to_us(off) else 0
         else:
@@ -3316,7 +3316,7 @@ cdef inline long long dt_as_epoch(datetime.datetime dt, str as_unit, bint utc=Fa
     if utc:
         off = tz_utcoffset(dt.tzinfo, dt)
         if off is not None:
-            dt = dt_add(dt, -off.day, -off.second, -off.microsecond)
+            dt = dt_add(dt, -off.day, -off.second, -off.microsecond, None)
 
     # Unit: 's', 'm', 'h', 'D', 'W', 'M', 'Q', 'Y'
     if size == 1:
@@ -3409,115 +3409,125 @@ cdef inline long long dt_as_epoch_W_iso(datetime.datetime dt, int weekday, bint 
     return q
 
 # . conversion: from
-cdef inline datetime.datetime dt_fr_us(long long value, object tz=None):
-    """Create `datetime.datetime` from microseconds since 
-    the Unix epoch `<'datetime.datetime'>`.
+cdef inline datetime.datetime dt_fr_us(long long value, object tzinfo=None, object dtclass=None):
+    """Create datetime from microseconds since the Unix epoch `<'datetime.datetime'>`.
 
     :param value `<'int'>`: Microseconds since epoch.
-    :param tz `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
-    :returns `<'datetime.datetime'>`: Gregorian calendar datetime.
-    :raises `<'ValueError'>`: If the resulting Y/M/D is outside [0001..9999].
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
     """
     cdef dtm _dtm = dtm_fr_us(value)
-    return datetime.datetime_new(
-        _dtm.year, _dtm.month, _dtm.day, 
-        _dtm.hour, _dtm.minute, _dtm.second, 
-        _dtm.microsecond, tz, 0
+    return dt_new(
+        _dtm.year, _dtm.month, _dtm.day, _dtm.hour, _dtm.minute,
+        _dtm.second, _dtm.microsecond, tzinfo, 0, dtclass,
     )
 
-cdef inline datetime.datetime dt_fr_sec(double value, object tz=None):
-    """Create `datetime.datetime` from seconds since 
-    the Unix epoch `<'datetime.datetime'>`.
+cdef inline datetime.datetime dt_fr_sec(double value, object tzinfo=None, object dtclass=None):
+    """Create datetime from seconds since the Unix epoch `<'datetime.datetime'>`.
 
     :param value `<'float'>`: Seconds since epoch.
-    :param tz `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
-    :returns `<'datetime.datetime'>`: Gregorian calendar datetime.
-    :raises `<'ValueError'>`: If the resulting Y/M/D is outside [0001..9999].
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
     """
-    return dt_fr_us(sec_to_us(value), tz)
+    return dt_fr_us(sec_to_us(value), tzinfo, dtclass)
 
-cdef inline datetime.datetime dt_fr_ord(int value, object tz=None):
-    """Create `datetime.datetime` from a Gregorian ordinal 
-    (0001-01-01 = 1) `<'datetime.datetime'>`.
+cdef inline datetime.datetime dt_fr_ord(int value, object tzinfo=None, object dtclass=None):
+    """Create datetime from a Gregorian ordinal (0001-01-01 = 1) `<'datetime.datetime'>`.
 
     :param value `<'int'>`: Gregorian ordinal day.
-    :param tz `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
-    :returns `<'datetime.datetime'>`: Gregorian calendar datetime.
-    :raises `<'ValueError'>`: If the resulting Y/M/D is outside [0001..9999].
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
     """
     cdef ymd _ymd = ymd_fr_ord(value)
-    return datetime.datetime_new(
-        _ymd.year, _ymd.month, _ymd.day, 
-        0, 0, 0, 0, tz, 0
-    )
+    return dt_new(_ymd.year, _ymd.month, _ymd.day, 0, 0, 0, 0, tzinfo, 0, dtclass)
 
-cdef inline datetime.datetime dt_fr_ts(double value, object tz=None):
-    """Create `datetime.datetime` from a POSIX timestamp with 
-    optional timezone `<'datetime.datetime'>`.
+cdef inline datetime.datetime dt_fr_ts(double value, object tzinfo=None, object dtclass=None):
+    """Create datetime from a POSIX timestamp with optional timezone `<'datetime.datetime'>`.
 
     :param value `<'float'>`: POSIX timestamp.
-    :param tz `<'tzinfo/None'>`: Optional timezone. Defaults to `None`.
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone. Defaults to `None`.
 
         - If specified, return an aware datetime in that timezone.
         - Otherwise, return a naive local-time datetime.
 
-    :returns `<'datetime.datetime'>`: The corresponding datetime.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
     
     ## Equivalent
-    >>> datetime.datetime.fromtimestamp(value, tz)
+    >>> datetime.datetime.fromtimestamp(value, tzinfo)
     """
-    return datetime.datetime_from_timestamp(value, tz)
+    cdef datetime.datetime dt = datetime.datetime_from_timestamp(value, tzinfo)
+    return dt if dtclass is None else dt_fr_dt(dt, dtclass)
 
-cdef inline datetime.datetime dt_fr_date(datetime.date date, object tz=None):
-    """Create `datetime.datetime` from date (include subclass) `<'datetime.datetime'>`.
+cdef inline datetime.datetime dt_fr_date(datetime.date date, object tzinfo=None, object dtclass=None):
+    """Create datetime from date (include subclass) `<'datetime.datetime'>`.
 
     :param date `<'datetime.date'>`: The source date (including subclasses).
-    :param tz `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
-    :returns `<'datetime.datetime'>`: A new datetime with the same date.
-        Time fields are set to 0.
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified)
+        with the same date fields (time fields are set to 0).
     """
-    return datetime.datetime_new(date.year, date.month, date.day, 0, 0, 0, 0, tz, 0)
+    return dt_new(date.year, date.month, date.day, 0, 0, 0, 0, tzinfo, 0, dtclass)
 
-cdef inline datetime.datetime dt_fr_dt(datetime.datetime dt):
-    """Create `datetime.datetime` from another datetime (include subclass) `<'datetime.datetime'>`.
+cdef inline datetime.datetime dt_fr_dt(datetime.datetime dt, object dtclass=None):
+    """Create datetime from another datetime (include subclass) `<'datetime.datetime'>`.
 
     :param dt `<'datetime.datetime'>`: The source datetime (including subclasses).
-    :returns `<'datetime.datetime'>`: A new datetime with the same fields and tzinfo.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Target datetime class. Defaults to `None`.
+        If `None` set to python's built-in `datetime.datetime`.
+        If `dt` is already of type `dtclass`, returns `dt` directly.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified)
+        with the same fields and tzinfo.
     """
-    return datetime.datetime_new(
-        dt.year, dt.month, dt.day, 
-        dt.hour, dt.minute, dt.second, 
-        dt.microsecond, dt.tzinfo, dt.fold
+    if dtclass is None:
+        dtclass = datetime.datetime
+    if dtclass is type(dt):
+        return dt
+    return dt_new(
+        dt.year, dt.month, dt.day, dt.hour, dt.minute,
+        dt.second, dt.microsecond, dt.tzinfo, dt.fold, dtclass,
     )
 
-cdef inline datetime.datetime dt_fr_time(datetime.time time):
-    """Create `datetime.datetime` from time (include subclass) `<'datetime.datetime'>`.
+cdef inline datetime.datetime dt_fr_time(datetime.time time, object dtclass=None):
+    """Create datetime from time (include subclass) `<'datetime.datetime'>`.
 
     :param time `<'datetime.time'>`: The source time (including subclasses).
-    :returns `<'datetime.datetime'>`: A new datetime with the same time fields and tzinfo.
-        Date fields are set to 1970-01-01.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified)
+        with the same time fields and tzinfo (date fields are set to 1970-01-01).
     """
-    return datetime.datetime_new(
-        1970, 1, 1, 
-        time.hour, time.minute, time.second, 
-        time.microsecond, time.tzinfo, time.fold
+    return dt_new(
+        1970, 1, 1, time.hour, time.minute, time.second, 
+        time.microsecond, time.tzinfo, time.fold, dtclass,
     )
 
-cdef inline datetime.datetime dt_combine(datetime.date date=None, datetime.time time=None, object tz=None):
+cdef inline datetime.datetime dt_combine(datetime.date date=None, datetime.time time=None, object tzinfo=None, object dtclass=None):
     """Create a `datetime.datetime` by combining a date and a time `<'datetime.datetime'>`.
 
     :param date `<'datetime.date/None'>`: The source date (including subclasses). Defaults to `None`.
         If None, uses today's **local** date.
     :param time `<'datetime.time/None'>`: The source time (including subclasses). Defaults to `None`.
         If None, uses 00:00:00.000000.
-    :param tz `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
         If specifed, overrides `time.tzinfo` (if any).
-    :returns `<'datetime.datetime'>`: The resulting datetime.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
     """
     cdef int yy, mm, dd, hh, mi, ss, us, fold
     # Date
     if date is None:
-        date = date_now(None)
+        date = date_now(None, None)
     yy, mm, dd = date.year, date.month, date.day
 
     # Time
@@ -3526,14 +3536,14 @@ cdef inline datetime.datetime dt_combine(datetime.date date=None, datetime.time 
     else:
         hh, mi, ss = time.hour, time.minute, time.second
         us, fold   = time.microsecond, time.fold
-        if tz is None:
-            tz = time.tzinfo
+        if tzinfo is None:
+            tzinfo = time.tzinfo
 
     # New datetime
-    return datetime.datetime_new(yy, mm, dd, hh, mi, ss, us, tz, fold)
+    return dt_new(yy, mm, dd, hh, mi, ss, us, tzinfo, fold, dtclass)
 
 # . manipulation
-cdef inline datetime.datetime dt_add(datetime.datetime dt, int days=0, int seconds=0, int microseconds=0):
+cdef inline datetime.datetime dt_add(datetime.datetime dt, int days=0, int seconds=0, int microseconds=0, object dtclass=None):
     """Add a day/second/microsecond delta to a `datetime.datetime` `<'datetime.datetime'>`.
 
     This performs **wall-clock arithmetic** like `dt + datetime.timedelta(...)`:
@@ -3545,7 +3555,9 @@ cdef inline datetime.datetime dt_add(datetime.datetime dt, int days=0, int secon
     :param days `<'int'>`: Days to add (can be negative). Defaults to 0.
     :param seconds `<'int'>`: Seconds to add (can be negative). Defaults to 0.
     :param microseconds `<'int'>`: Microseconds to add (can be negative). Defaults to 0.
-    :returns `<'datetime.datetime'>`: The resulting datetime.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
 
     ## Equivalent
     >>> dt + datetime.timedelta(days, seconds, microseconds)
@@ -3555,16 +3567,15 @@ cdef inline datetime.datetime dt_add(datetime.datetime dt, int days=0, int secon
     if seconds == 0 and microseconds == 0:
         # Early exit
         if days == 0:
-            return dt
+            return dt_fr_dt(dt, dtclass)
 
         # Compute new ordinal, then back to Y/M/D
         _ymd = ymd_fr_ord(dt_to_ord(dt, False) + days)
 
         # New datetime
-        return datetime.datetime_new(
-            _ymd.year, _ymd.month, _ymd.day,
-            dt.hour, dt.minute, dt.second, dt.microsecond,
-            dt.tzinfo, dt.fold,
+        return dt_new(
+            _ymd.year, _ymd.month, _ymd.day, dt.hour, dt.minute,
+            dt.second, dt.microsecond, dt.tzinfo, dt.fold, dtclass,
         )
 
     # General path: add delta in microseconds
@@ -3579,21 +3590,18 @@ cdef inline datetime.datetime dt_add(datetime.datetime dt, int days=0, int secon
     cdef dtm _dtm = dtm_fr_us(us)
 
     # New datetime
-    return datetime.datetime_new(
-        _dtm.year, _dtm.month, _dtm.day,
-        _dtm.hour, _dtm.minute, _dtm.second, _dtm.microsecond,
-        dt.tzinfo, dt.fold,
+    return dt_new(
+        _dtm.year, _dtm.month, _dtm.day, _dtm.hour, _dtm.minute,
+        _dtm.second, _dtm.microsecond, dt.tzinfo, dt.fold, dtclass,
     )
     
 cdef inline datetime.datetime dt_add_delta(datetime.datetime dt,
-    int years=0, int quarters=0, int months=0, int weeks=0, 
-    long long days=0, long long hours=0, long long minutes=0, 
-    long long seconds=0, long long milliseconds=0, long long microseconds=0,
-    int year=-1, int month=-1, int day=-1, int weekday=-1,
-    int hour=-1, int minute=-1, int second=-1, int millisecond=-1, int microsecond=-1,
+    int years=0, int quarters=0, int months=0, int weeks=0, long long days=0, long long hours=0,
+    long long minutes=0, long long seconds=0, long long milliseconds=0, long long microseconds=0,
+    int year=-1, int month=-1, int day=-1, int weekday=-1, int hour=-1, int minute=-1,
+    int second=-1, int millisecond=-1, int microsecond=-1, object dtclass=None
 ):
-    """Add relative and absolute deltas to `datetime.datetime`, preserving 
-    the original subclass when possible `<'datetime.datetime'>`.
+    """Add relative and absolute deltas to datetime `<'datetime.datetime'>`.
 
     ## Absolute Deltas (Replace specified fields)
 
@@ -3621,9 +3629,13 @@ cdef inline datetime.datetime dt_add_delta(datetime.datetime dt,
     :param milliseconds `<'int'>`: Relative milliseconds (1,000 us). Defaults to `0`.
     :param microseconds `<'int'>`: Relative microseconds. Defaults to `0`.
 
-    :returns `<'datetime.datetime'>`: New datetime with applied deltas (or the input's subclass
-        instance when possible). If all relative and absolute deltas net to the same date & time 
-        (including weekday), the original `datetime` is returned unchanged.
+    ## Datetime Class
+    
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+        
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
+        after applying the specified deltas.
     """
     # Date fields
     # ----------------------------------------------------
@@ -3708,51 +3720,47 @@ cdef inline datetime.datetime dt_add_delta(datetime.datetime dt,
     # Compare new date/time
     if (yy == o_yy and mm == o_mm and dd == o_dd and
         hh == o_hh and mi == o_mi and ss == o_ss and us == o_us):
-        return dt  # exit: no change
+        return dt_fr_dt(dt, dtclass)
 
     # Clamp day to valid days in month
     if dd > 28:
         dd = min(dd, days_in_month(yy, mm))
 
     # New datetime
-    if not is_dt_exact(dt):
-        try:
-            return dt.__class__(
-                year=yy, month=mm, day=dd, hour=hh, minute=mi, 
-                second=ss, microsecond=us, tzinfo=dt.tzinfo, fold=dt.fold
-            )
-        except Exception:
-            pass
-    # . fallback to native datetime
-    return datetime.datetime_new(yy, mm, dd, hh, mi, ss, us, dt.tzinfo, dt.fold)
+    return dt_new(yy, mm, dd, hh, mi, ss, us, dt.tzinfo, dt.fold, dtclass)
 
-cdef inline datetime.datetime dt_replace_tz(datetime.datetime dt, object tz):
-    """Create a copy of *dt* with `tzinfo` replaced `<'datetime.datetime'>`.
+cdef inline datetime.datetime dt_replace_tz(datetime.datetime dt, object tzinfo, object dtclass=None):
+    """Create a copy of `dt` with `tzinfo` replaced `<'datetime.datetime'>`.
 
     :param dt `<'datetime.datetime'>`: Source datetime (naive or aware).
-    :param tz `<'tzinfo/None'>`: The target tzinfo to attach.
-    :returns `<'datetime.datetime'>`: New datetime with the same fields except `tzinfo`.
+    :param tzinfo `<'tzinfo/None'>`: The target tzinfo to attach.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified) 
+        with the same fields except `tzinfo`.
 
     ## Equivalent
-    >>> dt.replace(tzinfo=tz)
+    >>> dt.replace(tzinfo=tzinfo)
     """
     # Same tzinfo
-    if tz is dt.tzinfo:
-        return dt
+    if tzinfo is dt.tzinfo:
+        return dt_fr_dt(dt, dtclass)
 
     # New datetime
-    return datetime.datetime_new(
-        dt.year, dt.month, dt.day, 
-        dt.hour, dt.minute, dt.second, 
-        dt.microsecond, tz, dt.fold,
+    return dt_new(
+        dt.year, dt.month, dt.day, dt.hour, dt.minute,
+        dt.second, dt.microsecond, tzinfo, dt.fold, dtclass,
     )
 
-cdef inline datetime.datetime dt_replace_fold(datetime.datetime dt, int fold):
+cdef inline datetime.datetime dt_replace_fold(datetime.datetime dt, int fold, object dtclass=None):
     """Create a copy of `dt` with `fold` set to 0 or 1 `<'datetime.datetime'>`.
 
     :param dt `<'datetime.datetime'>`: Source datetime (naive or aware).
     :param fold `<'int'>`: Must be 0 or 1; otherwise `ValueError` is raised.
-    :returns `<'datetime.datetime'>`: New datetime with the same fields except `fold`.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified) 
+        with the same fields except `fold`.
 
     ## Equivalent
     >>> dt.replace(fold=fold)
@@ -3763,13 +3771,12 @@ cdef inline datetime.datetime dt_replace_fold(datetime.datetime dt, int fold):
 
     # Fast-path: same fold
     if fold == dt.fold:
-        return dt
+        return dt_fr_dt(dt, dtclass)
 
     # New datetime
-    return datetime.datetime_new(
-        dt.year, dt.month, dt.day, 
-        dt.hour, dt.minute, dt.second, 
-        dt.microsecond, dt.tzinfo, fold,
+    return dt_new(
+        dt.year, dt.month, dt.day, dt.hour, dt.minute,
+        dt.second, dt.microsecond, dt.tzinfo, fold, dtclass,
     )
 
 # . tzinfo
@@ -3809,46 +3816,48 @@ cdef inline datetime.timedelta dt_utcoffset(datetime.datetime dt):
     """
     return tz_utcoffset(dt.tzinfo, dt)
 
-cdef inline datetime.datetime dt_astimezone(datetime.datetime dt, object tz=None):
+cdef inline datetime.datetime dt_astimezone(datetime.datetime dt, object tzinfo=None, object dtclass=None):
     """Convert a `datetime.datetime` to another time zone `<'datetime.datetime'>`.
 
     :param dt `<'datetime.datetime'>`: Datetime to convert (naive or aware).
-    :param tz `<'tzinfo/None'>`: Target time zone. Defaults to `None`.
+    :param tzinfo `<'tzinfo/None'>`: Target time zone. Defaults to `None`.
 
         - If `None`, the system **local** time zone is used.
         - Must be a `tzinfo-compatible` object when provided.
 
-    :returns `<'datetime.datetime'>`: Datetime representing the **same instant**
-        expressed in the target time zone. For naive inputs + `tz is None`,
-        this *localizes* the datetime to the system local zone.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified) 
+        representing the **same instant** expressed in the target time zone. For naive 
+        inputs + `tzinfo is None`, this *localizes* the datetime to the system local zone.
 
     ## Semantics
     - **Aware → Aware:** Convert by subtracting the source `utcoffset(dt)`,
-      attach the target tz, then normalize via `tz.fromutc(...)`.
-    - **Naive + tz is None:** Treat `dt` as local wall time and simply attach
+      attach the target tzinfo, then normalize via `tzinfo.fromutc(...)`.
+    - **Naive + tzinfo is None:** Treat `dt` as local wall time and simply attach
       the local tzinfo (no clock change).
-    - **Naive + tz provided:** Treat `dt` as local wall time, convert the
-      instant to UTC, attach `tz`, then normalize via `tz.fromutc(...)`.
-    - **Identity fast path:** If `dt.tzinfo is tz`, return `dt` unchanged.
+    - **Naive + tzinfo provided:** Treat `dt` as local wall time, convert the
+      instant to UTC, attach `tzinfo`, then normalize via `tzinfo.fromutc(...)`.
+    - **Identity fast path:** If `dt.tzinfo is tzinfo`, return `dt` unchanged.
 
     ## DST / fold
     - Ambiguous/nonexistent local times are resolved by delegating 
-      to `tz.fromutc(...)`, which honors `dt.fold` per PEP 495.
+      to `tzinfo.fromutc(...)`, which honors `dt.fold` per PEP 495.
 
     ## Equivalent
-    >>> dt.astimezone(tz)
+    >>> dt.astimezone(tzinfo)
     """
     cdef: 
         object my_tz = datetime.datetime_tzinfo(dt)
-        object to_tz = tz
+        object to_tz = tzinfo
         datetime.timedelta my_off
 
-    # Resolve target tz
+    # Resolve target tzinfo
     if to_tz is None:
-        to_tz = tz_local(dt)
+        to_tz = tz_local()
         # Fast-exit: naive + local -> localize
         if my_tz is None:
-            return dt_replace_tz(dt, to_tz)
+            return dt_replace_tz(dt, to_tz, dtclass)
     elif not is_tz(to_tz):
         raise TypeError(
             "Expects an instance of 'datetime.tzinfo', "
@@ -3857,41 +3866,43 @@ cdef inline datetime.datetime dt_astimezone(datetime.datetime dt, object tz=None
 
     # Fast-exit: exact same tzinfo
     if my_tz is to_tz:
-        return dt
+        return dt_fr_dt(dt, dtclass)
 
     # Naive datetime cases
     if my_tz is None:
-        my_tz = tz_local(dt)
+        my_tz = tz_local()
         # Fast-exit: naive + local -> localize
         if my_tz is to_tz:
-            return dt_replace_tz(dt, to_tz)
+            return dt_replace_tz(dt, to_tz, dtclass)
         # Access local UTC offset (my_off is local)
         my_off = tz_utcoffset(my_tz, dt)
 
     # Aware datetime case: handle no-offset tzinfo
-    # by using local tz fallback (CPython pattern)
+    # by using local tzinfo fallback (CPython pattern)
     else:
         my_off = tz_utcoffset(my_tz, dt)
         if my_off is None:
-            my_tz = tz_local(dt_replace_tz(dt, None))
+            my_tz = tz_local()
             # Fast-exit: exact same tzinfo
             if my_tz is to_tz:
-                return dt
+                return dt_fr_dt(dt, dtclass)
             # Access local UTC offset (my_off is local)
             my_off = tz_utcoffset(my_tz, dt)
 
-    # Convert to UTC microseconds, then attach tz and normalize via fromutc
+    # Convert to UTC microseconds, then attach tzinfo and normalize via fromutc
     cdef long long us = dt_to_us(dt, False) - td_to_us(my_off)
-    return to_tz.fromutc(dt_fr_us(us, to_tz))
+    return to_tz.fromutc(dt_fr_us(us, to_tz, dtclass))
 
-cdef inline datetime.datetime dt_normalize_tz(datetime.datetime dt):
+cdef inline datetime.datetime dt_normalize_tz(datetime.datetime dt, object dtclass=None):
     """Normalize an aware datetime against its own tzinfo `<'datetime.datetime'>`.
 
     :param dt `<'datetime.datetime'>`: Datetime to normalize.
-    :returns `<'datetime.datetime'>`: The normalized datetime.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The normalized datetime (or subclass if `dtclass` is specified).
 
     ## Behavior:
-      - If `dt` is timezone-niave → return `dt` as-is.
+      - If `dt` is timezone-niave → returns `dt` as-is.
       - Compute the timezone offsets at the same wall-clock time
         with `fold=0` and `fold=1`.
       - If offset with `fold=1` is greater than with `fold=0` (spring-forward gap), 
@@ -3900,29 +3911,29 @@ cdef inline datetime.datetime dt_normalize_tz(datetime.datetime dt):
           - `fold == 0` → move backward by Δ (to the last valid wall time)
           - `fold == 1` → move forward by Δ (to the next valid wall time)
 
-      - Otherwise (ambiguous or no change), return `dt` as-is.
-      - If either offset is unavailable, return `dt` as-is.
+      - Otherwise (ambiguous or no change), returns `dt` as-is.
+      - If either offset is unavailable, returns `dt` as-is.
     """
     # Timezone-naive: no-op
-    cdef object tz = dt.tzinfo
-    if tz is None:
-        return dt
+    cdef object tzinfo = dt.tzinfo
+    if tzinfo is None:
+        return dt_fr_dt(dt, dtclass)
 
     # Probe offsets at both folds around the same wall time
     cdef int fold = dt.fold
     cdef long long off_f0, off_f1
     if fold == 1:
-        off_f0 = tz_utcoffset_sec(tz, dt_replace_fold(dt, 0))
-        off_f1 = tz_utcoffset_sec(tz, dt)
+        off_f0 = tz_utcoffset_sec(tzinfo, dt_replace_fold(dt, 0, None))
+        off_f1 = tz_utcoffset_sec(tzinfo, dt)
     else:
-        off_f0 = tz_utcoffset_sec(tz, dt)
-        off_f1 = tz_utcoffset_sec(tz, dt_replace_fold(dt, 1))
+        off_f0 = tz_utcoffset_sec(tzinfo, dt)
+        off_f1 = tz_utcoffset_sec(tzinfo, dt_replace_fold(dt, 1, None))
 
     # There is no positive delta or either offset is 
     # unknown (sentinel = -100,000); return as-is.
     cdef long long delta = off_f1 - off_f0
     if delta <= 0 or off_f0 == NULL_TZOFFSET or off_f1 == NULL_TZOFFSET:
-        return dt
+        return dt_fr_dt(dt, dtclass)
 
     # Gap: apply Δ depending on which side of the gap 
     # the input fold denotes
@@ -3931,55 +3942,62 @@ cdef inline datetime.datetime dt_normalize_tz(datetime.datetime dt):
         us += delta * US_SECOND
     else:
         us -= delta * US_SECOND
-    return dt_fr_us(us, tz)
+    return dt_fr_us(us, tzinfo, dtclass)
 
 # datetime.time ----------------------------------------------------------------------------------------
 # . generate
 cdef inline datetime.time time_new(
-    int hour=0, int minute=0, int second=0,
-    int microsecond=0, object tz=None, int fold=0,
+    int hour=0, int minute=0, int second=0, int microsecond=0, 
+    object tzinfo=None, int fold=0, object tclass=None,
 ):
-    """Create a `datetime.time`, **clamping** invalid value to 
-    the valid Gregorian range `<'datetime.time'>`.
+    """Create a new time `<'datetime.time'>`.
 
-    :param hour `<'int'>`: Hour (clamped to 0..23). Defaults to `0`.
-    :param minute `<'int'>`: Minute (clamped to 0..59). Defaults to `0`.
-    :param second `<'int'>`: Second (clamped to 0..59). Defaults to `0`.
-    :param microsecond `<'int'>`: Microsecond (clamped to 0..999999). Defaults to `0`.
-    :param tz `<'tzinfo/None'>`: Optional timezone. Defaults to `None`.
+    :param hour `<'int'>`: Hour [0..23]. Defaults to `0`.
+    :param minute `<'int'>`: Minute [0..59]. Defaults to `0`.
+    :param second `<'int'>`: Second [0..59]. Defaults to `0`.
+    :param microsecond `<'int'>`: Microsecond [0..999999]. Defaults to `0`.
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone. Defaults to `None`.
     :param fold `<'int'>`: Optional fold flag for ambiguous times (0 or 1). Defaults to `0`.
-        Only relevant if 'tz' is not `None`, and values other than `1` are treated as `0`.
-    :returns `<'datetime.time'>`: The resulting time.
+        Only relevant if 'tzinfo' is not `None`, and values other than `1` are treated as `0`.
+    :param tclass `<'type[datetime.time]/None'>`: Optional custom time class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.time` as the constructor.
+    :returns `<'datetime.time'>`: The resulting time (or subclass if `tclass` is specified).
     """
     # Normalize fold (0/1 only)
-    if tz is None:
-        fold = 0
-    else:
-        fold = 1 if fold == 1 else 0
+    fold = 0 if tzinfo is None else fold == 1
 
-    # Clamp time-of-day
-    hour = min(max(hour, 0), 23)
-    minute = min(max(minute, 0), 59)
-    second = min(max(second, 0), 59)
-    microsecond = min(max(microsecond, 0), 999_999)
+    # Construct time
+    if tclass is not None and tclass is not datetime.time:
+        try:
+            return tclass(
+                hour=hour, 
+                minute=minute, 
+                second=second, 
+                microsecond=microsecond, 
+                tzinfo=tzinfo, 
+                fold=fold,
+            )
+        except Exception as err:
+            raise TypeError("Cannot create time using custom 'tclass' %s, %s" % (tclass, err)) from err
+    return datetime.time_new(hour, minute, second, microsecond, tzinfo, fold)
 
-    # New time
-    return datetime.time_new(hour, minute, second, microsecond, tz, fold)
-
-cdef inline datetime.time time_now(object tz=None):
+cdef inline datetime.time time_now(object tzinfo=None, object tclass=None):
     """Get the current time `<'datetime.time'>`.
 
-    :param tz `<'tzinfo/None'>`: Optional timezone. Defaults to `None`.
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone. Defaults to `None`.
 
         - If specified, return an aware time in that timezone.
         - Otherwise, return a naive local time.
 
-    :returns `<'datetime.time'>`: The current time.
+    :param tclass `<'type[datetime.time]/None'>`: Optional custom time class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.time` as the constructor.
+
+    :returns `<'datetime.time'>`: The current time (or subclass if `tclass` is specified).
     
     ## Equivalent
-    >>> datetime.datetime.now(tz).time()
+    >>> datetime.datetime.now(tzinfo).time()
     """
-    return time_fr_dt(dt_now(tz))
+    return time_fr_dt(dt_now(tzinfo, None), tclass)
     
 # . type check
 cdef inline bint is_time(object obj) except -1:
@@ -4052,64 +4070,86 @@ cdef inline double time_to_sec(datetime.time time) noexcept:
     return <double> us * 1e-6
 
 # . conversion: from
-cdef inline datetime.time time_fr_us(long long value, object tz=None):
-    """Create `datetime.time` from microseconds since the Unix epoch `<'datetime.time'>`.
+cdef inline datetime.time time_fr_us(long long value, object tzinfo=None, object tclass=None):
+    """Create time from microseconds since the Unix epoch `<'datetime.time'>`.
 
     :param value `<'int'>`: Microseconds since epoch.
-    :param tz `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
-    :returns `<'datetime.time'>`: The time-of-day.
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
+    :param tclass `<'type[datetime.time]/None'>`: Optional custom time class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.time` as the constructor.
+    :returns `<'datetime.time'>`: The resulting time (or subclass if `tclass` is specified).
     """
     cdef hmsf _hmsf = hmsf_fr_us(value)
-    return datetime.time_new(
+    return time_new(
         _hmsf.hour, _hmsf.minute, _hmsf.second, 
-        _hmsf.microsecond, tz, 0
+        _hmsf.microsecond, tzinfo, 0, tclass
     )
 
-cdef inline datetime.time time_fr_sec(double value, object tz=None):
-    """Create `datetime.time` from seconds since the Unix epoch `<'datetime.time'>`.
+cdef inline datetime.time time_fr_sec(double value, object tzinfo=None, object tclass=None):
+    """Create time from seconds since the Unix epoch `<'datetime.time'>`.
 
     :param value `<'int'>`: Seconds since epoch.
-    :param tz `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
-    :returns `<'datetime.time'>`: The time-of-day.
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
+    :param tclass `<'type[datetime.time]/None'>`: Optional custom time class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.time` as the constructor.
+    :returns `<'datetime.time'>`: The resulting time (or subclass if `tclass` is specified).
     """
-    return time_fr_us(sec_to_us(value), tz)
+    return time_fr_us(sec_to_us(value), tzinfo, tclass)
 
-cdef inline datetime.time time_fr_time(datetime.time time):
-    """Create `datetime.time` from another time (include subclass) `<'datetime.time'>`.
+cdef inline datetime.time time_fr_time(datetime.time time, object tclass=None):
+    """Create time from another time (include subclass) `<'datetime.time'>`.
 
-    :param dt `<'datetime.time'>`: The source time (including subclasses).
-    :returns `<'datetime.time'>`: A new time with the same fields and tzinfo.
+    :param time `<'datetime.time'>`: The source time (including subclasses).
+    :param tclass `<'type[datetime.time]/None'>`: Target time class. Defaults to `None`.
+        If `None` set to python's built-in `datetime.time`.
+        If `time` is already of type `tclass`, returns `time` directly.
+    :returns `<'datetime.time'>`: The resulting time (or subclass if `tclass` is specified)
+        with the same time fields and tzinfo.
     """
-    return datetime.time_new(
+    if tclass is None:
+        tclass = datetime.time
+    if tclass is type(time):
+        return time
+    return time_new(
         time.hour, time.minute, time.second, 
-        time.microsecond, time.tzinfo, time.fold
+        time.microsecond, time.tzinfo, time.fold, tclass
     )
 
-cdef inline datetime.time time_fr_dt(datetime.datetime dt):
-    """Create `datetime.time` from datetime (include subclass) `<'datetime.time'>`.
+cdef inline datetime.time time_fr_dt(datetime.datetime dt, object tclass=None):
+    """Create time from datetime (include subclass) `<'datetime.time'>`.
 
     :param dt `<'datetime.datetime'>`: The source datetime (including subclasses).
-    :returns `<'datetime.time'>`: A new time with the same time fields and tzinfo.
+    :param tclass `<'type[datetime.time]/None'>`: Optional custom time class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.time` as the constructor.
+    :returns `<'datetime.time'>`: The resulting time (or subclass if `tclass` is specified)
+        with the same time fields and tzinfo.
     """
-    return datetime.time_new(
+    return time_new(
         dt.hour, dt.minute, dt.second, 
-        dt.microsecond, dt.tzinfo, dt.fold
+        dt.microsecond, dt.tzinfo, dt.fold, tclass
     )
 
 # datetime.timedelta -----------------------------------------------------------------------------------
 # . generate
-cdef inline datetime.timedelta td_new(int days=0, int seconds=0, int microseconds=0):
-    """Create a `datetime.timedelta` from days, seconds 
-    and microseconds `<'datetime.timedelta'>`.
+cdef inline datetime.timedelta td_new(int days=0, int seconds=0, int microseconds=0, object tdclass=None):
+    """Create a new timedelta `<'datetime.timedelta'>`.
     
     :param days `<'int'>`: Days (can be negative). Defaults to 0.
     :param seconds `<'int'>`: Seconds (can be negative). Defaults to 0.
     :param microseconds `<'int'>`: Microseconds (can be negative). Defaults to 0.
-    :returns `<'datetime.timedelta'>`: The resulting timedelta.
+    :param tdclass `<'type[datetime.timedelta]/None'>`: Optional custom timedelta class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.timedelta` as the constructor.
+    :returns `<'datetime.timedelta'>`: The resulting timedelta (or subclass if `tdclass` is specified).
     
     ## Equivalent
     >>> datetime.timedelta(days, seconds, microseconds)
     """
+    # Construct timedelta
+    if tdclass is not None and tdclass is not datetime.timedelta:
+        try:
+            return tdclass(days=days, seconds=seconds, microseconds=microseconds)
+        except Exception as err:
+            raise TypeError("Cannot create timedelta using custom 'tdclass' %s, %s" % (tdclass, err)) from err
     return datetime.timedelta_new(days, seconds, microseconds)
 
 # . type check
@@ -4227,39 +4267,50 @@ cdef inline double td_to_sec(datetime.timedelta td) noexcept:
     return fsec + frac
 
 # . conversion: from
-cdef inline datetime.timedelta td_fr_us(long long value):
-    """Create `datetime.timedelta` from microseconds `<'datetime.timedelta'>`.
+cdef inline datetime.timedelta td_fr_us(long long value, object tdclass=None):
+    """Create timedelta from microseconds `<'datetime.timedelta'>`.
 
     :param value `<'int'>`: Delta in microseconds.
-    :returns `<'datetime.timedelta'>`: The resulting timedelta.
+    :param tdclass `<'type[datetime.timedelta]/None'>`: Optional custom timedelta class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.timedelta` as the constructor.
+    :returns `<'datetime.timedelta'>`: The resulting timedelta (or subclass if `tdclass` is specified).
     """
     cdef long long q, r
-    cdef int day, sec, us
+    cdef int dd, ss, us
     with cython.cdivision(True):
         q = value / US_DAY; r = value % US_DAY
         if r < 0:
             q -= 1; r += US_DAY
-        day = <int> q
-        sec = <int> (r / US_SECOND)
-        us  = <int> (r % US_SECOND)
-    return datetime.timedelta_new(day, sec, us)
+        dd = <int> q
+        ss = <int> (r / US_SECOND)
+        us = <int> (r % US_SECOND)
+    return td_new(dd, ss, us, tdclass)
 
-cdef inline datetime.timedelta td_fr_sec(double value):
-    """Create `datetime.timedelta` from seconds `<'datetime.timedelta'>`.
+cdef inline datetime.timedelta td_fr_sec(double value, object tdclass=None):
+    """Create timedelta from seconds `<'datetime.timedelta'>`.
 
     :param value `<'float'>`: Delta in seconds.
-    :returns `<'datetime.timedelta'>`: The resulting timedelta.
+    :param tdclass `<'type[datetime.timedelta]/None'>`: Optional custom timedelta class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.timedelta` as the constructor.
+    :returns `<'datetime.timedelta'>`: The resulting timedelta (or subclass if `tdclass` is specified).
     """
-    return td_fr_us(sec_to_us(value))
+    return td_fr_us(sec_to_us(value), tdclass)
 
-cdef inline datetime.timedelta td_fr_td(datetime.timedelta td):
-    """Create `datetime.timedelta` from another timedelta 
-    (or subclass) `<'datetime.timedelta'>`.
+cdef inline datetime.timedelta td_fr_td(datetime.timedelta td, object tdclass=None):
+    """Create timedelta from another timedelta (or subclass) `<'datetime.timedelta'>`.
     
     :param td `<'datetime.timedelta'>`: The source timedelta (including subclasses).
-    :returns `<'datetime.timedelta'>`: A new timedelta with the same values.
+    :param tdclass `<'type[datetime.timedelta]/None'>`: Target timedelta class. Defaults to `None`.
+        If `None` set to python's built-in `datetime.timedelta`.
+        If `td` is already of type `tdclass`, returns `td` directly.
+    :returns `<'datetime.timedelta'>`: The resulting timedelta (or subclass if `tdclass` is specified)
+        with the same days, seconds and microseconds.
     """
-    return datetime.timedelta_new(td.day, td.second, td.microsecond)
+    if tdclass is None:
+        tdclass = datetime.timedelta
+    if tdclass is type(td):
+        return td
+    return td_new(td.day, td.second, td.microsecond, tdclass)
 
 # datetime.tzinfo --------------------------------------------------------------------------------------
 # . generate
@@ -4330,7 +4381,7 @@ cdef inline int tz_local_sec(datetime.datetime dt=None) except -200_000:
         if dt.tzinfo is None:
             ts1 = dt_local_mktime(dt)
             # probe the other fold to handle gaps/ambiguous times
-            ts2 = dt_local_mktime(dt_replace_fold(dt, 1 - dt.fold))
+            ts2 = dt_local_mktime(dt_replace_fold(dt, 1 - dt.fold, None))
             if ts2 != ts1 and ((ts2 > ts1) == dt.fold):
                 ts = <double> ts2
             else:
@@ -4848,15 +4899,17 @@ cdef inline np.npy_int64 _dt64_M_as_int64_D(np.npy_int64 value, np.npy_int64 fac
     # Total days since 1970-01-01 at day resolution, then scale+shift
     return (yy_ep * 365 + leaps + days_bf_month(yy, mm)) * factor + offset
 
-cdef inline datetime.datetime dt64_to_dt(object dt64, object tz=None):
-    """Convert np.datetime64 to datetime.datetime `<'datetime.datetime'>`.
+cdef inline datetime.datetime dt64_to_dt(object dt64, object tzinfo=None, object dtclass=None):
+    """Convert np.datetime64 to datetime `<'datetime.datetime'>`.
     
     :param dt64 `<'np.datetime64'>`: The datetime64 to convert.
-    :param tz `<'datetime.tzinfo/None'>`: An optional timezone to attach 
+    :param tzinfo `<'datetime.tzinfo/None'>`: An optional timezone to attach 
         to the resulting datetime. Defaults to `None`.
-    :returns `<'datetime.datetime'>`: The datetime object.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
     """
-    return dt_fr_us(dt64_as_int64_us(dt64, 0), tz)
+    return dt_fr_us(dt64_as_int64_us(dt64, 0), tzinfo, dtclass)
 
 # . errors
 cdef inline bint _raise_dt64_to_reso_error(object dt64, str to_unit) except -1:
@@ -5064,13 +5117,15 @@ cdef inline np.npy_int64 _td64_M_as_int64_D(np.npy_int64 value, int to_reso, np.
     # Unsupported conversion resolution
     raise AssertionError("Unsupported conversion unit '%d' for timedelta64." % to_reso)
 
-cdef inline datetime.timedelta td64_to_td(object td64):
-    """Convert np.timedelta64 to datetime.timedelta `<'datetime.timedelta'>`.
+cdef inline datetime.timedelta td64_to_td(object td64, object tdclass=None):
+    """Convert np.timedelta64 to timedelta `<'datetime.timedelta'>`.
 
     :param td64 `<'np.timedelta64'>`: The timedelta64 to convert.
-    :returns `<'datetime.timedelta'>`: The resulting timedelta object.
+    :param tdclass `<'type[datetime.timedelta]/None'>`: Optional custom timedelta class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.timedelta` as the constructor.
+    :returns `<'datetime.timedelta'>`: The resulting timedelta (or subclass if `tdclass` is specified).
     """
-    return td_fr_us(td64_as_int64_us(td64, 0))
+    return td_fr_us(td64_as_int64_us(td64, 0), tdclass)
 
 # NumPy: ndarray ---------------------------------------------------------------------------------------
 # . type check

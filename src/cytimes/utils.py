@@ -806,6 +806,7 @@ def _test_ymd_fr_isocalendar() -> None:
 # datetime.date
 def _test_date_generate() -> None:
     import datetime
+    from pendulum import Date
 
     tz = datetime.timezone(datetime.timedelta(hours=23, minutes=59))
 
@@ -814,6 +815,10 @@ def _test_date_generate() -> None:
     assert datetime.date(1, 1, 1) == date_new(1)  # type: ignore
     assert datetime.date(1, 1, 1) == date_new(1, 1)  # type: ignore
     assert datetime.date(1, 1, 1) == date_new(1, 1, 1)  # type: ignore
+    assert type(date_new(1, 1, 1)) is datetime.date  # type: ignore
+    assert type(date_new(1, 1, 1, None)) is datetime.date  # type: ignore
+    assert type(date_new(1, 1, 1, datetime.date)) is datetime.date  # type: ignore
+    assert type(date_new(1, 1, 1, Date)) is Date  # type: ignore
 
     # Now
     assert datetime.date.today() == date_now()  # type: ignore
@@ -823,7 +828,7 @@ def _test_date_generate() -> None:
 
     print("Passed: date_generate")
 
-    del datetime
+    del datetime, Date
 
 
 def _test_date_type_check() -> None:
@@ -847,8 +852,10 @@ def _test_date_type_check() -> None:
 
 def _test_date_conversion() -> None:
     import datetime
+    from pendulum import Date
 
     date = datetime.date(2021, 1, 2)
+    pdate = Date(2021, 1, 2)
     dt = datetime.datetime(2021, 1, 2)
 
     _tm = date_to_tm(date)  # type: ignore
@@ -869,14 +876,21 @@ def _test_date_conversion() -> None:
     assert (date.toordinal() - EPOCH_DAY) * 86400 == date_to_sec(date)  # type: ignore
     assert (date.toordinal() - EPOCH_DAY) * 86400_000000 == date_to_us(date)  # type: ignore
 
-    class CustomDate(datetime.date):
-        pass
+    assert date == date_fr_date(pdate)  # type: ignore
+    assert type(date_fr_date(pdate)) is datetime.date  # type: ignore
+    assert type(date_fr_date(pdate, None)) is datetime.date  # type: ignore
+    assert type(date_fr_date(pdate, datetime.date)) is datetime.date  # type: ignore
+    assert type(date_fr_date(pdate, Date)) is Date  # type: ignore
+    assert type(date_fr_date(date)) is datetime.date  # type: ignore
+    assert type(date_fr_date(date, None)) is datetime.date  # type: ignore
+    assert type(date_fr_date(date, datetime.date)) is datetime.date  # type: ignore
+    assert type(date_fr_date(date, Date)) is Date  # type: ignore
 
-    tmp = date_fr_date(CustomDate(2021, 1, 2))  # type: ignore
-    assert date == tmp and type(tmp) is datetime.date  # type: ignore
-
-    tmp = date_fr_dt(dt)  # type: ignore
-    assert date == tmp and type(tmp) is datetime.date
+    assert date == date_fr_dt(dt)  # type: ignore
+    assert type(date_fr_dt(dt)) is datetime.date  # type: ignore
+    assert type(date_fr_dt(dt, None)) is datetime.date  # type: ignore
+    assert type(date_fr_dt(dt, datetime.date)) is datetime.date  # type: ignore
+    assert type(date_fr_dt(dt, Date)) is Date  # type: ignore
 
     tmp = date_fr_ord(date.toordinal())  # type: ignore
     assert date == tmp and type(tmp) is datetime.date
@@ -892,12 +906,14 @@ def _test_date_conversion() -> None:
 
     print("Passed: date_conversion")
 
-    del CustomDate, datetime
+    del datetime, Date
 
 
 # datetime.datetime
 def _test_dt_generate() -> None:
     import datetime
+    from pandas import Timestamp
+    from pendulum import DateTime
 
     tz = datetime.timezone(datetime.timedelta(hours=23, minutes=59))
 
@@ -911,6 +927,11 @@ def _test_dt_generate() -> None:
     assert datetime.datetime(1, 1, 1, 1, 1, 1, 0) == dt_new(1, 1, 1, 1, 1, 1)  # type: ignore
     assert datetime.datetime(1, 1, 1, 1, 1, 1, 1) == dt_new(1, 1, 1, 1, 1, 1, 1)  # type: ignore
     assert datetime.datetime(1, 1, 1, 1, 1, 1, 1, tz) == dt_new(1, 1, 1, 1, 1, 1, 1, tz)  # type: ignore
+    assert type(dt_new(1, 1, 1, 1, 1, 1, 1, tz, 0)) is datetime.datetime  # type: ignore
+    assert type(dt_new(1, 1, 1, 1, 1, 1, 1, tz, 0, None)) is datetime.datetime  # type: ignore
+    assert type(dt_new(1, 1, 1, 1, 1, 1, 1, tz, 0, datetime.datetime)) is datetime.datetime  # type: ignore
+    assert type(dt_new(1, 1, 1, 1, 1, 1, 1, tz, 0, Timestamp)) is Timestamp  # type: ignore
+    assert type(dt_new(1, 1, 1, 1, 1, 1, 1, tz, 0, DateTime)) is DateTime  # type: ignore
 
     # Now
     for dt_n, dt_c in (
@@ -932,7 +953,7 @@ def _test_dt_generate() -> None:
 
     print("Passed: dt_generate")
 
-    del datetime
+    del datetime, Timestamp, DateTime
 
 
 def _test_dt_type_check() -> None:
@@ -1057,9 +1078,16 @@ def _test_dt_conversion() -> None:
 
     assert datetime.datetime(2021, 1, 2) == dt_fr_date(date)  # type: ignore
     assert datetime.datetime(2021, 1, 2, tzinfo=tz1) == dt_fr_date(date, tz1)  # type: ignore
+    assert type(dt_fr_dt(Timestamp(dt))) is datetime.datetime  # type: ignore
+    assert type(dt_fr_dt(Timestamp(dt), None)) is datetime.datetime  # type: ignore
+    assert type(dt_fr_dt(Timestamp(dt), datetime.datetime)) is datetime.datetime  # type: ignore
+    assert type(dt_fr_dt(Timestamp(dt), Timestamp)) is Timestamp  # type: ignore
+    assert type(dt_fr_dt(dt)) is datetime.datetime  # type: ignore
+    assert type(dt_fr_dt(dt, None)) is datetime.datetime  # type: ignore
+    assert type(dt_fr_dt(dt, datetime.datetime)) is datetime.datetime  # type: ignore
+    assert type(dt_fr_dt(dt, Timestamp)) is Timestamp  # type: ignore
     assert dt == dt_fr_dt(Timestamp(dt))  # type: ignore
     assert dt_tz1 == dt_fr_dt(Timestamp(dt_tz1))  # type: ignore
-    assert type(dt_fr_dt(Timestamp(dt_tz1))) is datetime.datetime  # type: ignore
     assert datetime.datetime(2021, 1, 2) == dt_fr_ord(dt.toordinal())  # type: ignore
     assert datetime.datetime(2021, 1, 2) == dt_fr_ord(dt_to_ord(dt_tz2, False))  # type: ignore
     assert datetime.datetime(2021, 1, 1) == dt_fr_ord(dt_to_ord(dt_tz2, True))  # type: ignore
@@ -1235,6 +1263,7 @@ def _test_dt_normalize_tz() -> None:
 # datetime.time
 def _test_time_generate() -> None:
     import datetime
+    from pendulum import Time
 
     tz = datetime.timezone(datetime.timedelta(hours=23, minutes=59))
 
@@ -1249,6 +1278,10 @@ def _test_time_generate() -> None:
     assert datetime.time(1, 1, 1, 0) == time_new(1, 1, 1)  # type: ignore
     assert datetime.time(1, 1, 1, 1) == time_new(1, 1, 1, 1)  # type: ignore
     assert datetime.time(1, 1, 1, 1, tz) == time_new(1, 1, 1, 1, tz)  # type: ignore
+    assert type(time_new(1, 1, 1, 1, tz, 0)) is datetime.time  # type: ignore
+    assert type(time_new(1, 1, 1, 1, tz, 0, None)) is datetime.time  # type: ignore
+    assert type(time_new(1, 1, 1, 1, tz, 0, datetime.time)) is datetime.time  # type: ignore
+    assert type(time_new(1, 1, 1, 1, tz, 0, Time)) is Time  # type: ignore
 
     # Now
     for t_n, t_c in (
@@ -1267,7 +1300,7 @@ def _test_time_generate() -> None:
 
     print("Passed: time_generate")
 
-    del datetime
+    del datetime, Time
 
 
 def _test_time_type_check() -> None:
@@ -1291,10 +1324,13 @@ def _test_time_type_check() -> None:
 
 def _test_time_conversion() -> None:
     import datetime
+    from pendulum import Time
 
-    t1 = datetime.time(3, 4, 5, 6)
     tz1 = datetime.timezone(datetime.timedelta(hours=1, minutes=1))
+    t1 = datetime.time(3, 4, 5, 6)
     t_tz1 = datetime.time(3, 4, 5, 6, tz1)
+    pt = Time(3, 4, 5, 6)
+    pt_tz1 = Time(3, 4, 5, 6, tz1)
     dt = datetime.datetime(1970, 1, 1, 3, 4, 5, 6)
     dt_tz1 = datetime.datetime(1970, 1, 1, 3, 4, 5, 6, tz1)
 
@@ -1309,16 +1345,24 @@ def _test_time_conversion() -> None:
     assert us == time_to_us(t1)  # type: ignore
     assert us == time_to_us(t_tz1)  # type: ignore
 
-    assert datetime.time(3, 4, 5, 6) == time_fr_dt(dt)  # type: ignore
-    assert datetime.time(3, 4, 5, 6, tz1) == time_fr_dt(dt_tz1)  # type: ignore
+    assert t1 == time_fr_time(pt)  # type: ignore
+    assert t_tz1 == time_fr_time(pt_tz1)  # type: ignore
+    assert type(time_fr_time(pt)) is datetime.time  # type: ignore
+    assert type(time_fr_time(pt, None)) is datetime.time  # type: ignore
+    assert type(time_fr_time(pt, datetime.time)) is datetime.time  # type: ignore
+    assert type(time_fr_time(pt, Time)) is Time  # type: ignore
+    assert type(time_fr_time(t1)) is datetime.time  # type: ignore
+    assert type(time_fr_time(t1, None)) is datetime.time  # type: ignore
+    assert type(time_fr_time(t1, datetime.time)) is datetime.time  # type: ignore
+    assert type(time_fr_time(t1, Time)) is Time  # type: ignore
 
-    class CustomTime(datetime.time):
-        pass
+    assert t1 == time_fr_dt(dt)  # type: ignore
+    assert t_tz1 == time_fr_dt(dt_tz1)  # type: ignore
+    assert type(time_fr_dt(dt)) is datetime.time  # type: ignore
+    assert type(time_fr_dt(dt, None)) is datetime.time  # type: ignore
+    assert type(time_fr_dt(dt, datetime.time)) is datetime.time  # type: ignore
+    assert type(time_fr_dt(dt, Time)) is Time  # type: ignore
 
-    tmp = time_fr_time(CustomTime(3, 4, 5, 6))  # type: ignore
-    assert t1 == tmp and type(tmp) is datetime.time  # type: ignore
-    tmp = time_fr_time(CustomTime(3, 4, 5, 6, tz1))  # type: ignore
-    assert t_tz1 == tmp and type(tmp) is datetime.time  # type: ignore
     assert t1 == time_fr_sec(time_to_sec(t1))  # type: ignore
     assert t_tz1 == time_fr_sec(time_to_sec(t1), tz1)  # type: ignore
     assert t1 == time_fr_us(time_to_us(t1))  # type: ignore
@@ -1326,12 +1370,15 @@ def _test_time_conversion() -> None:
 
     print("Passed: time_conversion")
 
-    del CustomTime, datetime
+    del datetime, Time
 
 
 # datetime.timedelta
 def _test_timedelta_generate() -> None:
     import datetime
+
+    class CustomTD(datetime.timedelta):
+        pass
 
     # New
     assert datetime.timedelta(0, 0, 0) == td_new()  # type: ignore
@@ -1344,10 +1391,14 @@ def _test_timedelta_generate() -> None:
     assert datetime.timedelta(-1, 0, 0) == td_new(-1)  # type: ignore
     assert datetime.timedelta(-1, -1, 0) == td_new(-1, -1)  # type: ignore
     assert datetime.timedelta(-1, -1, -1) == td_new(-1, -1, -1)  # type: ignore
+    assert type(td_new(-1, -1, -1)) is datetime.timedelta  # type: ignore
+    assert type(td_new(-1, -1, -1, None)) is datetime.timedelta  # type: ignore
+    assert type(td_new(-1, -1, -1, datetime.timedelta)) is datetime.timedelta  # type: ignore
+    assert type(td_new(-1, -1, -1, CustomTD)) is CustomTD  # type: ignore
 
     print("Passed: timedelta_generate")
 
-    del datetime
+    del datetime, CustomTD
 
 
 def _test_timedelta_type_check() -> None:
@@ -1406,8 +1457,16 @@ def _test_timedelta_conversion() -> None:
     class CustomTD(datetime.timedelta):
         pass
 
-    tmp = td_fr_td(CustomTD(-1, -1, -1))  # type: ignore
-    assert td == tmp and type(tmp) is datetime.timedelta  # type: ignore
+    ctd = CustomTD(-1, -1, -1)
+    assert td == td_fr_td(ctd)  # type: ignore
+    assert type(td_fr_td(ctd)) is datetime.timedelta  # type: ignore
+    assert type(td_fr_td(ctd, None)) is datetime.timedelta  # type: ignore
+    assert type(td_fr_td(ctd, datetime.timedelta)) is datetime.timedelta  # type: ignore
+    assert type(td_fr_td(ctd, CustomTD)) is CustomTD  # type: ignore
+    assert type(td_fr_td(td)) is datetime.timedelta  # type: ignore
+    assert type(td_fr_td(td, None)) is datetime.timedelta  # type: ignore
+    assert type(td_fr_td(td, datetime.timedelta)) is datetime.timedelta  # type: ignore
+    assert type(td_fr_td(td, CustomTD)) is CustomTD  # type: ignore
     assert td == td_fr_sec(td_to_sec(td))  # type: ignore
     assert td == td_fr_us(td_to_us(td))  # type: ignore
 
