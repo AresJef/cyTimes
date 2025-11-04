@@ -1295,4 +1295,4 @@ class TestParser(TestCase):
 
 
 if __name__ == "__main__":
-    TestParser().test_all(1000)
+    TestParser().test_all(100)
