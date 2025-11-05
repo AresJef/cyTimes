@@ -116,15 +116,15 @@ class Delta:
         seconds: cython.longlong = 0,
         milliseconds: cython.longlong = 0,
         microseconds: cython.longlong = 0,
-        year: cython.int = -1,
-        month: cython.int = -1,
-        day: cython.int = -1,
-        weekday: cython.int = -1,
-        hour: cython.int = -1,
-        minute: cython.int = -1,
-        second: cython.int = -1,
-        millisecond: cython.int = -1,
-        microsecond: cython.int = -1,
+        year: cython.int = utils.SENTINEL,
+        month: cython.int = utils.SENTINEL,
+        day: cython.int = utils.SENTINEL,
+        weekday: cython.int = utils.SENTINEL,
+        hour: cython.int = utils.SENTINEL,
+        minute: cython.int = utils.SENTINEL,
+        second: cython.int = utils.SENTINEL,
+        millisecond: cython.int = utils.SENTINEL,
+        microsecond: cython.int = utils.SENTINEL,
     ):
         """The difference between two datetime objects at both relative
         and absolute levels. The `<'Delta'>`class supports arithmetic
@@ -133,16 +133,16 @@ class Delta:
 
         ## Absolute Deltas (Replace specified fields)
 
-        :param year `<'int'>`: Absolute year. Defaults to `-1` (no change).
-        :param month `<'int'>`: Absolute month. Defaults to `-1` (no change).
-        :param day `<'int'>`: Absolute day. Defaults to `-1` (no change).
-        :param weekday `<'int'>`: Absolute weekday (0=Mon...6=Sun). Defaults to `-1` (no change).
-        :param hour `<'int'>`: Absolute hour. Defaults to `-1` (no change).
-        :param minute `<'int'>`: Absolute minute. Defaults to `-1` (no change).
-        :param second `<'int'>`: Absolute second. Defaults to `-1` (no change).
-        :param millisecond `<'int'>`: Absolute millisecond. Defaults to `-1` (no change).
+        :param year `<'int'>`: Absolute year. Defaults to `SENTINEL` (no change).
+        :param month `<'int'>`: Absolute month. Defaults to `SENTINEL` (no change).
+        :param day `<'int'>`: Absolute day. Defaults to `SENTINEL` (no change).
+        :param weekday `<'int'>`: Absolute weekday (0=Mon...6=Sun). Defaults to `SENTINEL` (no change).
+        :param hour `<'int'>`: Absolute hour. Defaults to `SENTINEL` (no change).
+        :param minute `<'int'>`: Absolute minute. Defaults to `SENTINEL` (no change).
+        :param second `<'int'>`: Absolute second. Defaults to `SENTINEL` (no change).
+        :param millisecond `<'int'>`: Absolute millisecond. Defaults to `SENTINEL` (no change).
             Overrides `microsecond` millisecond part if both are provided.
-        :param microsecond `<'int'>`: Absolute microsecond. Defaults to `-1` (no change).
+        :param microsecond `<'int'>`: Absolute microsecond. Defaults to `SENTINEL` (no change).
 
         ## Relative Deltas (Add to specified fields)
 

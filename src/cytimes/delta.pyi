@@ -1,6 +1,7 @@
 import datetime, numpy as np
 from dateutil.relativedelta import relativedelta
 from typing_extensions import overload, Self, TypeVar
+from cytimes.utils import SENTINEL
 
 # Types
 _DateT = TypeVar("_DateT", bound=datetime.date)
@@ -25,15 +26,15 @@ class Delta:
         seconds: int = 0,
         milliseconds: int = 0,
         microseconds: int = 0,
-        year: int = -1,
-        month: int = -1,
-        day: int = -1,
-        weekday: int = -1,
-        hour: int = -1,
-        minute: int = -1,
-        second: int = -1,
-        millisecond: int = -1,
-        microsecond: int = -1,
+        year: int = SENTINEL,
+        month: int = SENTINEL,
+        day: int = SENTINEL,
+        weekday: int = SENTINEL,
+        hour: int = SENTINEL,
+        minute: int = SENTINEL,
+        second: int = SENTINEL,
+        millisecond: int = SENTINEL,
+        microsecond: int = SENTINEL,
     ) -> None: ...
     @classmethod
     def from_relativedelta(cls, rd: relativedelta) -> Delta: ...
