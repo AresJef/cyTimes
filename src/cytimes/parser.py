@@ -1538,7 +1538,7 @@ class Configs:
     # Special methods -------------------------------------------------
     def __repr__(self) -> str:
         return (
-            "<%s (%s: year1st=%s day1st=%s | "
+            "<'%s' (%s: year1st=%s day1st=%s | "
             "sizes: jump=%d pertain=%d utc=%d tz=%d month=%d weekday=%d hms=%d ampm=%d)>"
             % (
                 self.__class__.__name__,
@@ -2259,7 +2259,7 @@ class Result:
             reprs.append("tzoffset=%d" % self.tzoffset)
 
         # Construct
-        return "<%s (resolved=%s: %s)>" % (
+        return "<'%s' (resolved=%s: %s)>" % (
             self.__class__.__name__,
             self._resolved,
             " ".join(reprs),
@@ -2414,9 +2414,9 @@ class Parser:
             self._cfg._day1st if day1st is None else bool(day1st),
         ):
             raise errors.ParserFailedError(
-                "<'%s'> Failed to parse '%s'.\n"
-                "Error: failed to extract any datetime components."
-                % (self.__class__.__name__, dtstr)
+                "<'%s'> Failed to parse '%s' %s.\n"
+                "Error: Cannot extract any datetime components."
+                % (self.__class__.__name__, dtstr, type(dtstr))
             )
 
         # Build
@@ -2465,8 +2465,8 @@ class Parser:
             raise
         except Exception as err:
             raise errors.ParserFailedError(
-                "<'%s'> Failed to parse '%s'.\n"
-                "Error: %s" % (self.__class__.__name__, dtstr, err)
+                "<'%s'> Failed to parse '%s' %s.\n"
+                "Error: %s" % (self.__class__.__name__, dtstr, type(dtstr), err)
             ) from err
 
         # Finished
@@ -4380,10 +4380,11 @@ def parse_obj(
             return utils.dt64_to_dt(dtobj, None, dtclass)
     except Exception as err:
         raise errors.ParserFailedError(
-            "<'%s'> Failed to parse %r.\nError: %s" % (Parser.__name__, dtobj, err)
+            "<'%s'> Failed to parse '%s' %s.\nError: %s"
+            % (Parser.__name__, dtobj, type(dtobj), err)
         ) from err
     # . invalid
     raise errors.ParserFailedError(
-        "<'%s'> Failed to parse %r.\n"
-        "Error: Unsupported data type %s." % (Parser.__name__, dtobj, type(dtobj))
+        "<'%s'> Failed to parse '%s' %s.\n"
+        "Error: Unsupported data type." % (Parser.__name__, dtobj, type(dtobj))
     )

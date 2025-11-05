@@ -1028,7 +1028,7 @@ class Delta:
             reprs.append("microsecond=%d" % self._microsecond)
 
         # Create
-        return "<%s(%s)>" % (self.__class__.__name__, ", ".join(reprs))
+        return "<'%s' (%s)>" % (self.__class__.__name__, ", ".join(reprs))
 
     def __hash__(self) -> int:
         if self._hashcode == -1:
