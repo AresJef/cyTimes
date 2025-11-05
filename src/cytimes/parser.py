@@ -1911,7 +1911,7 @@ class Result:
                 self.year = v0  # labeled as year
                 # . day-of-year conversion
                 if self.doy != -1:
-                    _ymd = utils.ymd_fr_day_of_year(v0, self.doy)
+                    _ymd = utils.ymd_fr_doy(v0, self.doy)
                     self.month, self.day = _ymd.month, _ymd.day
             elif midx != -1:
                 self.month = v0  # labeled as month
@@ -2723,7 +2723,7 @@ class Parser:
                     wkd = 1  # default to Monday
                     pos = 8  # after: YYYY-Www
                 # . calculate MM/DD
-                _ymd = utils.ymd_fr_isocalendar(year, week, wkd)
+                _ymd = utils.ymd_fr_iso(year, week, wkd)
                 year, month, day = _ymd.year, _ymd.month, _ymd.day
 
             # . YYYY-DD[D]
@@ -2733,7 +2733,7 @@ class Parser:
                 if days == -1:
                     return False  # exit: invalid
                 # Calculate MM/DD
-                _ymd = utils.ymd_fr_day_of_year(year, days)
+                _ymd = utils.ymd_fr_doy(year, days)
                 month, day = _ymd.month, _ymd.day
                 pos = 8  # after: YYYY-DDD
 
@@ -2770,7 +2770,7 @@ class Parser:
                 wkd = 1  # default to Monday
                 pos = 7  # after: YYYYWww
             # . calculate MM/DD
-            _ymd = utils.ymd_fr_isocalendar(year, week, wkd)
+            _ymd = utils.ymd_fr_iso(year, week, wkd)
             year, month, day = _ymd.year, _ymd.month, _ymd.day
 
         # . YYYY[D]
@@ -2794,7 +2794,7 @@ class Parser:
                 if days == -1:
                     return False  # exit: invalid
                 # Calculate MM/DD
-                _ymd = utils.ymd_fr_day_of_year(year, days)
+                _ymd = utils.ymd_fr_doy(year, days)
                 month, day = _ymd.month, _ymd.day
                 pos = 7  # after: YYYYDDD
 
@@ -3547,7 +3547,7 @@ class Parser:
 
         # Set date by ISO week date
         year: cython.int = self._res._ymd[self._res._yidx]
-        _ymd = utils.ymd_fr_isocalendar(year, week, wkd)
+        _ymd = utils.ymd_fr_iso(year, week, wkd)
         self._res.set_ymd_int(2, _ymd.month)
         self._res.set_ymd_int(3, _ymd.day)
         self._pos += 1  # skip token(1)
