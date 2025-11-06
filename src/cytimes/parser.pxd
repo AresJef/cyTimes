@@ -407,16 +407,17 @@ cdef class Parser:
     cdef inline str _get_next_token(self)
     cdef inline bint _reset_token_peeks(self) noexcept
     # . setters
-    cdef inline bint _set_ymd_by_token(self, int flag, str token, Py_ssize_t token_len=?, int token_kind=?) except -1
-    cdef inline bint _set_hms_by_token(self, int flag, str token, Py_ssize_t token_len=?, int token_kind=?) except -1
-    cdef inline bint _set_hour_by_token(self, str token, Py_ssize_t token_len=?, int token_kind=?) except -1
-    cdef inline bint _set_minute_by_token(self, str token, Py_ssize_t token_len=?, int token_kind=?) except -1
-    cdef inline bint _set_second_by_token(self, str token, Py_ssize_t token_len=?, int token_kind=?) except -1
+    cdef inline bint _set_ymd_by_token(self, int flag, str token=?, Py_ssize_t token_len=?, int token_kind=?) except -1
+    cdef inline bint _set_hms_by_token(self, int flag, str token=?, Py_ssize_t token_len=?, int token_kind=?) except -1
+    cdef inline bint _set_hour_by_token(self, str token=?, Py_ssize_t token_len=?, int token_kind=?) except -1
+    cdef inline bint _set_minute_by_token(self, str token=?, Py_ssize_t token_len=?, int token_kind=?) except -1
+    cdef inline bint _set_second_by_token(self, str token=?, Py_ssize_t token_len=?, int token_kind=?) except -1
     cdef inline int _adjust_hour_by_ampm(self, int hour, int flag) except -1
 
 cdef Parser _DEFAULT_PARSER
 
 # Parse
 cpdef datetime.datetime parse(str dtstr, object default=?, object year1st=?, object day1st=?, bint ignoretz=?, bint isoformat=?, Configs cfg=?, object dtclass=?)
-
 cpdef datetime.datetime parse_obj(object dtobj, object default=?, object year1st=?, object day1st=?, bint ignoretz=?, bint isoformat=?, Configs cfg=?, object dtclass=?)
+cpdef int parse_month(object token, Configs cfg=?, bint raise_error=?) except -2
+cpdef int parse_weekday(object token, Configs cfg=?, bint raise_error=?) except -2

@@ -129,3 +129,13 @@ def parse_obj(
     cfg: Configs | None = None,
     dtclass: type[datetime.datetime] | None = None,
 ) -> datetime.datetime: ...
+def parse_month(
+    token: str,
+    cfg: Configs | None = None,
+    raise_error: bool = True,
+) -> int: ...
+def parse_weekday(
+    token: str,
+    cfg: Configs | None = None,
+    raise_error: bool = True,
+) -> int: ...

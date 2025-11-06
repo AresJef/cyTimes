@@ -35,7 +35,15 @@ import datetime
 from dateutil.parser._parser import parserinfo
 from cytimes import utils, errors
 
-__all__ = ["timelex", "Configs", "Parser", "parse", "parse_obj"]
+__all__ = [
+    "timelex",
+    "Configs",
+    "Parser",
+    "parse",
+    "parse_obj",
+    "parse_month",
+    "parse_weekday",
+]
 
 
 # Timelex -------------------------------------------------------------------------------------
@@ -2330,12 +2338,12 @@ class Parser:
     def parse(
         self,
         dtstr: str,
-        default: datetime.date | datetime.datetime | None = None,
-        year1st: bool | None = None,
-        day1st: bool | None = None,
+        default: object = None,
+        year1st: object = None,
+        day1st: object = None,
         ignoretz: cython.bint = True,
         isoformat: cython.bint = True,
-        dtclass: type[datetime.datetime] = None,
+        dtclass: object = None,
     ) -> datetime.datetime:
         """Parse a date/time string into a datetime `<'datetime.datetime'>`.
 
@@ -2479,7 +2487,7 @@ class Parser:
         self,
         dtstr: str,
         default: object,
-        dtclass: type[datetime.datetime],
+        dtclass: object,
     ) -> datetime.datetime:
         """(internal) Build a datetime from the parsed `Result`, honoring timezone settings `<'datetime.datetime'>`.
 
@@ -2530,7 +2538,7 @@ class Parser:
         self,
         default: object,
         tzinfo: object,
-        dtclass: type[datetime.datetime],
+        dtclass: object,
     ) -> datetime.datetime:
         """(internal) Generate a datetime from `Result` + `default` and optional tzinfo `<'datetime.datetime'>`.
 
@@ -3922,7 +3930,7 @@ class Parser:
     def _set_ymd_by_token(
         self,
         flag: cython.int,
-        token: str,
+        token: str = None,
         token_len: cython.Py_ssize_t = -1,
         token_kind: cython.int = -1,
     ) -> cython.bint:
@@ -3934,7 +3942,7 @@ class Parser:
 
         :param flag `<'int'>`: The Y/M/D flag (0=UNKNOWN, 1=YEAR, 2=MONTH, 3=DAY).
             Use 0 when the token is ambiguous (e.g., “12”).
-        :param token `<'str/None'>`: The candidate token for Y/M/D component.
+        :param token `<'str/None'>`: The candidate token for Y/M/D component. Defaults to `None`.
         :param token_len `<'int'>`: Optional length of `token`.
             Defaults to `-1` (let the method computes it).
         :param token_kind `<'int'>`: Optional numeric classification of `token`.
@@ -3978,7 +3986,7 @@ class Parser:
     def _set_hms_by_token(
         self,
         flag: cython.int,
-        token: str,
+        token: str = None,
         token_len: cython.Py_ssize_t = -1,
         token_kind: cython.int = -1,
     ) -> cython.bint:
@@ -3991,7 +3999,7 @@ class Parser:
 
         :param flag `<'int'>`: H/M/S flag (0=hour, 1=minute, 2=second).
             Any other value is invalid.
-        :param token `<'str/None'>`: The candidate token for H/M/S.
+        :param token `<'str/None'>`: The candidate token for H/M/S. Defaults to `None`.
         :param token_len `<'int'>`: Optional length of `token`.
             Defaults to `-1` (let the method computes it).
         :param token_kind `<'int'>`: Optional numeric classification of `token`.
@@ -4021,7 +4029,7 @@ class Parser:
     @cython.exceptval(-1, check=False)
     def _set_hour_by_token(
         self,
-        token: str,
+        token: str = None,
         token_len: cython.Py_ssize_t = -1,
         token_kind: cython.int = -1,
     ) -> cython.bint:
@@ -4032,7 +4040,7 @@ class Parser:
         - `Decimal hours` (e.g., `'14.5'`, `'7.25'`) → sets `hour` to the integer part
           and computes `minute = round(fraction * 60)` (clamp to 59).
 
-        :param token `<'str/None'>`: The candidate token for hour.
+        :param token `<'str/None'>`: The candidate token for hour. Defaults to `None`.
         :param token_len `<'int'>`: Optional length of `token`.
             Defaults to `-1` (let the method computes it).
         :param token_kind `<'int'>`: Optional numeric classification of `token`.
@@ -4083,7 +4091,7 @@ class Parser:
     @cython.exceptval(-1, check=False)
     def _set_minute_by_token(
         self,
-        token: str,
+        token: str = None,
         token_len: cython.Py_ssize_t = -1,
         token_kind: cython.int = -1,
     ) -> cython.bint:
@@ -4094,7 +4102,7 @@ class Parser:
         - `Decimal minutes` (e.g., `'12.5'`, `'3.25'`) → sets `minute to the integer part
           and computes `second = round(fraction * 60)` (clamp to 59).
 
-        :param token `<'str/None'>`: The candidate token for minute.
+        :param token `<'str/None'>`: The candidate token for minute. Defaults to `None`.
         :param token_len `<'int'>`: Optional length of `token`.
             Defaults to `-1` (let the method computes it).
         :param token_kind `<'int'>`: Optional numeric classification of `token`.
@@ -4145,7 +4153,7 @@ class Parser:
     @cython.exceptval(-1, check=False)
     def _set_second_by_token(
         self,
-        token: str,
+        token: str = None,
         token_len: cython.Py_ssize_t = -1,
         token_kind: cython.int = -1,
     ) -> cython.bint:
@@ -4156,7 +4164,7 @@ class Parser:
         - `Decimal seconds` (e.g., `'12.5'`, `'3.250001'`) → sets `second` to the integer part
           and `microsecond` to the fraction (up to 6 digits, exceeding are ignored).
 
-        :param token `<'str/None'>`: The candidate token for second.
+        :param token `<'str/None'>`: The candidate token for second. Defaults to `None`.
         :param token_len `<'int'>`: Optional length of `token`.
             Defaults to `-1` (let the method computes it).
         :param token_kind `<'int'>`: Optional numeric classification of `token`.
@@ -4232,13 +4240,13 @@ _DEFAULT_PARSER: Parser = Parser()
 @cython.ccall
 def parse(
     dtstr: str,
-    default: datetime.date | datetime.datetime | None = None,
-    year1st: bool | None = None,
-    day1st: bool | None = None,
+    default: object = None,
+    year1st: object = None,
+    day1st: object = None,
     ignoretz: cython.bint = True,
     isoformat: cython.bint = True,
     cfg: Configs = None,
-    dtclass: type[datetime.datetime] = None,
+    dtclass: object = None,
 ) -> datetime.datetime:
     """Parse a date/time string into a datetime `<'datetime.datetime'>`.
 
@@ -4316,13 +4324,13 @@ def parse(
 @cython.ccall
 def parse_obj(
     dtobj: object,
-    default: datetime.date | datetime.datetime | None = None,
-    year1st: bool | None = None,
-    day1st: bool | None = None,
+    default: object = None,
+    year1st: object = None,
+    day1st: object = None,
     ignoretz: cython.bint = True,
     isoformat: cython.bint = True,
     cfg: Configs = None,
-    dtclass: type[datetime.datetime] = None,
+    dtclass: object = None,
 ) -> datetime.datetime:
     """Parse a datetime-like object into a datetime `<'datetime.datetime'>`.
 
@@ -4388,3 +4396,125 @@ def parse_obj(
         "<'%s'> Failed to parse '%s' %s.\n"
         "Error: Unsupported data type." % (Parser.__name__, dtobj, type(dtobj))
     )
+
+
+@cython.ccall
+@cython.exceptval(-2, check=False)
+def parse_month(
+    token: int | str | None,
+    cfg: Configs = None,
+    raise_error: cython.bint = True,
+) -> cython.int:
+    """Normalize a month token to month number 1(Jan)..12(Dec) `<'int'>`.
+
+    :param token `<'int/str/None'>`: Month token to normalize, accepts:
+
+        - `None` → returns `-1` (or raises if `raise_error=True`)
+        - `int`  → returns the number if in `1..12`; returns `-1` (or raises) otherwise.
+                   Special case: `-1` is passed through as a sentinel.
+        - `str`  → resolved via `Configs.get_month` (e.g., "Jan", "September",
+                   localized aliases). Returns `1..12`, or `-1` (or raises) if unrecognized.
+
+    :param cfg `<'Configs/None'>`: Configs used for string lookup. Defaults to `None`.
+        If `None` uses module's default Configs.
+    :param raise_error `<'bool'>`: If True, raise `InvalidMonthError` on invalid input;
+        if False, return `-1`. Defaults to True.
+    :returns `<'int'>`: Month number in `1..12`, or `-1` if invalid and `raise_error=False`.
+    :raises `<'InvalidMonthError'>`: On invalid `token` input when `raise_error=True`.
+    """
+    # <'None'>
+    if token is None:
+        return -1  # exit
+
+    # `<'int'>`
+    if isinstance(token, int):
+        num: cython.longlong = token
+        if num == -1:
+            return -1
+        if not (1 <= num <= 12):
+            if raise_error:
+                raise errors.InvalidMonthError(
+                    "Invalid month number '%d', must be between 1(Jan)..12(Dec)." % num
+                )
+            return -1
+        return num  # exit
+
+    # <'str'>
+    if isinstance(token, str):
+        if cfg is None:
+            cfg = _DEFAULT_CONFIGS
+        num: cython.longlong = cfg.get_month(token)
+        if num == -1 and raise_error:
+            raise errors.InvalidMonthError(
+                "Invalid month '%s', not recognized." % token
+            )
+        return num  # exit
+
+    # Invalid
+    if raise_error:
+        raise errors.InvalidMonthError(
+            "Invalid month '%s' %s.\n"
+            "Expects integer (1-12) or literal month name." % (token, type(token))
+        )
+    return -1
+
+
+@cython.ccall
+@cython.exceptval(-2, check=False)
+def parse_weekday(
+    token: int | str | None,
+    cfg: Configs = None,
+    raise_error: cython.bint = True,
+) -> cython.int:
+    """Normalize a weekday token to weekday number 0(Mon)..6(Sun) `<'int'>`.
+
+    :param token `<'int/str/None'>`: Weekday token to normalize, accepts:
+
+        - `None` → returns `-1` (or raises if `raise_error=True`)
+        - `int`  → returns the number if in `0..6`; returns `-1` (or raises) otherwise.
+                   Special case: `-1` is passed through as a sentinel.
+        - `str`  → resolved via `Configs.get_weekday` (e.g., "Mon", "Sunday",
+                   localized aliases). Returns `0..6`, or `-1` (or raises) if unrecognized.
+
+    :param cfg `<'Configs/None'>`: Configs used for string lookup. Defaults to `None`.
+        If `None` uses module's default Configs.
+    :param raise_error `<'bool'>`: If True, raise `InvalidWeekdayError` on invalid input;
+        if False, return `-1`. Defaults to True.
+    :returns `<'int'>`: Weekday number in `0..6`, or `-1` if invalid and `raise_error=False`.
+    :raises `<'InvalidWeekdayError'>`: On invalid `token` input when `raise_error=True`.
+    """
+    # <'None'>
+    if token is None:
+        return -1  # exit
+
+    # `<'int'>`
+    if isinstance(token, int):
+        num: cython.longlong = token
+        if num == -1:
+            return -1
+        if not (0 <= num <= 6):
+            if raise_error:
+                raise errors.InvalidWeekdayError(
+                    "Invalid weekday number '%d', must be between 0(Mon)..6(Sun)." % num
+                )
+            return -1
+        return num  # exit
+
+    # <'str'>
+    if isinstance(token, str):
+        if cfg is None:
+            cfg = _DEFAULT_CONFIGS
+        num: cython.longlong = cfg.get_weekday(token)
+        if num == -1 and raise_error:
+            raise errors.InvalidWeekdayError(
+                "Invalid weekday '%s', not recognized." % token
+            )
+        return num  # exit
+
+    # Invalid
+    if raise_error:
+        raise errors.InvalidWeekdayError(
+            "Invalid weekday '%s' %s.\n"
+            "Expects integer (0-6) or literal weekday name." % (token, type(token))
+        )
+    return -1
