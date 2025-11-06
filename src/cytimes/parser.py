@@ -206,8 +206,8 @@ class Configs:
         (e.g., month, weekday, AM/PM, timezone names) and enforces cross-namespace
         uniqueness rules so a token cannot silently change meaning.
 
-        :param year1st `<'bool'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `True`.
-        :param day1st `<'bool'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `False`.
+        :param year1st `<'bool'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `True`.
+        :param day1st `<'bool'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `False`.
 
         Ambiguous Y/M/D
         ---------------
@@ -637,9 +637,9 @@ class Configs:
         with the corresponding UTC offset.
 
         :param token `<'str'>`: The `timezone` token to add (case-insensitive).
-        :param hours `<'int'>`: UTC offset in hours, defaults to `0`.
-        :param minutes `<'int'>`: UTC offset in minutes, defaults to `0`.
-        :param seconds `<'int'>`: UTC offset in seconds, defaults to `0`.
+        :param hours `<'int'>`: UTC offset in hours. Defaults to `0`.
+        :param minutes `<'int'>`: UTC offset in minutes. Defaults to `0`.
+        :param seconds `<'int'>`: UTC offset in seconds. Defaults to `0`.
         :returns `<'bool'>`: True if added successfully, otherwise False.
         :raises `<'InvalidConfigsValue'>`: If token conflicts with other namespaces,
             or the UTC offset (hours & minutes & seconds) is invalid.
@@ -2362,10 +2362,10 @@ class Parser:
         :param dtstr `<'str'>`: The input date/time string.
         :param default `<'datetime/date/None'>`: Fallback source for missing Y/M/D. Defaults to `None`.
             If `None` and required fields are missing, raises an error.
-        :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
-            If 'None', uses `cfg.year1st` if 'cfg' is specified; otherwise, defaults to `True`.
-        :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `None`.
-            If 'None', uses `cfg.day1st` if 'cfg' is specified; otherwise, defaults to `False`.
+        :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
+            If 'None', uses `cfg.year1st` if 'cfg' is specified; otherwise. Defaults to `True`.
+        :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
+            If 'None', uses `cfg.day1st` if 'cfg' is specified; otherwise. Defaults to `False`.
         :param ignoretz `<'bool'>`: If `True`, ignore any timezone information and return a naive datetime. Defaults to `True`.
             When timezone info is not needed, setting to `True` can improve performance.
         :param isoformat `<'bool'>`: If `True`, attempt ISO parsing first (automatically falls back to token parsing on failure).
@@ -4269,10 +4269,10 @@ def parse(
     :param dtstr `<'str'>`: The input date/time string.
     :param default `<'datetime/date/None'>`: Fallback source for missing Y/M/D. Defaults to `None`.
         If `None` and required fields are missing, raises an error.
-    :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
-        If 'None', uses `cfg.year1st` if 'cfg' is specified; otherwise, defaults to `True`.
-    :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `None`.
-        If 'None', uses `cfg.day1st` if 'cfg' is specified; otherwise, defaults to `False`.
+    :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
+        If 'None', uses `cfg.year1st` if 'cfg' is specified; otherwise. Defaults to `True`.
+    :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
+        If 'None', uses `cfg.day1st` if 'cfg' is specified; otherwise. Defaults to `False`.
     :param ignoretz `<'bool'>`: If `True`, ignore any timezone information and return a naive datetime. Defaults to `True`.
         When timezone info is not needed, setting to `True` can improve performance.
     :param isoformat `<'bool'>`: If `True`, attempt ISO parsing first (automatically falls back to token parsing on failure).
@@ -4351,10 +4351,10 @@ def parse_obj(
 
     :param default `<'datetime/date/None'>`: Fallback source for missing Y/M/D. Defaults to `None`.
         If `None` and required fields are missing, raises an error.
-    :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
-        If 'None', uses `cfg.year1st` if 'cfg' is specified; otherwise, defaults to `True`.
-    :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `None`.
-        If 'None', uses `cfg.day1st` if 'cfg' is specified; otherwise, defaults to `False`.
+    :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
+        If 'None', uses `cfg.year1st` if 'cfg' is specified; otherwise. Defaults to `True`.
+    :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
+        If 'None', uses `cfg.day1st` if 'cfg' is specified; otherwise. Defaults to `False`.
     :param ignoretz `<'bool'>`: If `True`, ignore any timezone information and return a naive datetime. Defaults to `True`.
         When timezone info is not needed, setting to `True` can improve performance.
     :param isoformat `<'bool'>`: If `True`, attempt ISO parsing first (automatically falls back to token parsing on failure).
