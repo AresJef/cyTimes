@@ -3,7 +3,7 @@
 from datetime import UTC
 from cytimes.delta import Delta
 from cytimes.parser import Configs, Parser
-from cytimes.parser import timelex, parse, parse_dtobj
+from cytimes.parser import timelex, parse, parse_obj
 from cytimes.pddt import Pddt
 from cytimes.pydt import Pydt
 from cytimes import errors
@@ -18,7 +18,7 @@ __all__ = [
     # Function
     "timelex",
     "parse",
-    "parse_dtobj",
+    "parse_obj",
     # Exception
     "errors",
 ]
