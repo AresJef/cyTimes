@@ -4,6 +4,7 @@ import time, unittest, datetime
 import numpy as np, pandas as pd, pendulum as pl
 from cytimes.pydt import Pydt
 from cytimes.delta import Delta
+from cytimes import errors
 from dateutil.relativedelta import relativedelta
 
 
@@ -59,6 +60,9 @@ class TestDelta(TestCase):
     def test_from_relativedelta(self) -> None:
         test = "From Relativedelta"
         self.log_start(test)
+
+        with self.assertRaises(errors.InvalidRelativeDelta):
+            ctd = Delta.from_relativedelta(1)
 
         rtd = relativedelta(days=1)
         ctd = Delta.from_relativedelta(rtd)
