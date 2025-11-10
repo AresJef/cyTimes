@@ -4,6 +4,7 @@ import time, unittest, datetime
 import numpy as np, pandas as pd, pendulum as pl
 from cytimes import errors
 from cytimes.pydt import Pydt
+from cytimes.delta import Delta
 
 warnings.filterwarnings("ignore")
 
@@ -43,6 +44,7 @@ class Test_Pydt(TestCase):
         self.test_timezone()
         self.test_arithmetic()
         self.test_comparison()
+        self.test_subclass()
 
     def test_parse(self) -> None:
         test = "Parse"
@@ -56,13 +58,17 @@ class Test_Pydt(TestCase):
             self.assertEqual(dt, Pydt.parse(Pydt.parse(dt)))
             # Parse date & subclasses
             date = dt.date()
-            self.assertEqual(date, Pydt.parse(date))
-            self.assertEqual(date, Pydt.parse(pl.date(date.year, date.month, date.day)))
-            self.assertEqual(date, Pydt.parse(Pydt.parse(date)))
+            self.assertEqual(date, Pydt.parse(date).date())
+            self.assertEqual(
+                date, Pydt.parse(pl.date(date.year, date.month, date.day)).date()
+            )
+            self.assertEqual(date, Pydt.parse(Pydt.parse(date)).date())
             # Parse datetime string
             self.assertEqual(dt, Pydt.parse(str(dt), ignoretz=False))
 
         # Test parser error
+        with self.assertRaises(errors.InvalidArgumentError):
+            Pydt.parse("2", default="XXX")
         with self.assertRaises(errors.InvalidArgumentError):
             Pydt.parse("xxx")
         with self.assertRaises(errors.InvalidArgumentError):
@@ -75,8 +81,7 @@ class Test_Pydt(TestCase):
             "1970-01-01" "19700101 030405.000006",
         ):
             self.assertEqual(
-                datetime.datetime(1970, 1, 2),
-                Pydt.parse("2", default=default),
+                datetime.datetime(1970, 1, 2), Pydt.parse("2", default=default)
             )
 
         # Parse integer & float
@@ -104,6 +109,8 @@ class Test_Pydt(TestCase):
         self.log_start(test)
 
         # now()
+        with self.assertRaises(errors.InvalidTimezoneError):
+            Pydt.now("XXX")
         for tz in (None, datetime.UTC, ZoneInfo("CET")):
             self.assertEqualDtsMs(datetime.datetime.now(tz), Pydt.now(tz))
 
@@ -190,6 +197,15 @@ class Test_Pydt(TestCase):
             Pydt.fromisocalendar(1970, 1, 2),
         )
 
+        # from day-of-year
+        for doy in (1, 32, 60, 365):
+            self.assertEqual(
+                datetime.datetime(1970, 1, 1) + datetime.timedelta(days=doy - 1),
+                Pydt.fromdayofyear(1970, doy),
+            )
+        self.assertEqual(datetime.datetime(1970, 12, 31), Pydt.fromdayofyear(1970, 366))
+        self.assertEqual(datetime.datetime(1970, 12, 31), Pydt.fromdayofyear(1970, 367))
+
         # fromdate()
         for date in (datetime.date(1970, 1, 2), pl.date(1970, 1, 2)):
             self.assertEqual(date, Pydt.fromdate(date).date())
@@ -197,8 +213,8 @@ class Test_Pydt(TestCase):
         # fromdatetime()
         for dt in (
             datetime.datetime(1970, 1, 2, 3, 4, 5, 6),
-            pl.datetime(1970, 1, 2, 3, 4, 5, 6),
             pd.Timestamp("1970-01-02 03:04:05.000006"),
+            pl.datetime(1970, 1, 2, 3, 4, 5, 6),
         ):
             for tz in (None, datetime.UTC, ZoneInfo("CET")):
                 dt = dt.replace(tzinfo=tz)
@@ -258,9 +274,9 @@ class Test_Pydt(TestCase):
             # toordinal()
             self.assertEqual(dt.toordinal(), pt.toordinal())
             # seconds()
-            self.assertEqual(dt, Pydt.fromseconds(pt.seconds(), tz))
+            self.assertEqual(dt, Pydt.fromseconds(pt.toseconds(), tz))
             # microseconds()
-            self.assertEqual(dt, Pydt.fromicroseconds(pt.microseconds(), tz))
+            self.assertEqual(dt, Pydt.fromicroseconds(pt.tomicroseconds(), tz))
             # timestamp()
             self.assertEqual(dt.timestamp(), pt.timestamp())
             # date()
@@ -385,6 +401,19 @@ class Test_Pydt(TestCase):
                         dt.to_day(day),
                         dt.replace(day=dt.day + day),
                     )
+
+            # Test offset special cases
+            for offset in range(-1000, 1001):
+                # to_year()
+                self.assertEqual(dt.to_year(offset), dt + Delta(years=offset))
+                # to_quarter()
+                self.assertEqual(dt.to_quarter(offset), dt + Delta(quarters=offset))
+                # to_month()
+                self.assertEqual(dt.to_month(offset), dt + Delta(months=offset))
+                # to_weekday()
+                self.assertEqual(dt.to_weekday(offset), dt + Delta(weeks=offset))
+                # to_day()
+            self.assertEqual(dt.to_day(offset), dt + Delta(days=offset))
 
         # to_datetime()
         for tz in (None, datetime.UTC, ZoneInfo("CET")):
@@ -705,21 +734,21 @@ class Test_Pydt(TestCase):
             self.assertEqual(13, pt.leap_bt_year(1970))
             self.assertEqual(365, pt.days_in_year())
             self.assertEqual(738520, pt.days_bf_year())
-            self.assertEqual(136, pt.days_of_year())
+            self.assertEqual(136, pt.day_of_year())
             self.assertTrue(pt.is_year(2023))
             self.assertFalse(pt.is_year(2024))
 
             # Quarter --------------------------------------------------------
             self.assertEqual(91, pt.days_in_quarter())
             self.assertEqual(90, pt.days_bf_quarter())
-            self.assertEqual(46, pt.days_of_quarter())
+            self.assertEqual(46, pt.day_of_quarter())
             self.assertTrue(pt.is_quarter(2))
             self.assertFalse(pt.is_quarter(1))
 
             # Month ----------------------------------------------------------
             self.assertEqual(31, pt.days_in_month())
             self.assertEqual(120, pt.days_bf_month())
-            self.assertEqual(16, pt.days_of_month())
+            self.assertEqual(16, pt.day_of_month())
             self.assertTrue(pt.is_month(5))
             self.assertTrue(pt.is_month("May"))
             self.assertFalse(pt.is_month("Jan"))
@@ -868,6 +897,7 @@ class Test_Pydt(TestCase):
                     "microseconds": args[6],
                 }
                 self.assertEqual(dt + datetime.timedelta(**kwargs), dt.add(**kwargs))
+
                 # sub()
                 self.assertEqual(dt - datetime.timedelta(**kwargs), dt.sub(**kwargs))
 
@@ -998,7 +1028,7 @@ class Test_Pydt(TestCase):
             for d, b in enumerate(inclusive):
                 self.assertEqual(d, dt.diff(dt_str, unit, True, b))
         # . incomparable
-        with self.assertRaises(errors.IncomparableError):
+        with self.assertRaises(errors.InvalidArgumentError):
             dt.diff("1972-02-02 01:01:01+01:00", "us")
 
         # addition
@@ -1042,20 +1072,6 @@ class Test_Pydt(TestCase):
     def test_comparison(self) -> None:
         test = "Comparison"
         self.log_start(test)
-
-        # closest / farthest
-        dt = Pydt(1970, 1, 1)
-        dts = [dt.sub(microseconds=i) for i in range(1, 4)] + [
-            dt.add(microseconds=i) for i in range(1, 4)
-        ]
-        self.assertEqual(dt.sub(microseconds=1), dt.closest(*dts))
-        self.assertIsNone(dt.closest())
-        with self.assertRaises(errors.IncomparableError):
-            dt.closest("1972-02-02 01:01:01+01:00")
-        self.assertEqual(dt.sub(microseconds=3), dt.farthest(*dts))
-        self.assertIsNone(dt.farthest())
-        with self.assertRaises(errors.IncomparableError):
-            dt.farthest("1972-02-02 01:01:01+01:00")
 
         # is_past / is_future
         dt = Pydt.now().sub(minutes=1)
@@ -1115,17 +1131,27 @@ class Test_Pydt(TestCase):
             if tz is None:
                 self.assertTrue(dt <= np.datetime64(eq) and np.datetime64(dt) < gt)
 
-        # String
-        dt = Pydt(1970, 1, 2, 3, 4, 5, 6)
-        self.assertTrue(dt == "1970-01-02 03:04:05.000006")
-        self.assertTrue(dt >= "1970-01-02 03:04:05.000005")
-        self.assertTrue(dt <= "1970-01-02 03:04:05.000007")
-
         # Incomparable
-        with self.assertRaises(errors.IncomparableError):
+        with self.assertRaises(TypeError):
             dt > "1972-02-02 01:01:01+01:00"
         with self.assertRaises(TypeError):
             dt < datetime.timedelta(1)
+
+        self.log_ended(test)
+
+    def test_subclass(self) -> None:
+        test = "Subclass"
+        self.log_start(test)
+
+        class MyPydt(Pydt):
+            def greet(self) -> str:
+                return "Hello"
+
+        my_dt = MyPydt(2023, 5, 16, 3, 4, 5, 6)
+        self.assertEqual("Hello", my_dt.greet())
+        self.assertIsInstance(my_dt, Pydt)
+        self.assertIsInstance(my_dt, MyPydt)
+        self.assertIsInstance(my_dt.to_curr_month(20), MyPydt)
 
         self.log_ended(test)
 
