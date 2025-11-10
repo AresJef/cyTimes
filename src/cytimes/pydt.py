@@ -3311,10 +3311,12 @@ class Pydt(_Pydt):
 
         # Construct datetime
         if fold == 1:
-            return _Pydt.__new__(
+            pt: _Pydt = _Pydt.__new__(
                 cls, year, month, day, hour, minute, second, microsecond, tzinfo, fold=1
             )
         else:
-            return _Pydt.__new__(
+            pt: _Pydt = _Pydt.__new__(
                 cls, year, month, day, hour, minute, second, microsecond, tzinfo
             )
+        pt.__cls = cls
+        return pt
