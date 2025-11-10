@@ -249,7 +249,8 @@ class Configs:
         ```
         """
         if not isinstance(info, parserinfo):
-            errors.raise_type_error(
+            errors.raise_error(
+                errors.InvalidParserInfo,
                 cls,
                 "from_parserinfo(info)",
                 "Expects an instance of 'dateutil.parser.parserinfo', "
@@ -1388,7 +1389,7 @@ class Configs:
         :raises `<'InvalidConfigsValue'>`: If the token is not a string.
         """
         if not isinstance(token, str):
-            errors.raise_configs_value_error(
+            errors.raise_configs_token_error(
                 self._cls(),
                 "Token for 'Configs.%s' must be a string, instead got %s."
                 % (namespace, type(token)),
@@ -1412,7 +1413,7 @@ class Configs:
         """
         # Validate token
         if token is None:
-            errors.raise_configs_value_error(
+            errors.raise_configs_token_error(
                 self._cls(),
                 "Token for 'Configs.%s' must be a string, instead got None."
                 % namespace,
@@ -1455,7 +1456,7 @@ class Configs:
 
         # Raise error
         if overlap:
-            errors.raise_configs_value_error(
+            errors.raise_configs_token_error(
                 self._cls(),
                 "Token '%s' for 'Configs.%s' conflicts with existing tokens in 'Configs.%s'."
                 % (token, namespace, overlap),
@@ -1475,13 +1476,13 @@ class Configs:
         :returns `<'str'>`: The lowercase variant of the token.
         """
         if token is None:
-            errors.raise_configs_value_error(
+            errors.raise_configs_token_error(
                 self._cls(),
                 "Token for 'Configs.%s' must be a string, instead got None."
                 % namespace,
             )
         if str_len(token) == 0:
-            errors.raise_configs_value_error(
+            errors.raise_configs_token_error(
                 self._cls(),
                 "Token for 'Configs.%s' cannot be an empty string." % namespace,
             )
@@ -1497,7 +1498,7 @@ class Configs:
             the lowercase, uppercase, and titlecase variants of the token.
         """
         if token is None:
-            errors.raise_configs_value_error(
+            errors.raise_configs_token_error(
                 self._cls(), "Namespace `token` cannot be None."
             )
         return (token.lower(), token.upper(), token.title())
@@ -1517,7 +1518,7 @@ class Configs:
         if not isinstance(value, int):
             errors.raise_configs_value_error(
                 self._cls(),
-                "The value for 'Configs.%s' must be an integer, instead got %s."
+                "Value for 'Configs.%s' must be an integer, instead got %s."
                 % (namespace, type(value)),
             )
         return value
@@ -1544,7 +1545,7 @@ class Configs:
         if not minimum <= value <= maximum:
             errors.raise_configs_value_error(
                 self._cls(),
-                "The value for 'Configs.%s' must be an integer between %d..%d, instead got %d."
+                "Value for 'Configs.%s' must be an integer between %d..%d, instead got %d."
                 % (namespace, minimum, maximum, value),
             )
         return value
