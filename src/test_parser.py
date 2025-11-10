@@ -1142,7 +1142,7 @@ class TestParser(TestCase):
             res = parser.parse(
                 dtstr,
                 default=default,
-                year1st=False,
+                yearfirst=False,
                 ignoretz=ignoretz,
                 isoformat=isoformat,
             )
@@ -1158,7 +1158,7 @@ class TestParser(TestCase):
                 parser.parse(
                     dtstr,
                     default=default,
-                    year1st=False,
+                    yearfirst=False,
                     ignoretz=ignoretz,
                     isoformat=isoformat,
                 )
@@ -1204,27 +1204,27 @@ class TestParser(TestCase):
         for dtstr, base_no_tz, base_tz in self.dts:
             # fmt: off
             # Isoformat=True & ignoretz=True
-            res = parse(dtstr, default=default, year1st=False, cfg=cfg, isoformat=True, ignoretz=True)
+            res = parse(dtstr, default=default, yearfirst=False, cfg=cfg, isoformat=True, ignoretz=True)
             assert base_no_tz == str(res), "%r:\nBase:\t%r\nParse:\t%r" % (dtstr, base_no_tz, str(res))
 
             # Isoformat=True & ignoretz=False
-            res = parse(dtstr, default=default, year1st=False, cfg=cfg, isoformat=True, ignoretz=False)
+            res = parse(dtstr, default=default, yearfirst=False, cfg=cfg, isoformat=True, ignoretz=False)
             assert base_tz == str(res), "%r:\nBase:\t%r\nParse:\t%r" % (dtstr, base_tz, str(res))
 
             # Isoformat=False & ignoretz=True
-            res = parse(dtstr, default=default, year1st=False, cfg=cfg, isoformat=False, ignoretz=True)
+            res = parse(dtstr, default=default, yearfirst=False, cfg=cfg, isoformat=False, ignoretz=True)
             assert base_no_tz == str(res), "%r:\nBase:\t%r\nParse:\t%r" % (dtstr, base_no_tz, str(res))
 
             # Isoformat=False & ignoretz=False
-            res = parse(dtstr, default=default, year1st=False, cfg=cfg, isoformat=False, ignoretz=False)
+            res = parse(dtstr, default=default, yearfirst=False, cfg=cfg, isoformat=False, ignoretz=False)
             assert base_tz == str(res), "%r:\nBase:\t%r\nParse:\t%r" % (dtstr, base_tz, str(res))
 
             # No cfg: Isoformat=True & ignoretz=True
-            res = parse(dtstr, default=default, year1st=False, isoformat=True, ignoretz=True)
+            res = parse(dtstr, default=default, yearfirst=False, isoformat=True, ignoretz=True)
             assert base_no_tz == str(res), "%r:\nBase:\t%r\nParse:\t%r" % (dtstr, base_no_tz, str(res))
 
             # No cfg: Isoformat=False & ignoretz=True
-            res = parse(dtstr, default=default, year1st=False, isoformat=False, ignoretz=True)
+            res = parse(dtstr, default=default, yearfirst=False, isoformat=False, ignoretz=True)
             assert base_no_tz == str(res), "%r:\nBase:\t%r\nParse:\t%r" % (dtstr, base_no_tz, str(res))
             # fmt: on
 
