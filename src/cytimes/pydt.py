@@ -55,8 +55,8 @@ class _Pydt(datetime.datetime):
         cls,
         dtobj: object,
         default: object | None = None,
-        year1st: bool | None = None,
-        day1st: bool | None = None,
+        yearfirst: bool | None = None,
+        dayfirst: bool | None = None,
         ignoretz: cython.bint = True,
         isoformat: cython.bint = True,
         cfg: Configs = None,
@@ -65,7 +65,7 @@ class _Pydt(datetime.datetime):
 
         :param dtobj `<'object'>`: A datetime-like object, supports:
 
-            - `<'str'>`                 → parses into datetime, honoring `default`, `year1st`, `day1st`,
+            - `<'str'>`                 → parses into datetime, honoring `default`, `yearfirst`, `dayfirst`,
                                           `ignoretz`, `isoformat` and `cfg`.
             - `<'datetime.datetime'>`   → accepts `as-is`.
             - `<'datetime.date'>`       → converts to timezone-naive datetime with the same date fields.
@@ -77,10 +77,10 @@ class _Pydt(datetime.datetime):
 
         :param default `<'datetime/date/None'>`: Fallback source for missing Y/M/D. Defaults to `None`.
             If `None` and required fields are missing, raises an error.
-        :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
-            If 'None', uses `cfg.year1st` if 'cfg' is specified; otherwise. Defaults to `True`.
-        :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
-            If 'None', uses `cfg.day1st` if 'cfg' is specified; otherwise. Defaults to `False`.
+        :param yearfirst `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
+            If 'None', uses `cfg.yearfirst` if 'cfg' is specified; otherwise. Defaults to `True`.
+        :param dayfirst `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
+            If 'None', uses `cfg.dayfirst` if 'cfg' is specified; otherwise. Defaults to `False`.
         :param ignoretz `<'bool'>`: If `True`, ignore any timezone information and return a naive datetime. Defaults to `True`.
             When timezone info is not needed, setting to `True` can improve performance.
         :param isoformat `<'bool'>`: If `True`, attempt ISO parsing first (automatically falls back to token parsing on failure).
@@ -93,13 +93,13 @@ class _Pydt(datetime.datetime):
         :raises `<'InvalidArgumentError'>`: On unsupported input types or any conversion/parsing failed.
 
         ## Notes
-        - Non-string inputs do `NOT` use `default`, `year1st`, `day1st`, `ignoretz`, `isoformat` or `cfg`.
+        - Non-string inputs do `NOT` use `default`, `yearfirst`, `dayfirst`, `ignoretz`, `isoformat` or `cfg`.
         """
         # Default value
         if default is not None:
             try:
                 default = _parse_obj(
-                    default, None, year1st, day1st, True, isoformat, cfg, None
+                    default, None, yearfirst, dayfirst, True, isoformat, cfg, None
                 )
             except Exception as err:
                 errors.raise_argument_error(cls, "parse(default, ...)", None, err)
@@ -107,7 +107,7 @@ class _Pydt(datetime.datetime):
         # Parse datetime object
         try:
             return _parse_obj(
-                dtobj, default, year1st, day1st, ignoretz, isoformat, cfg, cls
+                dtobj, default, yearfirst, dayfirst, ignoretz, isoformat, cfg, cls
             )
         except Exception as err:
             errors.raise_argument_error(cls, "parse(dtobj, ...)", None, err)
