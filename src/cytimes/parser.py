@@ -131,8 +131,8 @@ class Configs:
     """
 
     # Settings
-    _year1st: cython.bint
-    _day1st: cython.bint
+    _yearfirst: cython.bint
+    _dayfirst: cython.bint
     # . jump
     _jump: set[str]
     _jump_ext: set[str]
@@ -162,8 +162,8 @@ class Configs:
 
     def __init__(
         self,
-        year1st: cython.bint = True,
-        day1st: cython.bint = False,
+        yearfirst: cython.bint = True,
+        dayfirst: cython.bint = False,
     ) -> None:
         """Configuration for `<'Parser'>`.
 
@@ -172,19 +172,19 @@ class Configs:
         (e.g., month, weekday, AM/PM, timezone names) and enforces cross-namespace
         uniqueness rules so a token cannot silently change meaning.
 
-        :param year1st `<'bool'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `True`.
-        :param day1st `<'bool'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `False`.
+        :param yearfirst `<'bool'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `True`.
+        :param dayfirst `<'bool'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `False`.
 
         Ambiguous Y/M/D
         ---------------
         Two booleans control ambiguous triplets (e.g. "01/05/09"):
 
-        - `year1st` has precedence over `day1st` when both are True.
+        - `yearfirst` has precedence over `dayfirst` when both are True.
         - If all three positions are ambiguous, these apply:
-            * year1st=False, day1st=False -> M/D/Y
-            * year1st=False, day1st=True  -> D/M/Y
-            * year1st=True,  day1st=False -> Y/M/D
-            * year1st=True,  day1st=True  -> Y/D/M
+            * yearfirst=False, dayfirst=False -> M/D/Y
+            * yearfirst=False, dayfirst=True  -> D/M/Y
+            * yearfirst=True,  dayfirst=False -> Y/M/D
+            * yearfirst=True,  dayfirst=True  -> Y/D/M
         - If exactly one component is unambiguous (e.g. a number > 12), the parser
         should infer the order regardless of these flags.
 
@@ -227,8 +227,8 @@ class Configs:
             * `jump` is lowest priority and may overlap with any namespace.
             * Re-adding a token to the same namespace is allowed.
         """
-        self._year1st = year1st
-        self._day1st = day1st
+        self._yearfirst = yearfirst
+        self._dayfirst = dayfirst
         #: The following order matters for conflict checking
         self.reset_settings()
 
@@ -257,7 +257,7 @@ class Configs:
                 "instead got %s." % (type(info)),
             )
         # Construct Configs
-        cfg: Configs = cls(year1st=bool(info.yearfirst), day1st=bool(info.dayfirst))
+        cfg: Configs = cls(yearfirst=bool(info.yearfirst), dayfirst=bool(info.dayfirst))
         #: The following order matters for conflict checking
         cfg.clear_settings()
         if isinstance(info.JUMP, (list, tuple, set)):
@@ -284,43 +284,33 @@ class Configs:
 
     # Y/M/D -----------------------------------------------------------
     @property
-    def year1st(self) -> bool:
+    def yearfirst(self) -> bool:
         """Whether to interpret ambiguous Y/M/D with the first position as `year` `<'bool'>`.
 
         ## Notice
-        - `year1st` has higher priority than `day1st` when both are set to `True`.
+        - `yearfirst` has higher priority than `dayfirst` when both are set to `True`.
         """
-        return self._year1st
-
-    @property
-    def yearfirst(self) -> bool:
-        """Alias of `year1st` (compat with `dateutil.parser.parserinfo`)."""
-        return self._year1st
-
-    @property
-    def day1st(self) -> bool:
-        """Whether to interpret ambiguous Y/M/D with the first position as `day` `<'bool'>`.
-
-        ## Notice
-        - `year1st` has higher priority than `day1st` when both are set to `True`.
-        """
-        return self._day1st
+        return self._yearfirst
 
     @property
     def dayfirst(self) -> bool:
-        """Alias of `day1st` (compat with `dateutil.parser.parserinfo`)."""
-        return self._day1st
+        """Whether to interpret ambiguous Y/M/D with the first position as `day` `<'bool'>`.
+
+        ## Notice
+        - `yearfirst` has higher priority than `dayfirst` when both are set to `True`.
+        """
+        return self._dayfirst
 
     @cython.ccall
     def order_hint(self) -> str:
         """Give a hint of the ambiguous Y/M/D order based
-        on `year1st` and `day1st` settings `<'str'>`.
+        on `yearfirst` and `dayfirst` settings `<'str'>`.
         """
-        if self._year1st and self._day1st:
+        if self._yearfirst and self._dayfirst:
             return "Y/D/M"
-        elif self._year1st and not self._day1st:
+        elif self._yearfirst and not self._dayfirst:
             return "Y/M/D"
-        elif not self._year1st and self._day1st:
+        elif not self._yearfirst and self._dayfirst:
             return "D/M/Y"
         else:
             return "M/D/Y"
@@ -1562,13 +1552,13 @@ class Configs:
     # Special methods -------------------------------------------------
     def __repr__(self) -> str:
         return (
-            "<'%s' (%s: year1st=%s day1st=%s | "
+            "<'%s' (%s: yearfirst=%s dayfirst=%s | "
             "sizes: jump=%d pertain=%d utc=%d tz=%d month=%d weekday=%d hms=%d ampm=%d)>"
             % (
                 self._cls().__name__,
                 self.order_hint(),
-                self._year1st,
-                self._day1st,
+                self._yearfirst,
+                self._dayfirst,
                 set_len(self._jump),
                 set_len(self._pertain),
                 set_len(self._utc),
@@ -1873,13 +1863,13 @@ class Result:
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(check=False)
-    def resolve(self, year1st: cython.bint, day1st: cython.bint) -> cython.bint:
+    def resolve(self, yearfirst: cython.bint, dayfirst: cython.bint) -> cython.bint:
         """(cfunc) Resolve unlabeled/ambiguous Y/M/D tokens into concrete year/month/day
         values in-place, using the supplied disambiguation preferences.
 
         This method inspects the three positional Y/M/D slots together with their
         known-role indices. It chooses the most plausible assignment according to
-        simple domain rules and the `year1st` / `day1st` preferences, then writes
+        simple domain rules and the `yearfirst` / `dayfirst` preferences, then writes
         the results to `self.year`, `self.month`, and `self.day`. Components that
         cannot be inferred remain `-1`.
 
@@ -1887,9 +1877,9 @@ class Result:
         the year is adjusted to the current century using a ±50-year sliding window
         relative to today's year.
 
-        :param year1st `<'bool'>`: If True, break remaining ties in favor of
+        :param yearfirst `<'bool'>`: If True, break remaining ties in favor of
             interpreting an unlabeled ambiguous token as the year.
-        :param day1st `<bool'>`: If True, break remaining ties in favor of
+        :param dayfirst `<bool'>`: If True, break remaining ties in favor of
             interpreting an unlabeled ambiguous token as the day (when
             compatible with basic month/day ranges).
         :returns `<'bool'>`: True if the result contains any datetime information
@@ -1900,11 +1890,11 @@ class Result:
         - With one token present, values > 31 are taken as year; otherwise preference
           is applied (month if labeled, else day).
         - With two tokens present, obvious year/month ordering is chosen first
-          (e.g., 99-Feb vs Feb-99), else `day1st` influences the decision.
+          (e.g., 99-Feb vs Feb-99), else `dayfirst` influences the decision.
         - With three tokens present:
             * If two roles are already labeled, the remaining role is deduced.
             * If roles are largely unlabeled, heuristics prefer placements that
-              satisfy basic ranges (e.g., day ≤ 31, month ≤ 12) and `year1st`.
+              satisfy basic ranges (e.g., day ≤ 31, month ≤ 12) and `yearfirst`.
         - This method does not normalize impossible combinations beyond the above
           rules; unsupported values may remain `-1` for later handling by the parser.
         - This method must be called before accessing the resolved year/month/day values.
@@ -1965,7 +1955,7 @@ class Result:
                 self.year, self.month = v0, v1  # 99-Feb
             elif v1 > 31 or (v0 == 2 and v1 > 29):
                 self.month, self.year = v0, v1  # Feb-99
-            elif day1st and 1 <= v1 <= 12:
+            elif dayfirst and 1 <= v1 <= 12:
                 self.day, self.month = v0, v1  # 01-Jan
             else:
                 self.month, self.day = v0, v1  # Jan-01
@@ -2015,7 +2005,7 @@ class Result:
                 else:
                     self.month, self.day, self.year = v0, v1, v2  # Apr-25-2003
             elif midx == 1:
-                if v0 > 31 or (year1st and 0 < v2 <= 31):
+                if v0 > 31 or (yearfirst and 0 < v2 <= 31):
                     self.year, self.month, self.day = v0, v1, v2  # 99-Jan-01
                 else:
                     self.day, self.month, self.year = v0, v1, v2  # 01-Jan-99
@@ -2027,12 +2017,12 @@ class Result:
 
             # Case: month not labeled (infer)
             else:
-                if v0 > 31 or yidx == 0 or (year1st and 0 < v1 <= 12 and 0 < v2 <= 31):
-                    if day1st and 0 < v2 <= 12:
+                if v0 > 31 or yidx == 0 or (yearfirst and 0 < v1 <= 12 and 0 < v2 <= 31):
+                    if dayfirst and 0 < v2 <= 12:
                         self.year, self.day, self.month = (v0, v1, v2)  # 99-01-Jan
                     else:
                         self.year, self.month, self.day = (v0, v1, v2)  # 99-Jan-01
-                elif v0 > 12 or (day1st and 0 < v1 <= 12):
+                elif v0 > 12 or (dayfirst and 0 < v1 <= 12):
                     self.day, self.month, self.year = (v0, v1, v2)  # 01-Jan-99
                 else:
                     self.month, self.day, self.year = (v0, v1, v2)  # Jan-01-99
@@ -2356,8 +2346,8 @@ class Parser:
         self,
         dtstr: str,
         default: object = None,
-        year1st: object = None,
-        day1st: object = None,
+        yearfirst: object = None,
+        dayfirst: object = None,
         ignoretz: cython.bint = True,
         isoformat: cython.bint = True,
         dtclass: object = None,
@@ -2372,17 +2362,17 @@ class Parser:
           and scans left→right, using specialized handlers for numeric blocks, month/weekday
           names, AM/PM, timezone names, and timezone offsets.
 
-        After parsing, ambiguous Y/M/D fields are resolved using `year1st`/`day1st` (or the
+        After parsing, ambiguous Y/M/D fields are resolved using `yearfirst`/`dayfirst` (or the
         configured defaults when they are `None`). Finally, a datetime is built using parsed
         fields plus `default` for any missing calendar components.
 
         :param dtstr `<'str'>`: The input date/time string.
         :param default `<'datetime/date/None'>`: Fallback source for missing Y/M/D. Defaults to `None`.
             If `None` and required fields are missing, raises an error.
-        :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
-            If 'None', uses `cfg.year1st` if 'cfg' is specified; otherwise. Defaults to `True`.
-        :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
-            If 'None', uses `cfg.day1st` if 'cfg' is specified; otherwise. Defaults to `False`.
+        :param yearfirst `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
+            If 'None', uses `cfg.yearfirst` if 'cfg' is specified; otherwise. Defaults to `True`.
+        :param dayfirst `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
+            If 'None', uses `cfg.dayfirst` if 'cfg' is specified; otherwise. Defaults to `False`.
         :param ignoretz `<'bool'>`: If `True`, ignore any timezone information and return a naive datetime. Defaults to `True`.
             When timezone info is not needed, setting to `True` can improve performance.
         :param isoformat `<'bool'>`: If `True`, attempt ISO parsing first (automatically falls back to token parsing on failure).
@@ -2410,14 +2400,14 @@ class Parser:
               UTC for offset `0`, or a fixed-offset timezone for non-zero offsets.
 
         ## Ambiguous Y/M/D
-        Both `year1st` and `day1st` control how ambiguous digit tokens are interpreted;
-        `year1st` has higher priority. When all three are ambiguous (e.g., `01/05/09`):
-        - `year1st=False & day1st=False` → `M/D/Y`  → `2009-01-05`
-        - `year1st=False & day1st=True`  → `D/M/Y`  → `2009-05-01`
-        - `year1st=True  & day1st=False` → `Y/M/D`  → `2001-05-09`
-        - `year1st=True  & day1st=True`  → `Y/D/M`  → `2001-09-05`
+        Both `yearfirst` and `dayfirst` control how ambiguous digit tokens are interpreted;
+        `yearfirst` has higher priority. When all three are ambiguous (e.g., `01/05/09`):
+        - `yearfirst=False & dayfirst=False` → `M/D/Y`  → `2009-01-05`
+        - `yearfirst=False & dayfirst=True`  → `D/M/Y`  → `2009-05-01`
+        - `yearfirst=True  & dayfirst=False` → `Y/M/D`  → `2001-05-09`
+        - `yearfirst=True  & dayfirst=True`  → `Y/D/M`  → `2001-09-05`
 
-        When the year is already known (e.g., `32/01/05`), `day1st` alone decides between `Y/M/D`
+        When the year is already known (e.g., `32/01/05`), `dayfirst` alone decides between `Y/M/D`
         vs `Y/D/M`. When only one value is ambiguous, the parser picks the only consistent
         interpretation and ignores the flags.
         """
@@ -2433,8 +2423,8 @@ class Parser:
 
         # Prepare
         if not self._res.resolve(
-            self._cfg._year1st if year1st is None else bool(year1st),
-            self._cfg._day1st if day1st is None else bool(day1st),
+            self._cfg._yearfirst if yearfirst is None else bool(yearfirst),
+            self._cfg._dayfirst if dayfirst is None else bool(dayfirst),
         ):
             errors.raise_parser_failed_error(
                 self._cls(),
@@ -4265,8 +4255,8 @@ _DEFAULT_PARSER: Parser = Parser()
 def parse(
     dtstr: str,
     default: object = None,
-    year1st: object = None,
-    day1st: object = None,
+    yearfirst: object = None,
+    dayfirst: object = None,
     ignoretz: cython.bint = True,
     isoformat: cython.bint = True,
     cfg: Configs = None,
@@ -4286,17 +4276,17 @@ def parse(
         and scans left→right, using specialized handlers for numeric blocks, month/weekday
         names, AM/PM, timezone names, and timezone offsets.
 
-    After parsing, ambiguous Y/M/D fields are resolved using `year1st`/`day1st` (or the
+    After parsing, ambiguous Y/M/D fields are resolved using `yearfirst`/`dayfirst` (or the
     configured defaults when they are `None`). Finally, a datetime is built using parsed
     fields plus `default` for any missing calendar components.
 
     :param dtstr `<'str'>`: The input date/time string.
     :param default `<'datetime/date/None'>`: Fallback source for missing Y/M/D. Defaults to `None`.
         If `None` and required fields are missing, raises an error.
-    :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
-        If 'None', uses `cfg.year1st` if 'cfg' is specified; otherwise. Defaults to `True`.
-    :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
-        If 'None', uses `cfg.day1st` if 'cfg' is specified; otherwise. Defaults to `False`.
+    :param yearfirst `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
+        If 'None', uses `cfg.yearfirst` if 'cfg' is specified; otherwise. Defaults to `True`.
+    :param dayfirst `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
+        If 'None', uses `cfg.dayfirst` if 'cfg' is specified; otherwise. Defaults to `False`.
     :param ignoretz `<'bool'>`: If `True`, ignore any timezone information and return a naive datetime. Defaults to `True`.
         When timezone info is not needed, setting to `True` can improve performance.
     :param isoformat `<'bool'>`: If `True`, attempt ISO parsing first (automatically falls back to token parsing on failure).
@@ -4326,22 +4316,22 @@ def parse(
             UTC for offset `0`, or a fixed-offset timezone for non-zero offsets.
 
     ## Ambiguous Y/M/D
-    Both `year1st` and `day1st` control how ambiguous digit tokens are interpreted;
-    `year1st` has higher priority. When all three are ambiguous (e.g., `01/05/09`):
-    - `year1st=False & day1st=False` → `M/D/Y`  → `2009-01-05`
-    - `year1st=False & day1st=True`  → `D/M/Y`  → `2009-05-01`
-    - `year1st=True  & day1st=False` → `Y/M/D`  → `2001-05-09`
-    - `year1st=True  & day1st=True`  → `Y/D/M`  → `2001-09-05`
+    Both `yearfirst` and `dayfirst` control how ambiguous digit tokens are interpreted;
+    `yearfirst` has higher priority. When all three are ambiguous (e.g., `01/05/09`):
+    - `yearfirst=False & dayfirst=False` → `M/D/Y`  → `2009-01-05`
+    - `yearfirst=False & dayfirst=True`  → `D/M/Y`  → `2009-05-01`
+    - `yearfirst=True  & dayfirst=False` → `Y/M/D`  → `2001-05-09`
+    - `yearfirst=True  & dayfirst=True`  → `Y/D/M`  → `2001-09-05`
 
-    When the year is already known (e.g., `32/01/05`), `day1st` alone decides between `Y/M/D`
+    When the year is already known (e.g., `32/01/05`), `dayfirst` alone decides between `Y/M/D`
     vs `Y/D/M`. When only one value is ambiguous, the parser picks the only consistent
     interpretation and ignores the flags.
     """
     # fmt: off
     if cfg is None:
-        return _DEFAULT_PARSER.parse(dtstr, default, year1st, day1st, ignoretz, isoformat, dtclass)
+        return _DEFAULT_PARSER.parse(dtstr, default, yearfirst, dayfirst, ignoretz, isoformat, dtclass)
     else:
-        return Parser(cfg).parse(dtstr, default, year1st, day1st, ignoretz, isoformat, dtclass)
+        return Parser(cfg).parse(dtstr, default, yearfirst, dayfirst, ignoretz, isoformat, dtclass)
     # fmt: on
 
 
@@ -4349,8 +4339,8 @@ def parse(
 def parse_obj(
     dtobj: object,
     default: object = None,
-    year1st: object = None,
-    day1st: object = None,
+    yearfirst: object = None,
+    dayfirst: object = None,
     ignoretz: cython.bint = True,
     isoformat: cython.bint = True,
     cfg: Configs = None,
@@ -4360,7 +4350,7 @@ def parse_obj(
 
     :param dtobj `<'object'>`: A datetime-like object, supports:
 
-        - `<'str'>`                 → parsed via function `parse()`, honoring `default`, `year1st`, `day1st`,
+        - `<'str'>`                 → parsed via function `parse()`, honoring `default`, `yearfirst`, `dayfirst`,
                                       `ignoretz`, `isoformat`, `cfg`, and `dtclass`.
         - `<'datetime.datetime'>`   → returns as-is or re-create using optional `dtclass`.
         - `<'datetime.date'>`       → converts to timezone-naive datetime with the same date fields, optionally using `dtclass`.
@@ -4375,10 +4365,10 @@ def parse_obj(
 
     :param default `<'datetime/date/None'>`: Fallback source for missing Y/M/D. Defaults to `None`.
         If `None` and required fields are missing, raises an error.
-    :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
-        If 'None', uses `cfg.year1st` if 'cfg' is specified; otherwise. Defaults to `True`.
-    :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
-        If 'None', uses `cfg.day1st` if 'cfg' is specified; otherwise. Defaults to `False`.
+    :param yearfirst `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
+        If 'None', uses `cfg.yearfirst` if 'cfg' is specified; otherwise. Defaults to `True`.
+    :param dayfirst `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
+        If 'None', uses `cfg.dayfirst` if 'cfg' is specified; otherwise. Defaults to `False`.
     :param ignoretz `<'bool'>`: If `True`, ignore any timezone information and return a naive datetime. Defaults to `True`.
         When timezone info is not needed, setting to `True` can improve performance.
     :param isoformat `<'bool'>`: If `True`, attempt ISO parsing first (automatically falls back to token parsing on failure).
@@ -4392,11 +4382,11 @@ def parse_obj(
     :raises `<'ParserBuildError'>`: If a string parse succeeds but fields cannot be assembled (string input).
 
     ## Notes
-    - Non-string inputs do `NOT` use `default`, `year1st`, `day1st`, `ignoretz`, `isoformat` or `cfg`.
+    - Non-string inputs do `NOT` use `default`, `yearfirst`, `dayfirst`, `ignoretz`, `isoformat` or `cfg`.
     """
     # . datetime string
     if isinstance(dtobj, str):
-        return parse(dtobj, default, year1st, day1st, ignoretz, isoformat, cfg, dtclass)
+        return parse(dtobj, default, yearfirst, dayfirst, ignoretz, isoformat, cfg, dtclass)
     try:
         # . datetime.datetime
         if utils.is_dt(dtobj):

@@ -246,8 +246,8 @@ cdef:
 cdef class Configs:
     cdef:
         # . settings
-        bint _year1st
-        bint _day1st
+        bint _yearfirst
+        bint _dayfirst
         set _jump, _jump_ext
         set _pertain, _pertain_ext
         set _utc, _utc_ext
@@ -354,7 +354,7 @@ cdef class Result:
     cdef inline bint could_be_day(self, long long value) noexcept
     cdef inline bint could_be_doy(self, long long value) noexcept
     # Resolve
-    cdef inline bint resolve(self, bint year1st, bint day1st) noexcept
+    cdef inline bint resolve(self, bint yearfirst, bint dayfirst) noexcept
     cdef inline bint valid(self) noexcept
     cdef inline bint is_year_set(self) noexcept
     cdef inline bint is_month_set(self) noexcept
@@ -382,7 +382,7 @@ cdef class Parser:
         str _token1
         object __cls
     # Parse
-    cpdef datetime.datetime parse(self, str dtstr, object default=?, object year1st=?, object day1st=?, bint ignoretz=?, bint isoformat=?, object dtclass=?)
+    cpdef datetime.datetime parse(self, str dtstr, object default=?, object yearfirst=?, object dayfirst=?, bint ignoretz=?, bint isoformat=?, object dtclass=?)
     cdef inline bint _process(self, str dtstr, bint isoformat) except -1
     # Build
     cdef inline datetime.datetime _build(self, str dtstr, object default, object dtclass)
@@ -422,7 +422,7 @@ cdef class Parser:
 cdef Parser _DEFAULT_PARSER
 
 # Parse
-cpdef datetime.datetime parse(str dtstr, object default=?, object year1st=?, object day1st=?, bint ignoretz=?, bint isoformat=?, Configs cfg=?, object dtclass=?)
-cpdef datetime.datetime parse_obj(object dtobj, object default=?, object year1st=?, object day1st=?, bint ignoretz=?, bint isoformat=?, Configs cfg=?, object dtclass=?)
+cpdef datetime.datetime parse(str dtstr, object default=?, object yearfirst=?, object dayfirst=?, bint ignoretz=?, bint isoformat=?, Configs cfg=?, object dtclass=?)
+cpdef datetime.datetime parse_obj(object dtobj, object default=?, object yearfirst=?, object dayfirst=?, bint ignoretz=?, bint isoformat=?, Configs cfg=?, object dtclass=?)
 cpdef int parse_month(object token, Configs cfg=?, bint raise_error=?) except -2
 cpdef int parse_weekday(object token, Configs cfg=?, bint raise_error=?) except -2

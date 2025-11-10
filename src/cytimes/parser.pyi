@@ -6,16 +6,12 @@ def timelex(data: str) -> list[str]: ...
 
 # Configs
 class Configs:
-    def __init__(self, year1st: bool = False, day1st: bool = False) -> None: ...
+    def __init__(self, yearfirst: bool = True, dayfirst: bool = False) -> None: ...
     @classmethod
     def from_parserinfo(cls, info: parserinfo) -> Configs: ...
     # Property
     @property
-    def year1st(self) -> bool: ...
-    @property
     def yearfirst(self) -> bool: ...
-    @property
-    def day1st(self) -> bool: ...
     @property
     def dayfirst(self) -> bool: ...
     def order_hint(self) -> str: ...
@@ -100,8 +96,8 @@ class Parser:
         self,
         dtstr: str,
         default: datetime.date | datetime.datetime | None = None,
-        year1st: bool | None = None,
-        day1st: bool | None = None,
+        yearfirst: bool | None = None,
+        dayfirst: bool | None = None,
         ignoretz: bool = True,
         isoformat: bool = True,
         dtclass: type[datetime.datetime] | None = None,
@@ -110,8 +106,8 @@ class Parser:
 def parse(
     dtstr: str,
     default: datetime.date | datetime.datetime | None = None,
-    year1st: bool | None = None,
-    day1st: bool | None = None,
+    yearfirst: bool | None = None,
+    dayfirst: bool | None = None,
     ignoretz: bool = True,
     isoformat: bool = True,
     cfg: Configs | None = None,
@@ -120,8 +116,8 @@ def parse(
 def parse_obj(
     dtobj: object,
     default: datetime.date | datetime.datetime | None = None,
-    year1st: bool | None = None,
-    day1st: bool | None = None,
+    yearfirst: bool | None = None,
+    dayfirst: bool | None = None,
     ignoretz: bool = True,
     isoformat: bool = True,
     cfg: Configs | None = None,
