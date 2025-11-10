@@ -10,7 +10,7 @@ from cython.cimports import numpy as np  # type: ignore
 from cython.cimports.cpython import datetime  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_READ_CHAR as str_read  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_GET_LENGTH as str_len  # type: ignore
-from cython.cimports.cytimes import utils  # type: ignore
+from cython.cimports.cytimes import errors, utils  # type: ignore
 from cython.cimports.cytimes.parser import (  # type: ignore
     Configs,
     parse_obj as _parse_obj,
@@ -28,7 +28,7 @@ import datetime, numpy as np
 from typing_extensions import Self
 from babel.dates import format_date as _format_date
 from zoneinfo import available_timezones as _available_timezones
-from cytimes import utils, errors
+from cytimes import errors, utils
 from cytimes.parser import (
     Configs,
     parse_obj as _parse_obj,
@@ -37,44 +37,6 @@ from cytimes.parser import (
 )
 
 __all__ = ["Pydt"]
-
-
-# Errors --------------------------------------------------------------------------------------
-@cython.cfunc
-@cython.inline(True)
-@cython.exceptval(-1, check=False)
-def _raise_invalid_arg_error(
-    cls: type,
-    func: str,
-    msg: str = None,
-    exc: Exception = None,
-) -> cython.bint:
-    """(internal) Raise error for invalid arguments.
-
-    :param cls `<'type'>`: The class to raise this error.
-    :param func `<'str'>`: The name of the function, which raises the error.
-    :param msg `<'str/None'>`: The optionel error message. Defaults to `None`.
-    :param exc `<'Exception/None'>`: The optional traceback exception. Defaults to `None`.
-    :raises `<'InvalidArgumentError'>`:
-    """
-    if exc is None:
-        if msg is None:
-            raise errors.InvalidArgumentError(
-                "<'%s'> Invalid '%s' input." % (cls.__name__, func)
-            )
-        else:
-            raise errors.InvalidArgumentError(
-                "<'%s'> Invalid '%s' input.\n%s" % (cls.__name__, func, msg)
-            )
-    else:
-        if msg is None:
-            raise errors.InvalidArgumentError(
-                "<'%s'> Invalid '%s' input.\n%s" % (cls.__name__, func, exc)
-            ) from exc
-        else:
-            raise errors.InvalidArgumentError(
-                "<'%s'> Invalid '%s' input.\n%s\n%s" % (cls.__name__, func, msg, exc)
-            ) from exc
 
 
 # Pydt (Python Datetime) ----------------------------------------------------------------------
@@ -140,7 +102,7 @@ class _Pydt(datetime.datetime):
                     default, None, year1st, day1st, True, isoformat, cfg, None
                 )
             except Exception as err:
-                _raise_invalid_arg_error(cls, "parse(default, ...)", None, err)
+                errors.raise_argument_error(cls, "parse(default, ...)", None, err)
 
         # Parse datetime object
         try:
@@ -148,7 +110,7 @@ class _Pydt(datetime.datetime):
                 dtobj, default, year1st, day1st, ignoretz, isoformat, cfg, cls
             )
         except Exception as err:
-            _raise_invalid_arg_error(cls, "parse(dtobj, ...)", None, err)
+            errors.raise_argument_error(cls, "parse(dtobj, ...)", None, err)
 
     @classmethod
     def now(cls, tz: datetime.tzinfo | str | None = None) -> Self:
@@ -213,7 +175,7 @@ class _Pydt(datetime.datetime):
             try:
                 date = _parse_obj(date, None, True, False, True, True, None, None)
             except Exception as err:
-                _raise_invalid_arg_error(cls, "combine(date, ...)", None, err)
+                errors.raise_argument_error(cls, "combine(date, ...)", None, err)
             date = utils.date_fr_dt(date, None)
 
         # Prase time
@@ -223,7 +185,7 @@ class _Pydt(datetime.datetime):
                     time, utils.EPOCH_DT, True, False, False, True, None, None
                 )
             except Exception as err:
-                _raise_invalid_arg_error(cls, "combine(time, ...)", None, err)
+                errors.raise_argument_error(cls, "combine(time, ...)", None, err)
             time = utils.time_fr_dt(time, None)
 
         # New instance
@@ -250,7 +212,7 @@ class _Pydt(datetime.datetime):
         try:
             return utils.dt_fr_ord(ordinal, tz, cls)
         except Exception as err:
-            _raise_invalid_arg_error(cls, "fromordinal(ordinal, ...)", None, err)
+            errors.raise_argument_error(cls, "fromordinal(ordinal, ...)", None, err)
 
     @classmethod
     def fromseconds(
@@ -278,7 +240,7 @@ class _Pydt(datetime.datetime):
         try:
             return utils.dt_fr_sec(float(seconds), tz, cls)
         except Exception as err:
-            _raise_invalid_arg_error(cls, "fromseconds(seconds, ...)", None, err)
+            errors.raise_argument_error(cls, "fromseconds(seconds, ...)", None, err)
 
     @classmethod
     def fromicroseconds(
@@ -306,7 +268,7 @@ class _Pydt(datetime.datetime):
         try:
             return utils.dt_fr_us(us, tz, cls)
         except Exception as err:
-            _raise_invalid_arg_error(cls, "fromicroseconds(us, ...)", None, err)
+            errors.raise_argument_error(cls, "fromicroseconds(us, ...)", None, err)
 
     @classmethod
     def fromtimestamp(
@@ -332,7 +294,7 @@ class _Pydt(datetime.datetime):
         try:
             return utils.dt_fr_ts(float(ts), tz, cls)
         except Exception as err:
-            _raise_invalid_arg_error(cls, "fromtimestamp(ts, ...)", None, err)
+            errors.raise_argument_error(cls, "fromtimestamp(ts, ...)", None, err)
 
     @classmethod
     def utcfromtimestamp(cls, ts: int | float) -> Self:
@@ -344,7 +306,7 @@ class _Pydt(datetime.datetime):
         try:
             return utils.dt_fr_ts(float(ts), utils.UTC, cls)
         except Exception as err:
-            _raise_invalid_arg_error(cls, "utcfromtimestamp(ts)", None, err)
+            errors.raise_argument_error(cls, "utcfromtimestamp(ts)", None, err)
 
     @classmethod
     def fromisoformat(cls, dtstr: str) -> Self:
@@ -356,7 +318,7 @@ class _Pydt(datetime.datetime):
         try:
             dt = datetime.datetime.fromisoformat(dtstr)
         except Exception as err:
-            _raise_invalid_arg_error(cls, "fromisoformat(dtstr)", None, err)
+            errors.raise_argument_error(cls, "fromisoformat(dtstr)", None, err)
         return utils.dt_fr_dt(dt, cls)
 
     @classmethod
@@ -386,7 +348,7 @@ class _Pydt(datetime.datetime):
         try:
             return utils.dt_fr_iso(year, week, weekday, tz, cls)
         except Exception as err:
-            _raise_invalid_arg_error(cls, "fromisocalendar(...)", None, err)
+            errors.raise_argument_error(cls, "fromisocalendar(...)", None, err)
 
     @classmethod
     def fromdayofyear(
@@ -412,7 +374,7 @@ class _Pydt(datetime.datetime):
         try:
             return utils.dt_fr_doy(year, doy, tz, cls)
         except Exception as err:
-            _raise_invalid_arg_error(cls, "fromdayofyear(year, doy)", None, err)
+            errors.raise_argument_error(cls, "fromdayofyear(year, doy)", None, err)
 
     @classmethod
     def fromdate(
@@ -465,7 +427,7 @@ class _Pydt(datetime.datetime):
         try:
             return utils.dt64_to_dt(dt64, tz, cls)
         except Exception as err:
-            _raise_invalid_arg_error(cls, "fromdatetime64(dt64, ...)", None, err)
+            errors.raise_argument_error(cls, "fromdatetime64(dt64, ...)", None, err)
 
     @classmethod
     def strptime(cls, dtstr: str, fmt: str) -> Self:
@@ -478,7 +440,7 @@ class _Pydt(datetime.datetime):
         try:
             dt = datetime.datetime.strptime(dtstr, fmt)
         except Exception as err:
-            _raise_invalid_arg_error(cls, "strptime(dtstr, fmt)", None, err)
+            errors.raise_argument_error(cls, "strptime(dtstr, fmt)", None, err)
         return utils.dt_fr_dt(dt, cls)
 
     # Convertor ----------------------------------------------------------------------------
@@ -512,7 +474,7 @@ class _Pydt(datetime.datetime):
         """
         # Guard
         if sep is None:
-            _raise_invalid_arg_error(
+            errors.raise_argument_error(
                 self._cls(),
                 "isoformat(sep)",
                 "Argument 'sep' cannot be None.",
@@ -754,7 +716,7 @@ class _Pydt(datetime.datetime):
         """
         # Guard
         if unit is None:
-            _raise_invalid_arg_error(
+            errors.raise_argument_error(
                 self._cls(),
                 "round/ceil/floor(unit)",
                 "Supports: 'D', 'h', 'm', 's', 'ms' or 'us'; got None.",
@@ -786,7 +748,7 @@ class _Pydt(datetime.datetime):
             return utils.US_MINUTE
 
         # Unsupported unit
-        _raise_invalid_arg_error(
+        errors.raise_argument_error(
             self._cls(),
             "round/ceil/floor(unit)",
             "Supports: 'D', 'h', 'm', 's', 'ms' or 'us'; got '%s'." % unit,
@@ -860,7 +822,7 @@ class _Pydt(datetime.datetime):
             )
             # fmt: on
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "replace(...)", None, err)
+            errors.raise_argument_error(self._cls(), "replace(...)", None, err)
 
     # . year
     @cython.ccall
@@ -912,7 +874,7 @@ class _Pydt(datetime.datetime):
                 self._cls(),
             )
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "to_curr_year(...)", None, err)
+            errors.raise_argument_error(self._cls(), "to_curr_year(...)", None, err)
 
     @cython.ccall
     def to_prev_year(
@@ -1017,7 +979,7 @@ class _Pydt(datetime.datetime):
                 self._cls(),
             )
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "to_year(...)", None, err)
+            errors.raise_argument_error(self._cls(), "to_year(...)", None, err)
 
     # . quarter
     @cython.ccall
@@ -1070,7 +1032,7 @@ class _Pydt(datetime.datetime):
                 self._cls(),
             )
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "to_curr_quarter(...)", None, err)
+            errors.raise_argument_error(self._cls(), "to_curr_quarter(...)", None, err)
 
     @cython.ccall
     def to_prev_quarter(
@@ -1166,7 +1128,7 @@ class _Pydt(datetime.datetime):
                 self._cls(),
             )
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "to_quarter(...)", None, err)
+            errors.raise_argument_error(self._cls(), "to_quarter(...)", None, err)
 
     # . month
     @cython.ccall
@@ -1208,7 +1170,7 @@ class _Pydt(datetime.datetime):
                 self._cls(),
             )
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "to_curr_month(...)", None, err)
+            errors.raise_argument_error(self._cls(), "to_curr_month(...)", None, err)
 
     @cython.ccall
     def to_prev_month(self, day: cython.int = -1) -> _Pydt:
@@ -1280,7 +1242,7 @@ class _Pydt(datetime.datetime):
                 self._cls(),
             )
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "to_month(...)", None, err)
+            errors.raise_argument_error(self._cls(), "to_month(...)", None, err)
 
     # . weekday
     @cython.ccall
@@ -1433,7 +1395,7 @@ class _Pydt(datetime.datetime):
         try:
             return utils.dt_add(self, offset, 0, 0, self._cls())
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "to_day(...)", None, err)
+            errors.raise_argument_error(self._cls(), "to_day(...)", None, err)
 
     # . date&time
     @cython.ccall
@@ -1494,7 +1456,7 @@ class _Pydt(datetime.datetime):
             )
             # fmt: on
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "to_datetime(...)", None, err)
+            errors.raise_argument_error(self._cls(), "to_datetime(...)", None, err)
 
     @cython.ccall
     def to_date(
@@ -1521,7 +1483,7 @@ class _Pydt(datetime.datetime):
                 self, year, month, day, -1, -1, -1, -1, -1, -1, self._cls()
             )
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "to_date(...)", None, err)
+            errors.raise_argument_error(self._cls(), "to_date(...)", None, err)
 
     @cython.ccall
     def to_time(
@@ -1556,7 +1518,7 @@ class _Pydt(datetime.datetime):
                 self, -1, -1, -1, hour, minute, second, microsecond, -1, -1, self._cls()
             )
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "to_time(...)", None, err)
+            errors.raise_argument_error(self._cls(), "to_time(...)", None, err)
 
     @cython.ccall
     def to_first_of(self, unit: str) -> _Pydt:
@@ -1576,7 +1538,7 @@ class _Pydt(datetime.datetime):
         """
         # Guard
         if unit is None:
-            _raise_invalid_arg_error(
+            errors.raise_argument_error(
                 self._cls(),
                 "to_first_of(unit)",
                 "Supports: 'Y', 'Q', 'M', 'W' or Month name; got None.",
@@ -1605,7 +1567,7 @@ class _Pydt(datetime.datetime):
             return self.to_date(-1, val, 1)
 
         # Unsupported unit
-        _raise_invalid_arg_error(
+        errors.raise_argument_error(
             self._cls(),
             "to_first_of(unit)",
             "Supports: 'Y', 'Q', 'M', 'W' or Month name; got '%s'." % unit,
@@ -1629,7 +1591,7 @@ class _Pydt(datetime.datetime):
         """
         # Guard
         if unit is None:
-            _raise_invalid_arg_error(
+            errors.raise_argument_error(
                 self._cls(),
                 "to_last_of(unit)",
                 "Supports: 'Y', 'Q', 'M', 'W' or Month name; got None.",
@@ -1658,7 +1620,7 @@ class _Pydt(datetime.datetime):
             return self.to_date(-1, val, 31)
 
         # Unsupported unit
-        _raise_invalid_arg_error(
+        errors.raise_argument_error(
             self._cls(),
             "to_last_of(unit)",
             "Supports: 'Y', 'Q', 'M', 'W' or Month name; got '%s'." % unit,
@@ -1689,7 +1651,7 @@ class _Pydt(datetime.datetime):
         """
         # Guard
         if unit is None:
-            _raise_invalid_arg_error(
+            errors.raise_argument_error(
                 self._cls(),
                 "to_start_of(unit)",
                 "Supports: 'Y', 'Q', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us' "
@@ -1772,7 +1734,7 @@ class _Pydt(datetime.datetime):
             # fmt: on
 
         # Invalid
-        _raise_invalid_arg_error(
+        errors.raise_argument_error(
             self._cls(),
             "to_start_of(unit)",
             "Supports: 'Y', 'Q', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us' "
@@ -1804,7 +1766,7 @@ class _Pydt(datetime.datetime):
         """
         # Guard
         if unit is None:
-            _raise_invalid_arg_error(
+            errors.raise_argument_error(
                 self._cls(),
                 "to_end_of(unit)",
                 "Supports: 'Y', 'Q', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us' "
@@ -1887,7 +1849,7 @@ class _Pydt(datetime.datetime):
             # fmt: on
 
         # Invalid
-        _raise_invalid_arg_error(
+        errors.raise_argument_error(
             self._cls(),
             "to_end_of(unit)",
             "Supports: 'Y', 'Q', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us' "
@@ -1921,7 +1883,7 @@ class _Pydt(datetime.datetime):
         try:
             return utils.dt_fr_us(new_us, self.access_tzinfo(), self._cls())
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "round(unit)", None, err)
+            errors.raise_argument_error(self._cls(), "round(unit)", None, err)
 
     @cython.ccall
     def ceil(self, unit: str) -> _Pydt:
@@ -1949,7 +1911,7 @@ class _Pydt(datetime.datetime):
         try:
             return utils.dt_fr_us(new_us, self.access_tzinfo(), self._cls())
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "ceil(unit)", None, err)
+            errors.raise_argument_error(self._cls(), "ceil(unit)", None, err)
 
     @cython.ccall
     def floor(self, unit: str) -> _Pydt:
@@ -1977,7 +1939,7 @@ class _Pydt(datetime.datetime):
         try:
             return utils.dt_fr_us(new_us, self.access_tzinfo(), self._cls())
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "floor(unit)", None, err)
+            errors.raise_argument_error(self._cls(), "floor(unit)", None, err)
 
     # . fsp (fractional seconds precision)
     @cython.ccall
@@ -1996,7 +1958,7 @@ class _Pydt(datetime.datetime):
         if precision >= 6:
             return self  # exit: same value
         if precision < 0:
-            _raise_invalid_arg_error(
+            errors.raise_argument_error(
                 self._cls(),
                 "fsp(precision)",
                 "Fractional seconds precision must be "
@@ -2220,7 +2182,7 @@ class _Pydt(datetime.datetime):
         try:
             return _format_date(self, format="MMMM", locale=locale)
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "month_name(locale)", None, err)
+            errors.raise_argument_error(self._cls(), "month_name(locale)", None, err)
 
     # . weekday
     @property
@@ -2269,7 +2231,7 @@ class _Pydt(datetime.datetime):
         try:
             return _format_date(self, format="EEEE", locale=locale)
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "weekday_name(locale)", None, err)
+            errors.raise_argument_error(self._cls(), "weekday_name(locale)", None, err)
 
     # . day
     @property
@@ -2789,7 +2751,7 @@ class _Pydt(datetime.datetime):
         mytz = self.access_tzinfo()
         if mytz is not None:
             if tz is not None:
-                _raise_invalid_arg_error(
+                errors.raise_argument_error(
                     self._cls(),
                     "tz_localize(tz)",
                     "Datetime '%s' is already timezone-aware.\n"
@@ -2823,7 +2785,7 @@ class _Pydt(datetime.datetime):
         """
         # Validate
         if self.access_tzinfo() is None:
-            _raise_invalid_arg_error(
+            errors.raise_argument_error(
                 self._cls(),
                 "tz_convert(tz)",
                 "Datetime '%s' is timezone-naive.\n"
@@ -2895,7 +2857,7 @@ class _Pydt(datetime.datetime):
         # . base is target timezone
         base_tz = utils.tz_parse(base_tz)
         if base_tz is None:
-            _raise_invalid_arg_error(
+            errors.raise_argument_error(
                 self._cls(),
                 "tz_switch(...)",
                 "Datetime '%s' is timezone-naive.\n"
@@ -2954,7 +2916,7 @@ class _Pydt(datetime.datetime):
             )
             # fmt: on
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "add(...)", None, err)
+            errors.raise_argument_error(self._cls(), "add(...)", None, err)
 
     @cython.ccall
     def sub(
@@ -2993,7 +2955,7 @@ class _Pydt(datetime.datetime):
             )
             # fmt: on
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "sub(...)", None, err)
+            errors.raise_argument_error(self._cls(), "sub(...)", None, err)
 
     @cython.ccall
     def diff(
@@ -3039,12 +3001,12 @@ class _Pydt(datetime.datetime):
                 dtobj, None, True, False, False, True, None, None
             )
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "diff(dtobj, ...)", None, err)
+            errors.raise_argument_error(self._cls(), "diff(dtobj, ...)", None, err)
         dt_tz = dt.tzinfo
         my_aware: cython.bint = my_tz is not None
         dt_aware: cython.bint = dt_tz is not None
         if my_aware != dt_aware:
-            _raise_invalid_arg_error(
+            errors.raise_argument_error(
                 self._cls(),
                 "diff(dtobj, ...)",
                 "Cannot compare naive and aware datetimes:\n"
@@ -3060,7 +3022,7 @@ class _Pydt(datetime.datetime):
         elif inclusive == "neither":
             incl_off: cython.int = -1
         else:
-            _raise_invalid_arg_error(
+            errors.raise_argument_error(
                 self._cls(),
                 "diff(..., inclusive)",
                 "Supports: 'one', 'both' or 'neither'.",
@@ -3076,7 +3038,7 @@ class _Pydt(datetime.datetime):
                 dt_val: cython.longlong = utils.dt_as_epoch(dt, unit, dt_aware)
             delta: cython.longlong = my_val - dt_val
         except Exception as err:
-            _raise_invalid_arg_error(self._cls(), "diff(..., unit)", None, err)
+            errors.raise_argument_error(self._cls(), "diff(..., unit)", None, err)
         # . absolute = True
         if absolute:
             delta = (-delta if delta < 0 else delta) + incl_off
@@ -3180,7 +3142,7 @@ class _Pydt(datetime.datetime):
             raise TypeError(
                 "Cannot subtract naive and aware datetimes:\n"
                 "  - datetime1: '%s' %s\n"
-                "  - datetime2: '%s' %s" % (self, type(self), o, type(o))
+                "  - datetime2: '%s' %s" % (self, type(self), o, type(o)),
             )
 
         # Compute delta
@@ -3336,7 +3298,7 @@ class Pydt(_Pydt):
             try:
                 dt_norm: datetime.datetime = utils.dt_normalize_tz(dt, None)
             except Exception as err:
-                raise errors.AmbiguousTimeError("<'%s'> %s"(cls.__name__, err)) from err
+                raise errors.AmbiguousTimeError(err) from err
             if dt is not dt_norm:
                 year = dt_norm.year
                 month = dt_norm.month
