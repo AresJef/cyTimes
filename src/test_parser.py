@@ -844,7 +844,7 @@ class TestParser(TestCase):
         self.assertFalse(cfg.remove_pertain("of"))
         cfg.replace_pertain(new_pertain)  # . replace pertain
         self.assertEqual(cfg.pertain, new_pertain)
-        with self.assertRaises(errors.InvalidConfigsValue):
+        with self.assertRaises(errors.InvalidConfigsToken):
             cfg.add_pertain("mon")  # conflict with weekday
         cfg.replace_pertain(None)  # . reset pertain
         self.assertEqual(cfg.pertain, org_pertain)
@@ -869,7 +869,7 @@ class TestParser(TestCase):
         self.assertFalse(cfg.remove_utc("UTC"))
         cfg.replace_utc(new_utc)  # . replace utc
         self.assertEqual(cfg.utc, new_utc)
-        with self.assertRaises(errors.InvalidConfigsValue):
+        with self.assertRaises(errors.InvalidConfigsToken):
             cfg.add_utc("mon")  # conflict with weekday
         cfg.replace_utc(None)  # . reset utc
         self.assertEqual(cfg.utc, org_utc)
@@ -901,7 +901,7 @@ class TestParser(TestCase):
         self.assertFalse(cfg.remove_tz("abc"))
         cfg.replace_tz(new_tz)  # . replace tz
         self.assertEqual(cfg.tz, new_tz)
-        with self.assertRaises(errors.InvalidConfigsValue):
+        with self.assertRaises(errors.InvalidConfigsToken):
             cfg.add_tz("mon", 1)  # conflict with weekday
         with self.assertRaises(errors.InvalidConfigsValue):
             cfg.add_tz("efg", hours=-25)  # invalid offset
@@ -935,7 +935,7 @@ class TestParser(TestCase):
         self.assertFalse(cfg.remove_month("jan"))
         cfg.replace_month(new_month)  # . replace month
         self.assertEqual(cfg.month, new_month)
-        with self.assertRaises(errors.InvalidConfigsValue):
+        with self.assertRaises(errors.InvalidConfigsToken):
             cfg.add_month("mon", 1)  # conflict with weekday
         with self.assertRaises(errors.InvalidConfigsValue):
             cfg.add_month("efg", 13)  # invalid month number
@@ -969,7 +969,7 @@ class TestParser(TestCase):
         self.assertFalse(cfg.remove_weekday("mon"))
         cfg.replace_weekday(new_weekday)  # . replace weekday
         self.assertEqual(cfg.weekday, new_weekday)
-        with self.assertRaises(errors.InvalidConfigsValue):
+        with self.assertRaises(errors.InvalidConfigsToken):
             cfg.add_weekday("jan", 1)  # conflict with month
         with self.assertRaises(errors.InvalidConfigsValue):
             cfg.add_weekday("efg", 7)  # invalid weekday number
@@ -1003,7 +1003,7 @@ class TestParser(TestCase):
         self.assertFalse(cfg.remove_hms("hour"))
         cfg.replace_hms(new_hms)  # . replace hms
         self.assertEqual(cfg.hms, new_hms)
-        with self.assertRaises(errors.InvalidConfigsValue):
+        with self.assertRaises(errors.InvalidConfigsToken):
             cfg.add_hms("mon", 1)  # conflict with weekday
         with self.assertRaises(errors.InvalidConfigsValue):
             cfg.add_hms("efg", 3)  # invalid hms flag
@@ -1037,7 +1037,7 @@ class TestParser(TestCase):
         self.assertFalse(cfg.remove_ampm("am"))
         cfg.replace_ampm(new_ampm)  # . replace ampm
         self.assertEqual(cfg.ampm, new_ampm)
-        with self.assertRaises(errors.InvalidConfigsValue):
+        with self.assertRaises(errors.InvalidConfigsToken):
             cfg.add_ampm("mon", 1)  # conflict with weekday
         with self.assertRaises(errors.InvalidConfigsValue):
             cfg.add_ampm("efg", 2)  # invalid ampm flag
@@ -1045,11 +1045,11 @@ class TestParser(TestCase):
         self.assertEqual(cfg.ampm, org_ampm)
 
         # Test import from parserinfo
-        with self.assertRaises(TypeError):
+        with self.assertRaises(errors.InvalidParserInfo):
             cfg = Configs.from_parserinfo("xxx")  # Invalid type
         info = parserinfo()
         info.JUMP = {"and", None}
-        with self.assertRaises(errors.InvalidConfigsValue):
+        with self.assertRaises(errors.InvalidConfigsToken):
             cfg = Configs.from_parserinfo(info)  # Invalid jump value
 
         # Proper import
@@ -1183,9 +1183,9 @@ class TestParser(TestCase):
         res = parse(dtstr, dtclass=DateTime, ignoretz=False)
         self.assertIsInstance(res, DateTime)
 
-        with self.assertRaises(errors.ParserBuildError):
+        with self.assertRaises(errors.ParserFailedError):
             parse(dtstr, dtclass=datetime.date)
-        with self.assertRaises(errors.ParserBuildError):
+        with self.assertRaises(errors.ParserFailedError):
             parse(dtstr, dtclass=int)
 
         cfg = Configs()
