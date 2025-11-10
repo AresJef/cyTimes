@@ -5,10 +5,6 @@ from cpython cimport datetime
 # Constants
 cdef tuple _WEEKDAY_REPRS
 
-# Utils
-cpdef bint is_delta(object obj) except -1
-cpdef Delta delta_fr_relativedelta(object rd)
-
 # Delta
 cdef class Delta:
     cdef:

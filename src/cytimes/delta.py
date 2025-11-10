@@ -8,7 +8,7 @@ from __future__ import annotations
 import cython
 from cython.cimports import numpy as np  # type: ignore
 from cython.cimports.cpython import datetime  # type: ignore
-from cython.cimports.cytimes import utils  # type: ignore
+from cython.cimports.cytimes import errors, utils  # type: ignore
 
 np.import_array()
 np.import_umath()
@@ -17,7 +17,7 @@ datetime.import_datetime()
 # Python imports
 import datetime
 from dateutil.relativedelta import relativedelta
-from cytimes import utils
+from cytimes import errors, utils
 
 __all__ = ["Delta"]
 
@@ -28,20 +28,10 @@ _WEEKDAY_REPRS: tuple[str, ...] = ("MO", "TU", "WE", "TH", "FR", "SA", "SU")
 
 
 # Utils ---------------------------------------------------------------------------------------
-@cython.ccall
-@cython.exceptval(-1, check=False)
-def is_delta(obj: object) -> cython.bint:
-    """Check if an object is an instance or subclass of `Delta` `<'bool'>`.
-
-    :param obj `<'Any'>`: Object to check.
-    :returns `<'bool'>`: Check result.
-    """
-    return isinstance(obj, Delta)
-
-
-@cython.ccall
-def delta_fr_relativedelta(rd: relativedelta) -> Delta:
-    """Build `Delta` from `dateutil.relativedelta` `<'Delta'>`.
+@cython.cfunc
+@cython.inline(True)
+def _delta_fr_relativedelta(rd: relativedelta) -> Delta:
+    """(internal) Build `Delta` from `dateutil.relativedelta` `<'Delta'>`.
 
     :param rd `<'relativedelta'>`: Source relativedelta.
     :returns `<'Delta'>`: The resulting `Delta`.
@@ -51,9 +41,12 @@ def delta_fr_relativedelta(rd: relativedelta) -> Delta:
     The `weekday.n` from `relativedelta` is ignored.
     """
     if not isinstance(rd, relativedelta):
-        raise TypeError(
+        errors.raise_error(
+            errors.InvalidRelativeDelta,
+            Delta,
+            "from_relativedelta(rd)",
             "Expects an instance of 'dateutil.relativedelta', "
-            "instead got %s." % type(rd)
+            "instead got %s." % type(rd),
         )
     rd = rd.normalized()
     return Delta(
@@ -295,7 +288,7 @@ class Delta:
         ## Notice
         The `weekday.n` from `relativedelta` is ignored.
         """
-        return delta_fr_relativedelta(rd)
+        return _delta_fr_relativedelta(rd)
 
     # Property: relative delta -----------------------------------------------
     @property
@@ -403,7 +396,7 @@ class Delta:
         if utils.is_td(o):
             return self._add_timedelta(o)
         if isinstance(o, relativedelta):
-            return self._add_delta(delta_fr_relativedelta(o))
+            return self._add_delta(_delta_fr_relativedelta(o))
         # . uncommon
         if utils.is_dt64(o):
             return self._add_datetime(utils.dt64_to_dt(o, None, None))
@@ -566,7 +559,7 @@ class Delta:
         if utils.is_td(o):
             return self._add_timedelta(o)
         if isinstance(o, relativedelta):
-            return delta_fr_relativedelta(o)._add_delta(self)
+            return _delta_fr_relativedelta(o)._add_delta(self)
         # . uncommon
         # TODO: numpy datetime-like object
         # np.datetime64 and np.timedelta64 are converted to
@@ -594,7 +587,7 @@ class Delta:
         if utils.is_td(o):
             return self._sub_timedelta(o)
         if isinstance(o, relativedelta):
-            return self._sub_delta(delta_fr_relativedelta(o))
+            return self._sub_delta(_delta_fr_relativedelta(o))
         # . uncommon
         if utils.is_td64(o):
             return self._sub_timedelta(utils.td64_to_td(o, None))
@@ -688,7 +681,7 @@ class Delta:
         if utils.is_td(o):
             return self._rsub_timedelta(o)
         if isinstance(o, relativedelta):
-            return delta_fr_relativedelta(o)._sub_delta(self)
+            return _delta_fr_relativedelta(o)._sub_delta(self)
         # . uncommon
         # TODO: numpy datetime-like object
         # np.datetime64 and np.timedelta64 are converted to
@@ -895,7 +888,7 @@ class Delta:
         if utils.is_td(o):
             return self._eq_timedelta(o)
         if isinstance(o, relativedelta):
-            return self._eq_delta(delta_fr_relativedelta(o))
+            return self._eq_delta(_delta_fr_relativedelta(o))
         # . uncommon
         if utils.is_td64(o):
             return self._eq_timedelta(utils.td64_to_td(o, None))

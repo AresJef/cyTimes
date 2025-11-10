@@ -8,10 +8,6 @@ _DateT = TypeVar("_DateT", bound=datetime.date)
 _DatetimeT = TypeVar("_DatetimeT", bound=datetime.datetime)
 _DeltaT = TypeVar("_DeltaT", bound=datetime.timedelta | Delta | relativedelta)
 
-# Utils
-def is_delta(obj: object) -> bool: ...
-def delta_fr_relativedelta(rd: relativedelta) -> Delta: ...
-
 # Delta
 class Delta:
     def __init__(
