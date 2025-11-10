@@ -243,8 +243,6 @@ cdef:
     dict _DEFAULT_HMS
     dict _DEFAULT_AMPM
 
-cpdef Configs configs_fr_parserinfo(object info)
-
 cdef class Configs:
     cdef:
         # . settings
@@ -258,6 +256,8 @@ cdef class Configs:
         dict _weekday, _weekday_ext
         dict _hms, _hms_ext
         dict _ampm, _ampm_ext
+        # . internal
+        object __cls
     # Y/M/D
     cpdef str order_hint(self)
     #  Jump
@@ -317,6 +317,8 @@ cdef class Configs:
     # . value
     cdef inline int _ensure_int_value(self, str namespace, object value)
     cdef inline int _validate_value(self, str namespace, int value, int minimum, int maximum)
+    # . class
+    cdef inline object _cls(self)
 
 cdef Configs _DEFAULT_CONFIGS
 
@@ -378,6 +380,7 @@ cdef class Parser:
         Py_ssize_t _length
         list _tokens
         str _token1
+        object __cls
     # Parse
     cpdef datetime.datetime parse(self, str dtstr, object default=?, object year1st=?, object day1st=?, bint ignoretz=?, bint isoformat=?, object dtclass=?)
     cdef inline bint _process(self, str dtstr, bint isoformat) except -1
@@ -413,6 +416,8 @@ cdef class Parser:
     cdef inline bint _set_minute_by_token(self, str token=?, Py_ssize_t token_len=?, int token_kind=?) except -1
     cdef inline bint _set_second_by_token(self, str token=?, Py_ssize_t token_len=?, int token_kind=?) except -1
     cdef inline int _adjust_hour_by_ampm(self, int hour, int flag) except -1
+    # Internal
+    cdef inline object _cls(self)
 
 cdef Parser _DEFAULT_PARSER
 

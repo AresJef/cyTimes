@@ -24,7 +24,7 @@ from cython.cimports.cpython.dict import PyDict_Contains as dict_contains  # typ
 from cython.cimports.cpython.list import PyList_GET_SIZE as list_len  # type: ignore
 from cython.cimports.cpython.list import PyList_GET_ITEM as list_getitem  # type: ignore
 from cython.cimports.cpython.list import PyList_SET_ITEM as list_setitem  # type: ignore
-from cython.cimports.cytimes import utils  # type: ignore
+from cython.cimports.cytimes import errors, utils  # type: ignore
 
 np.import_array()
 np.import_umath()
@@ -33,7 +33,7 @@ datetime.import_datetime()
 # Python imports
 import datetime
 from dateutil.parser._parser import parserinfo
-from cytimes import utils, errors
+from cytimes import errors, utils
 
 __all__ = [
     "timelex",
@@ -120,42 +120,6 @@ _DEFAULT_AMPM: dict[str, int] = {
 # fmt: on
 
 
-@cython.ccall
-def configs_fr_parserinfo(info: parserinfo) -> Configs:
-    """Build `Configs` from an existing `dateutil.parser.parserinfo` <'Configs'>`.
-
-    :param info `<'dateutil.parser.parserinfo'>`: An existing parserinfo instance.
-    :returns `<'Configs'>`: A Configs instance constructed from `info`,
-        with equivalent settings.
-    """
-    if not isinstance(info, parserinfo):
-        raise TypeError(
-            "Expects an instance of 'dateutil.parser.parserinfo', "
-            "instead got %s." % (type(info))
-        )
-    # Construct Configs
-    cfg = Configs(year1st=bool(info.yearfirst), day1st=bool(info.dayfirst))
-    #: The following order matters for conflict checking
-    cfg.clear_settings()
-    if isinstance(info.JUMP, (list, tuple, set)):
-        cfg.replace_jump(set(info.JUMP))
-    if isinstance(info.PERTAIN, (list, tuple, set)):
-        cfg.replace_pertain(set(info.PERTAIN))
-    if isinstance(info.UTCZONE, (list, tuple, set)):
-        cfg.replace_utc(set(info.UTCZONE))
-    if isinstance(info.TZOFFSET, dict):
-        cfg.replace_tz(dict(info.TZOFFSET))
-    if isinstance(info.MONTHS, (list, tuple)):
-        cfg.replace_month({t: i + 1 for i, row in enumerate(info.MONTHS) for t in row})
-    if isinstance(info.WEEKDAYS, (list, tuple)):
-        cfg.replace_weekday({t: i for i, row in enumerate(info.WEEKDAYS) for t in row})
-    if isinstance(info.HMS, (list, tuple)):
-        cfg.replace_hms({t: i for i, row in enumerate(info.HMS) for t in row})
-    if isinstance(info.AMPM, (list, tuple)):
-        cfg.replace_ampm({t: i for i, row in enumerate(info.AMPM) for t in row})
-    return cfg
-
-
 @cython.cclass
 class Configs:
     """Configuration for the `<'Parser'>`.
@@ -193,6 +157,8 @@ class Configs:
     # . ampm
     _ampm: dict[str, int]
     _ampm_ext: dict[str, int]
+    # . internal
+    __cls: object
 
     def __init__(
         self,
@@ -282,7 +248,38 @@ class Configs:
         cfg = Configs.from_parserinfo(info)
         ```
         """
-        return configs_fr_parserinfo(info)
+        if not isinstance(info, parserinfo):
+            errors.raise_type_error(
+                cls,
+                "from_parserinfo(info)",
+                "Expects an instance of 'dateutil.parser.parserinfo', "
+                "instead got %s." % (type(info)),
+            )
+        # Construct Configs
+        cfg: Configs = cls(year1st=bool(info.yearfirst), day1st=bool(info.dayfirst))
+        #: The following order matters for conflict checking
+        cfg.clear_settings()
+        if isinstance(info.JUMP, (list, tuple, set)):
+            cfg.replace_jump(set(info.JUMP))
+        if isinstance(info.PERTAIN, (list, tuple, set)):
+            cfg.replace_pertain(set(info.PERTAIN))
+        if isinstance(info.UTCZONE, (list, tuple, set)):
+            cfg.replace_utc(set(info.UTCZONE))
+        if isinstance(info.TZOFFSET, dict):
+            cfg.replace_tz(dict(info.TZOFFSET))
+        if isinstance(info.MONTHS, (list, tuple)):
+            cfg.replace_month(
+                {t: i + 1 for i, row in enumerate(info.MONTHS) for t in row}
+            )
+        if isinstance(info.WEEKDAYS, (list, tuple)):
+            cfg.replace_weekday(
+                {t: i for i, row in enumerate(info.WEEKDAYS) for t in row}
+            )
+        if isinstance(info.HMS, (list, tuple)):
+            cfg.replace_hms({t: i for i, row in enumerate(info.HMS) for t in row})
+        if isinstance(info.AMPM, (list, tuple)):
+            cfg.replace_ampm({t: i for i, row in enumerate(info.AMPM) for t in row})
+        return cfg
 
     # Y/M/D -----------------------------------------------------------
     @property
@@ -1391,9 +1388,10 @@ class Configs:
         :raises `<'InvalidConfigsValue'>`: If the token is not a string.
         """
         if not isinstance(token, str):
-            raise errors.InvalidConfigsValue(
-                "The token for 'Configs.%s' must be a string, instead got %s."
-                % (namespace, type(token))
+            errors.raise_configs_value_error(
+                self._cls(),
+                "Token for 'Configs.%s' must be a string, instead got %s."
+                % (namespace, type(token)),
             )
         return token
 
@@ -1414,9 +1412,10 @@ class Configs:
         """
         # Validate token
         if token is None:
-            raise errors.InvalidConfigsValue(
-                "The token for 'Configs.%s' must be a string, instead got None."
-                % namespace
+            errors.raise_configs_value_error(
+                self._cls(),
+                "Token for 'Configs.%s' must be a string, instead got None."
+                % namespace,
             )
         token: str = self._lowercase_token(namespace, token)
 
@@ -1456,9 +1455,10 @@ class Configs:
 
         # Raise error
         if overlap:
-            raise errors.InvalidConfigsValue(
-                "The token '%s' for 'Configs.%s' conflicts with existing tokens in 'Configs.%s'."
-                % (token, namespace, overlap)
+            errors.raise_configs_value_error(
+                self._cls(),
+                "Token '%s' for 'Configs.%s' conflicts with existing tokens in 'Configs.%s'."
+                % (token, namespace, overlap),
             )
 
         # Return the token in lowercase
@@ -1475,13 +1475,15 @@ class Configs:
         :returns `<'str'>`: The lowercase variant of the token.
         """
         if token is None:
-            raise errors.InvalidConfigsValue(
-                "The token for 'Configs.%s' must be a string, instead got None."
-                % namespace
+            errors.raise_configs_value_error(
+                self._cls(),
+                "Token for 'Configs.%s' must be a string, instead got None."
+                % namespace,
             )
         if str_len(token) == 0:
-            raise errors.InvalidConfigsValue(
-                "The token for 'Configs.%s' cannot be an empty string." % namespace
+            errors.raise_configs_value_error(
+                self._cls(),
+                "Token for 'Configs.%s' cannot be an empty string." % namespace,
             )
         return token.lower()
 
@@ -1495,7 +1497,9 @@ class Configs:
             the lowercase, uppercase, and titlecase variants of the token.
         """
         if token is None:
-            raise errors.InvalidConfigsValue("Namespace `token` cannot be None.")
+            errors.raise_configs_value_error(
+                self._cls(), "Namespace `token` cannot be None."
+            )
         return (token.lower(), token.upper(), token.title())
 
     # . value
@@ -1511,9 +1515,10 @@ class Configs:
         :raises `<'InvalidConfigsValue'>`: If the value is not an integer.
         """
         if not isinstance(value, int):
-            raise errors.InvalidConfigsValue(
+            errors.raise_configs_value_error(
+                self._cls(),
                 "The value for 'Configs.%s' must be an integer, instead got %s."
-                % (namespace, type(value))
+                % (namespace, type(value)),
             )
         return value
 
@@ -1537,11 +1542,21 @@ class Configs:
         :raises `<'InvalidConfigsValue'>`: If the value is out of range.
         """
         if not minimum <= value <= maximum:
-            raise errors.InvalidConfigsValue(
+            errors.raise_configs_value_error(
+                self._cls(),
                 "The value for 'Configs.%s' must be an integer between %d..%d, instead got %d."
-                % (namespace, minimum, maximum, value)
+                % (namespace, minimum, maximum, value),
             )
         return value
+
+    # . class
+    @cython.cfunc
+    @cython.inline(True)
+    def _cls(self) -> object:
+        """(internal) Access the class object of the current instance `<'type[Configs]'>`."""
+        if self.__cls is None:
+            self.__cls = self.__class__
+        return self.__cls
 
     # Special methods -------------------------------------------------
     def __repr__(self) -> str:
@@ -1549,7 +1564,7 @@ class Configs:
             "<'%s' (%s: year1st=%s day1st=%s | "
             "sizes: jump=%d pertain=%d utc=%d tz=%d month=%d weekday=%d hms=%d ampm=%d)>"
             % (
-                self.__class__.__name__,
+                self._cls().__name__,
                 self.order_hint(),
                 self._year1st,
                 self._day1st,
@@ -2304,6 +2319,7 @@ class Parser:
     _length: cython.Py_ssize_t
     _tokens: list[str]
     _token1: str
+    __cls: object
 
     def __init__(self, cfg: Configs = None) -> None:
         """Flexible date/time parser with ISO fast-path and token heuristics.
@@ -2406,9 +2422,7 @@ class Parser:
         """
         # Validate dtstr
         if dtstr is None:
-            raise errors.ParserFailedError(
-                "<'%s'> Cannot parse None." % (self.__class__.__name__)
-            )
+            errors.raise_parser_failed_error(self._cls(), "Cannot parse None.")
 
         # Settings
         self._ignoretz = ignoretz
@@ -2421,10 +2435,10 @@ class Parser:
             self._cfg._year1st if year1st is None else bool(year1st),
             self._cfg._day1st if day1st is None else bool(day1st),
         ):
-            raise errors.ParserFailedError(
-                "<'%s'> Failed to parse '%s' %s.\n"
-                "Error: Cannot extract any datetime components."
-                % (self.__class__.__name__, dtstr, type(dtstr))
+            errors.raise_parser_failed_error(
+                self._cls(),
+                "Failed to parse '%s' %s.\n"
+                "Cannot extract any datetime components." % (dtstr, type(dtstr)),
             )
 
         # Build
@@ -2472,10 +2486,9 @@ class Parser:
         except AssertionError:
             raise
         except Exception as err:
-            raise errors.ParserFailedError(
-                "<'%s'> Failed to parse '%s' %s.\n"
-                "Error: %s" % (self.__class__.__name__, dtstr, type(dtstr), err)
-            ) from err
+            errors.raise_parser_failed_error(
+                self._cls(), "Failed to parse '%s' %s" % (dtstr, type(dtstr)), err
+            )
 
         # Finished
         return True
@@ -2527,10 +2540,11 @@ class Parser:
                 return self._gen_dt(default, tzinfo, dtclass)
 
         except Exception as err:
-            raise errors.ParserBuildError(
-                "<'%s'> Failed to build datetime from '%s'.\n%s\n"
-                "Error: %s" % (self.__class__.__name__, dtstr, self._res, err)
-            ) from err
+            errors.raise_parser_failed_error(
+                self._cls(),
+                "Failed to build datetime from '%s'.\n%s" % (dtstr, self._res),
+                err,
+            )
 
     @cython.cfunc
     @cython.inline(True)
@@ -4232,6 +4246,15 @@ class Parser:
         else:
             return hour
 
+    # Internal
+    @cython.cfunc
+    @cython.inline(True)
+    def _cls(self) -> object:
+        """(internal) Access the class object of the current instance `<'type[Parser]'>`."""
+        if self.__cls is None:
+            self.__cls = self.__class__
+        return self.__cls
+
 
 _DEFAULT_PARSER: Parser = Parser()
 
@@ -4387,14 +4410,16 @@ def parse_obj(
         if utils.is_dt64(dtobj):
             return utils.dt64_to_dt(dtobj, None, dtclass)
     except Exception as err:
-        raise errors.ParserFailedError(
-            "<'%s'> Failed to parse '%s' %s.\nError: %s"
-            % (Parser.__name__, dtobj, type(dtobj), err)
-        ) from err
+        errors.raise_parser_failed_error(
+            _DEFAULT_PARSER.__cls,
+            "Failed to parse '%s' %s." % (dtobj, type(dtobj)),
+            err,
+        )
+
     # . invalid
-    raise errors.ParserFailedError(
-        "<'%s'> Failed to parse '%s' %s.\n"
-        "Error: Unsupported data type." % (Parser.__name__, dtobj, type(dtobj))
+    errors.raise_parser_failed_error(
+        _DEFAULT_PARSER.__cls,
+        "Failed to parse '%s' %s.\nUnsupported data type." % (dtobj, type(dtobj)),
     )
 
 
