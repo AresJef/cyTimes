@@ -10,6 +10,7 @@ from cython.cimports.libc import math  # type: ignore
 from cython.cimports import numpy as np  # type: ignore
 from cython.cimports.cpython import datetime  # type: ignore
 from cython.cimports.cpython.time import localtime  # type: ignore
+from cython.cimports.cpython.unicode import PyUnicode_CheckExact as is_str_exact  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_READ_CHAR as str_read  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_GET_LENGTH as str_len  # type: ignore
 from cython.cimports.cpython.set import PySet_Add as set_add  # type: ignore
@@ -2017,7 +2018,11 @@ class Result:
 
             # Case: month not labeled (infer)
             else:
-                if v0 > 31 or yidx == 0 or (yearfirst and 0 < v1 <= 12 and 0 < v2 <= 31):
+                if (
+                    v0 > 31
+                    or yidx == 0
+                    or (yearfirst and 0 < v1 <= 12 and 0 < v2 <= 31)
+                ):
                     if dayfirst and 0 < v2 <= 12:
                         self.year, self.day, self.month = (v0, v1, v2)  # 99-01-Jan
                     else:
@@ -4386,7 +4391,11 @@ def parse_obj(
     """
     # . datetime string
     if isinstance(dtobj, str):
-        return parse(dtobj, default, yearfirst, dayfirst, ignoretz, isoformat, cfg, dtclass)
+        if not is_str_exact(dtobj):
+            dtobj = str(dtobj)
+        return parse(
+            dtobj, default, yearfirst, dayfirst, ignoretz, isoformat, cfg, dtclass
+        )
     try:
         # . datetime.datetime
         if utils.is_dt(dtobj):
