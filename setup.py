@@ -46,19 +46,19 @@ def extension(src: str, include_np: bool, *extra_compile_args: str) -> Extension
 if platform.system() == "Windows":
     extensions = [
         extension("delta.py", True),
+        extension("errors.py", True),
         extension("parser.py", True),
         extension("pddt.py", True),
         extension("pydt.py", True),
-        extension("typeref.py", False),
         extension("utils.py", True),
     ]
 else:
     extensions = [
         extension("delta.py", True, "-Wno-unreachable-code"),
+        extension("errors.py", True, "-Wno-unreachable-code"),
         extension("parser.py", True, "-Wno-unreachable-code"),
         extension("pddt.py", True, "-Wno-unreachable-code"),
         extension("pydt.py", True, "-Wno-unreachable-code"),
-        extension("typeref.py", False, "-Wno-unreachable-code"),
         extension("utils.py", True, "-Wno-unreachable-code"),
     ]
 
