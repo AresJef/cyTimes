@@ -10,7 +10,7 @@ dt = Pydt.utcnow()  # 2024-12-06 09:37:36.743159+0000
 dt = Pydt.combine("1970-01-01", "00:00:01")  # 1970-01-01 00:00:01
 dt = Pydt.fromordinal(1)  # 0001-01-01 00:00:00
 dt = Pydt.fromseconds(1)  # 1970-01-01 00:00:01
-dt = Pydt.fromicroseconds(1)  # 1970-01-01 00:00:00.000001
+dt = Pydt.frommicroseconds(1)  # 1970-01-01 00:00:00.000001
 dt = Pydt.fromtimestamp(1, datetime.UTC)  # 1970-01-01 00:00:01+0000
 dt = Pydt.utcfromtimestamp(1)  # 1970-01-01 00:00:01+0000
 dt = Pydt.fromisoformat("1970-01-01T00:00:01")  # 1970-01-01 00:00:01
@@ -27,8 +27,8 @@ res = dt.strftime("%Y-%m-%d %H:%M:%S %Z")  # "1970-01-01 00:00:00 CET"
 res = dt.isoformat()  # "1970-01-01T00:00:00+01:00"
 res = dt.timetuple()  # (1970, 1, 1, 0, 0, 0, 3, 1, 0)
 res = dt.toordinal()  # 719163
-res = dt.seconds()  # 0.0
-res = dt.microseconds()  # 0
+res = dt.toseconds()  # 0.0
+res = dt.tomicroseconds()  # 0
 res = dt.timestamp()  # -3600.0
 res = dt.date()  # 1970-01-01
 res = dt.time()  # 00:00:00
@@ -91,19 +91,19 @@ res = dt.is_long_year()  # True
 res = dt.leap_bt_year(2007)  # 9
 res = dt.days_in_year()  # 365
 res = dt.days_bf_year()  # 719162
-res = dt.days_of_year()  # 33
+res = dt.day_of_year()  # 33
 res = dt.is_year(1970)  # True
 
 # . quarter
 res = dt.days_in_quarter()  # 90
 res = dt.days_bf_quarter()  # 0
-res = dt.days_of_quarter()  # 33
+res = dt.day_of_quarter()  # 33
 res = dt.is_quarter(1)  # True
 
 # . month
 res = dt.days_in_month()  # 28
 res = dt.days_bf_month()  # 31
-res = dt.days_of_month()  # 2
+res = dt.day_of_month()  # 2
 res = dt.is_month("Feb")  # True
 res = dt.month_name("es")  # "febrero"
 
@@ -112,7 +112,7 @@ res = dt.is_weekday("Monday")  # True
 
 # . day
 res = dt.is_day(2)  # True
-res = dt.day_name("fr")  # "lundi"
+res = dt.weekday_name("fr")  # "lundi"
 
 # . date&time
 res = dt.is_first_of("Y")  # False
@@ -147,8 +147,6 @@ dt = Pydt(1970, 1, 1)  # 1970-01-01 00:00:00
 
 res = dt.is_past()  # True
 res = dt.is_future()  # False
-res = dt.closest("1970-01-02", "2007-01-01")  # 1970-01-02 00:00:00
-res = dt.farthest("1970-01-02", "2007-01-01")  # 2007-01-01 00:00:00
 
 # Pddt ==============================================================
 pt = Pddt(["9999-01-01 00:00:00+00:00", "9999-01-02 00:00:00+00:00"])
