@@ -16,6 +16,7 @@ datetime.import_datetime()
 
 # Python imports
 import datetime
+from typing_extensions import Self
 from dateutil.relativedelta import relativedelta
 from cytimes import errors, utils
 
@@ -572,7 +573,7 @@ class Delta:
         return NotImplemented
 
     # Arithmetic: subtraction ------------------------------------------------
-    def __sub__(self, o: object) -> Delta:
+    def __sub__(self, o: object) -> Self:
         """Left subtraction `self - o`.
 
         - Subtraction with delta object (`datetime.timedelta`, `cytimes.Delta`, `pandas.Timedelta`, etc):
@@ -791,7 +792,7 @@ class Delta:
         )
 
     # Arithmetic: negation ---------------------------------------------------
-    def __neg__(self) -> Delta:
+    def __neg__(self) -> Self:
         """Negation operation `<'Delta'>`.
 
         - Negates all relative delta fields.
@@ -823,7 +824,7 @@ class Delta:
         )
 
     # Arithmetic: absolute ---------------------------------------------------
-    def __abs__(self) -> Delta:
+    def __abs__(self) -> Self:
         """Absolute operation `<'Delta'>`.
 
         Applies absolute value to the relative delta fields. This implementation uses
