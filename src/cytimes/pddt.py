@@ -9,27 +9,37 @@ import cython
 from cython.cimports import numpy as np  # type: ignore
 from cython.cimports.cpython import datetime  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_READ_CHAR as str_read  # type: ignore
-from cython.cimports.cpython.dict import PyDict_GetItem as dict_getitem  # type: ignore
-from cython.cimports.cytimes.parser import parse_dtobj as _parse, Configs, CONFIG_MONTH, CONFIG_WEEKDAY  # type: ignore
-from cython.cimports.cytimes import utils  # type: ignore
+from cython.cimports.cpython.unicode import PyUnicode_GET_LENGTH as str_len  # type: ignore
+from cython.cimports.cytimes.parser import (  # type: ignore
+    Configs,
+    parse_obj as _parse_obj,
+    parse_month as _parse_month,
+    parse_weekday as _parse_weekday,
+)
+from cython.cimports.cytimes import errors, utils  # type: ignore
 
 np.import_array()
 np.import_umath()
 datetime.import_datetime()
 
 # Python imports
-import datetime, numpy as np
+from typing import Any, Hashable
 from typing_extensions import Self
-from typing import Literal, Hashable
-from pandas._libs import lib
+import datetime
+import numpy as np
+import pandas as pd
+from pandas import DatetimeIndex
 from pandas.core.arrays.datetimes import DatetimeArray
-from pandas import Index, DatetimeIndex, Series, DataFrame, Timestamp
-from pandas import errors as pd_err
-from pandas._libs.tslibs.parsing import DateParseError
-from pytz import exceptions as pytz_err
+from pandas._libs.lib import no_default as _no_default
 from zoneinfo import available_timezones as _available_timezones
-from cytimes.parser import Configs, parse_dtobj as _parse
-from cytimes import utils, errors
+from cytimes.pydt import Pydt
+from cytimes.parser import (
+    Configs,
+    parse_obj as _parse_obj,
+    parse_month as _parse_month,
+    parse_weekday as _parse_weekday,
+)
+from cytimes import errors, utils
 
 __all__ = ["Pddt"]
 
@@ -37,448 +47,197 @@ __all__ = ["Pddt"]
 # Utils ---------------------------------------------------------------------------------------
 @cython.cfunc
 @cython.inline(True)
-def pddt_new(
-    data: object,
-    freq: object | None = None,
-    tz: datetime.tzinfo | str | None = None,
-    ambiguous: object = "raise",
-    year1st: bool | None = False,
-    day1st: bool | None = False,
-    cfg: Configs = None,
-    unit: str = None,
-    name: Hashable | None = None,
-    copy: bool = False,
-) -> object:
-    """(cfunc) Construct a new Pddt instance `<'Pddt'>`.
+@cython.exceptval(-1, check=False)
+def _parse_size(cls: object, size: object) -> cython.Py_ssize_t:
+    """(internal) Parse the `size` object to an integer to represent the size of an array `<'int'>`.
 
-    :param data `<'object'>`: Datetime-like data to construct with.
+    :param cls `<'type'>`: The class object calling this function.
+    :param size `<'int/str/float/bytes/Array-like'>`: The size object.
+    :returns `<'int'>`: The integer representing the array size.
 
-    :param freq `<'str/timedelta/BaseOffset/None'>`: The frequency of the 'data', defaults to `None`.
-        - `<'str'>` A frequency string (e.g. 'D', 'h', 's', 'ms'), or 'infer' for auto-detection.
-        - `<'BaseOffset'>` A pandas Offset instance representing the frequency.
-        - `<'timedelta'>` A datetime.timedelta instance representing the frequency.
-        - `<'None'>` No specified frequency.
-
-    :param tz `<'str/tzinfo/None'>`: Set the timezone of the index, defaults to `None`.
-        - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-        - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
-        - `<'None'>` Timezone-naive.
-
-    :param ambiguous `<'str/ndarray'>`: How to handle ambiguous times, defaults to `'raise'`.
-        - `<'str'>` Accepts 'infer' or 'raise' for ambiguous times handling.
-        - `<'ndarray'>` A boolean array to specify ambiguous times ('True' for DST time).
-
-    :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
-        If 'year1st=None', use `cfg.year1st` if 'cfg' is specified; otherwise, defaults to `False`.
-
-    :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `None`.
-        If 'day1st=None', use `cfg.day1st` if 'cfg' is specified; otherwise, defaults to `False`.
-
-    :param cfg `<'Configs/None'>`: Custom parser configurations, defaults to `None`.
-
-    :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-        Supported datetime units: 's', 'ms', 'us', 'ns'.
-
-    :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
-
-    :param copy `<'bool'>`: Whether to make a copy of the 'data', defaults to `False`.
+    ## Notice
+    - For `int`, `str`, `float`, `bytes', converts to an integer using `int()`.
+    - For other types, try to get the length of the object to represent the array size.
     """
-    try:
-        # Default: DatetimeIndex
-        y1st = cfg._year1st if year1st is None else year1st
-        d1st = cfg._day1st if day1st is None else day1st
-        pt: Pddt = _pddt_new(data, freq, tz, ambiguous, y1st, d1st, name, copy)
-    except (pd_err.OutOfBoundsDatetime, DateParseError):
-        # Fallback: cytimes parser
-        pt: Pddt = _pddt_new_cytimes(
-            data, freq, tz, ambiguous, year1st, day1st, cfg, name
-        )
-    except errors.InvalidArgumentError:
-        raise
-    except pytz_err.AmbiguousTimeError as err:
-        raise errors.AmbiguousTimeError(err) from err
-    except Exception as err:
-        raise errors.InvalidArgumentError(err) from err
+    # int
+    if isinstance(size, int):
+        value: cython.Py_ssize_t = size
 
-    # Convert to specified unit
-    return pt if unit is None else pt.as_unit(unit)
-
-
-@cython.cfunc
-@cython.inline(True)
-def pddt_new_simple(
-    data: object,
-    tz: datetime.tzinfo | str | None = None,
-    unit: str = None,
-    name: Hashable | None = None,
-) -> object:
-    """(cfunc) Construct a new Pddt instance (simplified arguments) `<'Pddt'>`.
-
-    :param data `<'object'>`: Datetime-like data to construct with.
-
-    :param tz `<'str/tzinfo/None'>`: Set the timezone of the index, defaults to `None`.
-        - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-        - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
-        - `<'None'>` Timezone-naive.
-
-    :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-        Supported datetime units: 's', 'ms', 'us', 'ns'.
-
-    :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
-    """
-    pt: Pddt = pddt_new(
-        data, None, None, "raise", False, False, None, unit, name, False
-    )
-    if tz is None:
-        return pt
-    return pt.tz_localize(tz, "infer", "shift_forward")
-
-
-@cython.cfunc
-@cython.inline(True)
-def _pddt_new(
-    data: object,
-    freq: object | None = None,
-    tz: datetime.tzinfo | str | None = None,
-    ambiguous: object = "raise",
-    year1st: bool = False,
-    day1st: bool = False,
-    name: Hashable | None = None,
-    copy: bool = False,
-) -> object:
-    """(internal) Construct a new Pddt instance `<'Pddt'>`.
-
-    This is an internal function, use the 'DatetimeIndex.__new__'
-    method to instantiate a new 'Pddt'. This function does not
-    handle `OutOfBoundsDatetime` or `DateParseError` exceptions.
-    """
-    # Parse frequency
-    if freq is None:
-        freq = lib.no_default
-    elif freq == "m":
-        freq = "min"
-    # Prase timezone
-    tz = utils.tz_parse(tz)
-    if tz is None:
-        tz = lib.no_default
-    elif ambiguous == "NaT":
-        raise errors.InvalidArgumentError("ambiguous='NaT' is not supported.")
-    # New instance
-    try:
-        return DatetimeIndex.__new__(
-            Pddt,
-            data=data,
-            freq=freq,
-            tz=tz,
-            ambiguous=ambiguous,
-            dayfirst=day1st,
-            yearfirst=year1st,
-            dtype=None,
-            copy=copy,
-            name=name,
-        )
-    except (TypeError, ValueError) as err:
-        msg: str = str(err)
-        if "mixed timezones" not in msg and "unless utc=True" not in msg:
-            raise err
-        return DatetimeIndex.__new__(
-            Pddt,
-            data=data,
-            freq=freq,
-            tz=utils.UTC,
-            ambiguous=ambiguous,
-            dayfirst=day1st,
-            yearfirst=year1st,
-            dtype=None,
-            copy=copy,
-            name=name,
-        )
-
-
-@cython.cfunc
-@cython.inline(True)
-def _pddt_new_cytimes(
-    data: object,
-    freq: object | None = None,
-    tz: datetime.tzinfo | str | None = None,
-    ambiguous: np.ndarray[np.bool_] | Literal["infer", "raise"] = "raise",
-    year1st: bool | None = None,
-    day1st: bool | None = None,
-    cfg: Configs = None,
-    name: Hashable | None = None,
-) -> object:
-    """(internal) Construct a new Pddt instance using
-    the 'cytimes.parse()' `<'Pddt'>`.
-
-    This is an internal function, use to handle fallback
-    exceptions `OutOfBoundsDatetime` or `DateParseError`
-    when '_pddt_new' failed.
-    """
-    # Get array size
-    arr_size = _parse_arr_size(data)
-
-    # Parse with cytimes
-    try:
-        tz = utils.tz_parse(tz)
-        tz_repl = utils.UTC if tz is None else tz
-        arr: np.ndarray = np.PyArray_EMPTY(1, [arr_size], np.NPY_TYPES.NPY_INT64, 0)
-        arr_ptr = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
-        i: cython.Py_ssize_t = 0
-        for item in data:
-            dt: datetime.datetime = _parse(
-                item, None, year1st, day1st, False, True, cfg
-            )
-            if dt.tzinfo is not None:
-                dt = utils.dt_astimezone(dt, tz_repl)
-                if tz is None:
-                    tz = utils.UTC
-            arr_ptr[i] = utils.dt_to_us(dt, False)
-            i += 1
-        arr = arr.astype(utils.DT64_DTYPE_US)
-    except errors.ParserError as err:
-        raise errors.InvalidArgumentError(err) from err
-    except errors.InvalidArgumentError:
-        raise
-    except Exception as err:
-        raise errors.InvalidArgumentError(err) from err
-
-    # New instance
-    pt: Pddt = _pddt_new(arr, freq, None, ambiguous, False, False, name, False)
-    # . apply timezone
-    if tz is None:
-        return pt
-    return pt.tz_localize(tz, ambiguous, "shift_forward")
-
-
-@cython.cfunc
-@cython.inline(True)
-def _pddt_fr_dt(
-    dt: datetime.datetime,
-    size: cython.Py_ssize_t,
-    unit: str = None,
-    name: Hashable | None = None,
-) -> object:
-    """(internal) Construct a new Pddt instance from
-    an instance of datetime `<'Pddt'>`.
-    """
-    us = utils.dt_to_us(dt, False)
-    return _pddt_fr_us(us, size, dt.tzinfo, unit, name)
-
-
-@cython.cfunc
-@cython.inline(True)
-def _pddt_fr_us(
-    val: cython.longlong,
-    size: cython.Py_ssize_t,
-    tz: datetime.tzinfo | None = None,
-    unit: str = None,
-    name: Hashable | None = None,
-) -> object:
-    """(internal) Construct a new Pddt instance from
-    total microseconds since Unix Epoch `<'Pddt'>`.
-    """
-    arr: np.ndarray = utils.dt64arr_fr_int64(val, size, "us")
-    return pddt_new_simple(arr, tz, unit, name)
-
-
-@cython.cfunc
-@cython.inline(True)
-def _parse_dtobj(
-    dtobj: object,
-    default: object | None = None,
-    year1st: bool | None = None,
-    day1st: bool | None = None,
-    ignoretz: cython.bint = False,
-    isoformat: cython.bint = True,
-    cfg: Configs = None,
-) -> datetime.datetime:
-    """(internal) Parse datetime-like object into
-    datetime instance `<'datetime.datetime'>.
-
-    For information about the parameters, please refer to
-    the 'cytimes.parser.parse_dtobj()' function.
-    """
-    try:
-        return _parse(dtobj, default, year1st, day1st, ignoretz, isoformat, cfg)
-    except Exception as err:
-        raise errors.InvalidArgumentError(err) from err
-
-
-@cython.cfunc
-@cython.inline(True)
-@cython.exceptval(-2, check=False)
-def _parse_month(month: object, raise_error: cython.bint) -> cython.int:
-    """(internal) Parse the 'month' value to month number (1=Jan...12=Dec) `<'int'>`.
-
-    :param month `<'int/str'>`: Month value.
-        - `<'int'>` Month number (1=Jan...12=Dec).
-        - `<'str'>` Month name (case-insensitive), e.g., 'Jan', 'februar', '三月'.
-
-    :param raise_error `<'bool'>`: Whether to raise error if the 'month' value is invalid.
-        - If `True`, raises `InvalidMonthError` for invalid input.
-        - If `False`, returns `-1` instead.
-
-    ## Notice:
-    - Return `-1` directly if 'month' is `None` or `-1`.
-    """
-    # <'None'>
-    if month is None:
-        return -1  # exit
-
-    # <'int'>
-    if isinstance(month, int):
-        num: cython.longlong = month
-        if num == -1:
-            return -1  # exit
-        if not 1 <= num <= 12:
-            if raise_error:
-                raise errors.InvalidMonthError(
-                    "invalid month number '%d', must betweem 1(Jan)...12(Dec)." % num
-                )
-            return -1  # exit
-        return num  # exit
-
-    # <'str'>
-    if isinstance(month, str):
-        mth: str = month
-        val = dict_getitem(CONFIG_MONTH, mth.lower())
-        if val == cython.NULL:
-            if raise_error:
-                raise errors.InvalidMonthError("invalid month name '%s'." % mth)
-            return -1  # eixt
-        return cython.cast(object, val)  # exit
-
-    # Invalid
-    if raise_error:
-        raise errors.InvalidMonthError(
-            "unsupported month value type %s, expects <'str/int'>." % type(month)
-        )
-    return -1
-
-
-@cython.cfunc
-@cython.inline(True)
-@cython.exceptval(-2, check=False)
-def _parse_weekday(weekday: object, raise_error: cython.bint) -> cython.int:
-    """(internal) Parse the 'weekday' value to weekday number (0=Mon...6=Sun) `<'int'>`.
-
-    :param weekday `<'int/str/None'>`: Weekday value.
-        - `<'int'>` Weekday number (0=Mon...6=Sun).
-        - `<'str'>` Weekday name (case-insensitive), e.g., 'Mon', 'dienstag', '星期三'.
-
-    :param raise_error `<'bool'>`: Whether to raise error if the 'weekday' value is invalid.
-        - If `True`, raises `InvalidWeekdayError` for invalid input.
-        - If `False`, returns `-1` instead.
-
-    ## Notice:
-    - Return `-1` directly if 'weekday' is `None` or `-1`.
-    """
-    # <'None'>
-    if weekday is None:
-        return -1
-
-    # <'int'>
-    if isinstance(weekday, int):
-        num: cython.longlong = weekday
-        if num == -1:
-            return -1  # exit
-        if not 0 <= num <= 6:
-            if raise_error:
-                raise errors.InvalidWeekdayError(
-                    "invalid weekday number '%d', must betweem 0(Mon)...6(Sun)." % num
-                )
-            return -1
-        return num  # exit
-
-    # <'str'>
-    if isinstance(weekday, str):
-        wkd: str = weekday
-        val = dict_getitem(CONFIG_WEEKDAY, wkd.lower())
-        if val == cython.NULL:
-            if raise_error:
-                raise errors.InvalidWeekdayError("invalid weekday name '%s'." % wkd)
-            return -1
-        return cython.cast(object, val)  # exit
-
-    # Invalid
-    if raise_error:
-        raise errors.InvalidWeekdayError(
-            "unsupported weekday value type %s, expects <'str/int'>." % type(weekday)
-        )
-    return -1
-
-
-@cython.cfunc
-@cython.inline(True)
-@cython.exceptval(-2, check=False)
-def _parse_arr_size(obj: object) -> cython.Py_ssize_t:
-    """(internal) Parse the object to an integer
-    representing the size of an array `<'int'>`.
-
-    - For `<'int/str/float/bytes'>`, converts to an integer representing the array size.
-    - For other types, trys to get the length of the object to represent the array size.
-    """
-    # int / str / float / bytes
-    if isinstance(obj, (int, float, str, bytes)):
+    # str / float / bytes
+    elif isinstance(size, (float, str, bytes)):
         try:
-            size: cython.Py_ssize_t = int(obj)
+            value: cython.Py_ssize_t = int(size)
         except Exception as err:
-            raise errors.InvalidTypeError(
-                "cannot convert '%s' to an integer to represent the array size." % obj
-            ) from err
-    # Possible Array-like
+            # fmt: off
+            errors.raise_argument_error(cls, "size",
+                "Cannot convert '%s' %s to integer." 
+                % (size, type(size)), err)
+            # fmt: on
+            return -1  # unreachable: suppress compiler warning
+
+    # Array-like
     else:
         try:
-            size: cython.Py_ssize_t = len(obj)
+            value: cython.Py_ssize_t = len(size)
         except Exception as err:
-            raise errors.InvalidTypeError(
-                "cannot get the length of %s to represent the array size." % type(obj)
-            ) from err
-    # Validate size
-    if size < 1:
-        raise errors.InvalidArgumentError(
-            "array size must be and integer > 0, instead got '%d'." % size
-        )
-    return size
+            # fmt: off
+            errors.raise_argument_error(cls, "size",
+                "Cannot get the length of '%s' %s." 
+                % (size, type(size)), err)
+            # fmt: on
+            return -1  # unreachable: suppress compiler warning
+
+    # Non-negative check
+    if value < 1:
+        # fmt: off
+        errors.raise_argument_error(cls, "size",
+            "Array size must be greater than 0, instead got %d." % value)
+        # fmt: on
+    return value
 
 
 @cython.cfunc
 @cython.inline(True)
-@cython.exceptval(-2, check=False)
-def _raise_incomparable_error(
-    pt1: object,
-    pt2: object,
-    desc: str = "compare",
-) -> cython.bint:
-    """(internal) Raise an `IncomparableError` for comparison
-    between timezone-naive & timezone-aware DatetimeIndex.
+def _parse_freq(freq: object) -> object:
+    """(internal) Parse the frequency object `<'object'>`.
 
-    :param pt1 `<'DatetimeIndex'>`: The first instance.
-    :param pt2 `<'DatetimeIndex'>`: The second instance.
-    :param desc `<'str'>`: The description for the comparision, defaults to `'compare'`.
-        Displayed as: 'cannot [desc] between naive & aware datetimes...'
+    :param freq `<'object'>`: The frequency object.
+    :returns `<'object'>`: The normalize frequency object.
+
+    ## Notice
+    This function is designed to only normalize `str` frequency
+    aliases, and only modifies the following input:
+
+    - 'm' -> 'min'
     """
-    d1_tz, d2_tz = pt1.tzinfo, pt2.tzinfo
-    assert d1_tz is not d2_tz and (d1_tz is None or d2_tz is None)
-    if d1_tz is None:
-        raise errors.IncomparableError(
-            "cannot %s between naive & aware datetimes:\n"
-            "Timezone-naive %s\n"
-            "Timezone-aware %s" % (desc, pt1.dtype, pt2.dtype)
-        )
+    if isinstance(freq, str) and str_len(freq) == 1 and str_read(freq, 0) == "m":
+        return "min"
     else:
-        raise errors.IncomparableError(
-            "cannot %s between naive & aware datetimes:\n"
-            "Timezone-aware %s\n"
-            "Timezone-naive %s" % (desc, pt1.dtype, pt2.dtype)
-        )
+        return freq
+
+
+@cython.cfunc
+@cython.inline(True)
+def _parse_us_from_iso_dict(cls: object, iso: dict) -> cython.longlong:
+    """(internal) Parse the ISO dictionary to total microseconds since Unix Epoch `<'int'>`.
+
+    :param cls `<'type'>`: The class object calling this function.
+    :param iso `<'dict'>`: The dictionary containing `'year'`, `'week'`and `'weekday'` (or `'day'`) keys.
+    :returns `<'int'>`: The total microseconds since Unix Epoch.
+    """
+    # Year
+    year = iso.get("year", None)
+    if not isinstance(year, int):
+        if year is None:
+            # fmt: off
+            errors.raise_argument_error(cls, "iso",
+                "Dictionary must contain 'year' key for ISO year value.")
+            # fmt: on
+        else:
+            # fmt: off
+            errors.raise_argument_error(cls, "iso",
+                "Value for 'year' must be an integer, instead got %s %s." 
+                % (year, type(year)))
+            # fmt: on
+
+    # Week
+    week = iso.get("week", None)
+    if not isinstance(week, int):
+        if week is None:
+            # fmt: off
+            errors.raise_argument_error(cls, "iso",
+                "Dictionary must contain 'week' key for ISO week value.")
+            # fmt: on
+        else:
+            # fmt: off
+            errors.raise_argument_error(cls, "iso",
+                "Value for 'week' must be an integer, instead got %s %s." 
+                % (week, type(week)))
+            # fmt: on
+
+    # Weekday
+    weekday = iso.get("weekday", iso.get("day", None))
+    if not isinstance(weekday, int):
+        if weekday is None:
+            # fmt: off
+            errors.raise_argument_error(cls, "iso",
+                "Dictionary must contain 'weekday' key for ISO weekday value.")
+            # fmt: on
+        else:
+            # fmt: off
+            errors.raise_argument_error(cls, "iso",
+                "Value for 'weekday' must be an integer, instead got %s %s." 
+                % (weekday, type(weekday)))
+            # fmt: on
+
+    # Compute microseconds (since Unix Epoch)
+    _ymd = utils.ymd_fr_iso(year, week, weekday)
+    value: cython.longlong = utils.ymd_to_ord(_ymd.year, _ymd.month, _ymd.day)
+    return (value - utils.EPOCH_DAY) * utils.US_DAY
+
+
+@cython.cfunc
+@cython.inline(True)
+def _parse_us_from_doy_dict(cls: object, doy: dict) -> cython.longlong:
+    """(internal) Parse the day-of-year dictionary to total microseconds since Unix Epoch `<'int'>`.
+
+    :param cls `<'type'>`: The class object calling this function.
+    :param doy `<'dict'>`: The dictionary containing `'year'` and `'doy'` (or `'day'`) keys.
+    :returns `<'int'>`: The total microseconds since Unix Epoch.
+    """
+    # Year
+    year = doy.get("year", None)
+    if not isinstance(year, int):
+        if year is None:
+            # fmt: off
+            errors.raise_argument_error(cls, "iso",
+                "Dictionary must contain 'year' key for day-of-year value.")
+            # fmt: on
+        else:
+            # fmt: off
+            errors.raise_argument_error(cls, "iso",
+                "Value for 'year' must be an integer, instead got %s %s." 
+                % (year, type(year)))
+            # fmt: on
+
+    # Day-of-year
+    day_of_year = doy.get("doy", doy.get("day", None))
+    if not isinstance(day_of_year, int):
+        if day_of_year is None:
+            # fmt: off
+            errors.raise_argument_error(cls, "iso",
+                "Dictionary must contain 'doy' key for day-of-year value.")
+            # fmt: on
+        else:
+            # fmt: off
+            errors.raise_argument_error(cls, "iso",
+                "Value for 'doy' must be an integer, instead got %s %s." 
+                % (day_of_year, type(day_of_year)))
+            # fmt: on
+
+    # Compute microseconds (since Unix Epoch)
+    _ymd = utils.ymd_fr_doy(year, day_of_year)
+    value: cython.longlong = utils.ymd_to_ord(_ymd.year, _ymd.month, _ymd.day)
+    return (value - utils.EPOCH_DAY) * utils.US_DAY
 
 
 # Pddt (Pandas Datetime) ----------------------------------------------------------------------
 class Pddt(DatetimeIndex):
-    """A drop-in replacement for Pandas `<'DatetimeIndex'>`
-    class, providing additional functionalities for more
-    convenient datetime operations.
+    """A drop-in replacement for Pandas `<'DatetimeIndex'>` with extended parsing,
+    timezone normalization, resolution control, and delta-aware arithmetic.
+
+    `Pddt` behaves like `DatetimeIndex` in all common operations, while adding:
+
+    - Robust datetime parsing (via custom parser).
+    - Nanosecond/microsecond/millisecond/second unit conversion (`as_unit`).
+    - Vectorized calendar operations (year/month/quarter shifting & replacing).
+    - High-performance datetime arithmetic (`add`, `sub`).
+
+    ## Important Note
+    `Pddt` is datetime64[us] focused. It will try to retain nanosecond resolution
+    when possible, but will automatically downcast to microsecond resolution
+    if the value exceeds the bounds of datetime64[ns]. This behavior applies
+    to all `Pddt` methods.
     """
 
     def __new__(
@@ -487,57 +246,298 @@ class Pddt(DatetimeIndex):
         freq: object | None = None,
         tz: datetime.tzinfo | str | None = None,
         ambiguous: object = "raise",
-        year1st: bool | None = None,
-        day1st: bool | None = None,
-        cfg: Configs = None,
-        unit: str = None,
-        name: Hashable | None = None,
+        yearfirst: bool = True,
+        dayfirst: bool = False,
+        as_unit: str = None,
         copy: bool = False,
+        name: Hashable | None = None,
+        cfg: Configs = None,
     ) -> Self:
-        """A drop-in replacement for Pandas `<'DatetimeIndex'>`
-        class, providing additional functionalities for more
-        convenient datetime operations.
+        """A drop-in replacement for Pandas `<'DatetimeIndex'>` with extended parsing,
+        timezone normalization, resolution control, and delta-aware arithmetic.
 
-        :param data `<'object'>`: Datetime-like data to construct with.
+        `Pddt` behaves like `DatetimeIndex` in all common operations, while adding:
 
-        :param freq `<'str/timedelta/BaseOffset/None'>`: The frequency of the 'data', defaults to `None`.
-            - `<'str'>` A frequency string (e.g. 'D', 'h', 's', 'ms'), or 'infer' for auto-detection.
-            - `<'timedelta'>` A datetime.timedelta instance representing the frequency.
-            - `<'BaseOffset'>` A pandas Offset instance representing the frequency.
-            - `<'None'>` No specified frequency.
+        - Robust datetime parsing (via custom parser).
+        - Nanosecond/microsecond/millisecond/second unit conversion (`as_unit`).
+        - Vectorized calendar operations (year/month/quarter shifting & replacing).
+        - High-performance datetime arithmetic (`add`, `sub`).
 
-        :param tz `<'str/tzinfo/None'>`: Set the timezone of the index, defaults to `None`.
-            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
+        ## Important Note
+        `Pddt` is datetime64[us] focused. It will try to retain nanosecond resolution
+        when possible, but will automatically downcast to microsecond resolution
+        if the value exceeds the bounds of datetime64[ns]. This behavior applies
+        to all `Pddt` methods.
+
+        :param data `<'Array-Like'>`: An array-like (1-dimensional) data containing datetime information.
+            Such as: `tuple`, `list`, `np.ndarray`, `DatetimeIndex`, `Series`, etc.
+
+        :param freq `<'str/timedelta/BaseOffset/None'>`: The frequency of the 'data'. Defaults to `None`.
+
+            - `<'str'>` A frequency string (e.g. `'D', 'h', 's', 'ms'`), or `'infer'` for auto-detection.
+            - `<'timedelta'>` A datetime.timedelta instance.
+            - `<'BaseOffset'>` A pandas date offset instance.
+
+        :param tz `<'tzinfo/str/None'>`: The optional target timezone. Defaults to `None`.
+
             - `<'None'>` Timezone-naive.
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
+            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
 
-        :param ambiguous `<'str/ndarray'>`: How to handle ambiguous times, defaults to `'raise'`.
-            - `<'str'>` Accepts 'infer' or 'raise' for ambiguous times handling.
-            - `<'ndarray'>` A boolean array to specify ambiguous times ('True' for DST time).
+        :param ambiguous `<'str/ndarray[bool]'>`: Specified how ambiguous times should be handled. Defaults to `'raise'`.
 
-        :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
-            If 'year1st=None', use `cfg.year1st` if 'cfg' is specified; otherwise, defaults to `False`.
+            - `'raise'` will raise an `AmbiguousTimeError` if there are ambiguous times.
+            - `'infer'` will attempt to infer fall dst-transition hours based on order.
+            - `'NaT'` will yield NaT where there are ambiguous times.
+            - `<'ndarray[bool]'>` where True signifies a DST time, False signifies a non-DST
+                time (note that this flag is only applicable for ambiguous times)
 
-        :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `None`.
-            If 'day1st=None', use `cfg.day1st` if 'cfg' is specified; otherwise, defaults to `False`.
+        :param yearfirst `<'bool/None'>`: Parse the first ambiguous Y/M/D value as year. Defaults to `True`.
 
-        :param cfg `<'Configs/None'>`: Custom parser configurations, defaults to `None`.
+        :param dayfirst `<'bool/None'>`: Parse the first ambiguous Y/M/D values as day. Defaults to `False`.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        :param copy `<'bool'>`: Whether to make a copy of the 'data'. Defaults to `False`.
 
-        :param copy `<'bool'>`: Whether to make a copy of the 'data', defaults to `False`.
+        :param name `<'Hashable/None'>`: The name assigned to the index. Defaults to `None`.
+
+        :param cfg `<'Configs/None'>`: The Parser configuration. Defaults to `None`.
+            Only applicable to datetime-string parsing. If `None`, uses the module's default `Configs`.
         """
-        # fmt: off
-        return pddt_new(
-            data, freq, tz, ambiguous, year1st, 
-            day1st, cfg, unit, name, copy,
+        return cls._new(
+            data,
+            freq=freq,
+            tz=tz,
+            ambiguous=ambiguous,
+            yearfirst=yearfirst,
+            dayfirst=dayfirst,
+            as_unit=as_unit,
+            copy=copy,
+            name=name,
+            cfg=cfg,
         )
-        # fmt: on
 
     # Constructor --------------------------------------------------------------------------
+    @classmethod
+    def _new(
+        cls,
+        data: object,
+        freq: object | None = None,
+        tz: datetime.tzinfo | str | None = None,
+        ambiguous: object = "infer",
+        yearfirst: bool = True,
+        dayfirst: bool = False,
+        as_unit: str = None,
+        copy: bool = False,
+        name: Hashable | None = None,
+        cfg: Configs = None,
+    ) -> Self:
+        """(internal) Create a new `Pddt` instance."""
+        # Parse timezone
+        tz = utils.tz_parse(tz)
+
+        # Adjust frequency
+        if freq is None:
+            freq = _no_default
+        else:
+            freq = _parse_freq(freq)
+
+        # Base approach: datetime64[ns]
+        try:
+            return cls._new_native(
+                data,
+                freq=freq,
+                tz=tz,
+                ambiguous=ambiguous,
+                yearfirst=yearfirst,
+                dayfirst=dayfirst,
+                as_unit=as_unit,
+                copy=copy,
+                name=name,
+            )
+
+        # Out of bounds / Parsing / Overflow -> Fallback: cytimes parser
+        # datetime[us] + Optional Timezone
+        except (errors.OutOfBoundsError, errors.ParserFailedError):
+            return cls._new_parser(
+                data,
+                freq=freq,
+                tz=tz,
+                ambiguous=ambiguous,
+                yearfirst=yearfirst,
+                dayfirst=dayfirst,
+                as_unit=as_unit,
+                copy=copy,
+                name=name,
+                cfg=cfg,
+            )
+
+        # Ambiguous Time -> Fallback: cytimes parser
+        # datetime[us] + Optional Timezone
+        except errors.AmbiguousTimeError:
+            if ambiguous == "raise":
+                raise
+            return cls._new_parser(
+                data,
+                freq=freq,
+                tz=tz,
+                ambiguous=ambiguous,
+                yearfirst=yearfirst,
+                dayfirst=dayfirst,
+                as_unit=as_unit,
+                copy=copy,
+                name=name,
+                cfg=cfg,
+            )
+
+        # Handle mixed timezones: datetime64[ns] + UTC
+        except errors.MixedTimezoneError:
+            return cls._new_native(
+                data,
+                freq=freq,
+                tz=utils.UTC,  # UTC timezone
+                ambiguous=ambiguous,
+                yearfirst=yearfirst,
+                dayfirst=dayfirst,
+                as_unit=as_unit,
+                copy=copy,
+                name=name,
+            )
+
+    @classmethod
+    def _new_native(
+        cls,
+        data: object,
+        freq: object | None = None,
+        tz: datetime.tzinfo = None,
+        ambiguous: object = "infer",
+        yearfirst: bool = True,
+        dayfirst: bool = False,
+        as_unit: str = None,
+        copy: bool = False,
+        name: Hashable | None = None,
+    ) -> Self:
+        """(internal) Create a new `Pddt` instance using native Pandas `DatetimeIndex`.
+
+        This method attempts to create a `Pddt` instance using Pandas `DatetimeIndex`.
+        If any exceptions related to datetime bounds, parsing, or timezone ambiguities
+        occur, they are caught and re-raised as `Pddt` specific exceptions.
+        """
+        try:
+            pt = DatetimeIndex.__new__(
+                cls,
+                data=data,
+                freq=freq,
+                tz=_no_default if tz is None else tz,
+                ambiguous=ambiguous,
+                dayfirst=dayfirst,
+                yearfirst=yearfirst,
+                dtype=None,
+                copy=copy,
+                name=name,
+            )
+        except errors.PdOutOfBoundsDatetime as err:
+            raise errors.OutOfBoundsError(err) from err
+        except (errors.PytzAmbiguousTimeError, errors.PytzNonExistentTimeError) as err:
+            raise errors.AmbiguousTimeError(err) from err
+        except errors.PdDateParseError as err:
+            raise errors.ParserFailedError(err) from err
+        except OverflowError as err:
+            msg: str = str(err)
+            if "too large to convert to C long" in msg:
+                raise errors.OutOfBoundsError(err) from err
+            raise err
+        except TypeError as err:
+            msg: str = str(err)
+            if "mixed timezones" in msg:
+                raise errors.MixedTimezoneError(err) from err
+            raise err
+        except ValueError as err:
+            msg: str = str(err)
+            if "mix tz-aware" in msg:
+                raise errors.MixedTimezoneError(err) from err
+            if "unless utc=True" not in msg:
+                raise errors.MixedTimezoneError(err) from err
+            raise err
+
+        # Convert to specified unit
+        return pt if as_unit is None else pt.as_unit(as_unit)
+
+    @classmethod
+    def _new_parser(
+        cls,
+        data: object,
+        freq: object | None = None,
+        tz: datetime.tzinfo = None,
+        ambiguous: object = "infer",
+        yearfirst: bool | None = True,
+        dayfirst: bool | None = False,
+        as_unit: str = None,
+        copy: bool = False,
+        name: Hashable | None = None,
+        cfg: Configs = None,
+    ) -> Self:
+        """(internal) Create a new `Pddt` instance using `cytimes` parser.
+
+        This method is a fallback approach that utilizes the `cytimes` parser
+        to construct the `Pddt` instance. It is invoked when the native Pandas
+        `DatetimeIndex` constructor fails due to datetime bounds, parsing issues,
+        or timezone ambiguities.
+        """
+        # . get array size
+        try:
+            arr_size: cython.Py_ssize_t = len(data)
+        except Exception as err:
+            raise TypeError(
+                "%s(...) must be called with a collection of some kind, "
+                "%s was passed" % (cls.__name__, type(data)),
+            ) from err
+        # . setup array
+        arr: np.ndarray = np.PyArray_EMPTY(1, [arr_size], np.NPY_TYPES.NPY_INT64, 0)
+        arr_p = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
+        # . setup parser
+        has_tz: cython.bint = tz is not None
+        tmp_tz = tz if has_tz else utils.UTC
+        infer: cython.bint = ambiguous == "infer"
+        i: cython.Py_ssize_t = 0
+        try:
+            for obj in data:
+                # . parse datetime object
+                dt: datetime.datetime = _parse_obj(
+                    obj, None, yearfirst, dayfirst, False, True, cfg, None
+                )
+                # . normalize timezone [aware]
+                if dt.tzinfo is not None:
+                    dt = utils.dt_astimezone(dt, tmp_tz, None)
+                    if tz is None:
+                        tz = utils.UTC
+                # . infer ambiguous time [naive]
+                elif infer and has_tz:
+                    dt = utils.dt_replace_tz_fold(dt, tz, 1, None)
+                    dt = utils.dt_normalize_tz(dt, None)
+                # . assign to array
+                arr_p[i] = utils.dt_to_us(dt, False)  # without timezone
+                i += 1
+            arr = arr.astype(utils.DT64_DTYPE_US)  # convert to datetime64[us]
+        except Exception as err:
+            raise ValueError(
+                "Invalid '%s.__new__(data, ...)' input.\n%s" % (cls.__name__, err)
+            ) from err
+        # . new instance
+        return cls._new_native(
+            arr,
+            freq=freq,
+            tz=tz,
+            ambiguous=ambiguous,
+            dayfirst=dayfirst,
+            yearfirst=yearfirst,
+            as_unit=as_unit,
+            copy=copy,
+            name=name,
+        )
+
     @classmethod
     def date_range(
         cls,
@@ -553,58 +553,77 @@ class Pddt(DatetimeIndex):
     ) -> Self:
         """Construct a fixed-frequency index `<'Pddt'>`.
 
-        Construct the range of equally spaced time points at a specified frequency.
-        The datetimes are generated such that each one falls within the interval defined
-        by 'start' and 'end', satisfying 'start <[=] x <[=] end' (the inclusivity can
-        be adjusted with the 'inclusive' parameter). If exactly one of 'start', 'end',
-        or 'freq' is not provided, it can be inferred by specifying periods, the total
-        number of datetimes to generate.
+        Construct datetime index from the range of equally spaced time points (where the
+        difference between any two adjacent points is specified by the given frequency)
+        such that they all satisfy `start <[=] x <[=] end`, where the first one and the
+        last one are, resp., the first and last time points in that range that fall on
+        the boundary of `freq` (if given as a frequency string) or that are valid for
+        `freq` (if given as a :class:`pandas.tseries.offsets.DateOffset`). (If exactly
+        one of `start`, `end`, or `freq` is *not* specified, this missing parameter can
+        be computed given `periods`, the number of timesteps in the range. See the note below.)
 
-        :param start `<'str/datetime/None'>`: Left bound for generating the index.
-        :param end `<'str/datetime/None'>`: Right bound for generating the index.
-        :param periods `<'int/None'>`: Number of periods to generate.
-        :param freq `<'str/timedelta/BaseOffset/None'>`: The frequency of the index, defaults to `'D'`.
-            - `<'str'>` A frequency string (e.g. 'D', 'h', 's', 'ms').
-            - `<'BaseOffset'>` A pandas Offset instance representing the frequency.
-            - `<'timedelta'>` A datetime.timedelta instance representing the frequency.
-            - `<'None'>` No specified frequency.
+        :param start `<'Datetime-Like/None'>`: Left bound for generating the index. Defaults to `None`.
+        :param end `<'Datetime-Like/None'>`: Right bound for generating the index. Defaults to `None`.
+        :param periods `<'int/None'>`: Number of periods to generate. Defaults to `None`.
+        :param freq `<'str/timedelta/BaseOffset/None'>`: The frequency of the index. Defaults to `'D'`.
 
-        :param tz `<'str/tzinfo/None'>`: Set the timezone of the index, defaults to `None`.
-            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
+            - `<'str'>` A frequency string (e.g. `'D', 'h', 's', 'ms'`), or `'infer'` for auto-detection.
+            - `<'timedelta'>` A datetime.timedelta instance.
+            - `<'BaseOffset'>` A pandas date offset instance.
+            - `<'None'>` Infer the frequency from the input data.
+
+        :param tz `<'tzinfo/str/None'>`: The optional target timezone. Defaults to `None`.
+
             - `<'None'>` Timezone-naive.
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
+            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
 
-        :param normalize `<'bool'>`: Normalize the start/end dates to midnight, defaults to `False`.
+        :param normalize `<'bool'>`: Normalize the start/end dates to midnight
+            (time fields set to 0). Defaults to `False`.
 
-        :param inclusive `<'str'>`: Include boundaries, defaults to `'both'`.
+        :param inclusive `<'str'>`: Include boundaries. Defaults to `'both'`.
+
             - `'left'` Include the left boundary.
             - `'right'` Include the right boundary.
             - `'both'` Include both boundaries.
             - `'neither'` Exclude both boundaries.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
+        :param unit `<'str/None'>`: Specify the desired resolution of the result. Defaults to `None`.
             Supported datetime units: 's', 'ms', 'us', 'ns'.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        :param name `<'Hashable/None'>`: The name assigned to the index. Defaults to `None`.
+
+        :returns `<'Pddt'>`: The resulting datetime index.
+
+        ## Equivalent
+        >>> Pddt(pd.date_range(...))
         """
         if freq is None and (periods is None or start is None or end is None):
             freq = "D"
         try:
-            arr = DatetimeArray._generate_range(
+            dtarr = DatetimeArray._generate_range(
                 start=start,
                 end=end,
                 periods=periods,
                 freq=freq,
-                tz=tz,
+                tz=utils.tz_parse(tz),
                 normalize=normalize,
                 inclusive=inclusive,
                 unit=unit,
             )
-        except pd_err.OutOfBoundsDatetime as err:
-            raise errors.OutOfBoundsDatetimeError(err) from err
+        # fmt: off
+        except errors.PdOutOfBoundsDatetime as err:
+            errors.raise_error(errors.OutOfBoundsError, cls, "date_range(...)", 
+                "Try to set 'unit' to a lower resolution.", err)
+            return  # unreachable: suppress compiler warning
+        except (errors.PytzAmbiguousTimeError, errors.PytzNonExistentTimeError) as err:
+            errors.raise_error(errors.AmbiguousTimeError, cls, "date_range(...)", None, err)
+            return  # unreachable: suppress compiler warning
         except Exception as err:
-            raise errors.InvalidArgumentError(err) from err
-        return pddt_new_simple(arr, None, unit, name)
+            errors.raise_argument_error(cls, "date_range(...)", None, err)
+            return  # unreachable: suppress compiler warning
+        # fmt: on
+        return cls._new(dtarr, name=name)
 
     @classmethod
     def parse(
@@ -613,980 +632,1441 @@ class Pddt(DatetimeIndex):
         freq: object | None = None,
         tz: datetime.tzinfo | str | None = None,
         ambiguous: object = "raise",
-        year1st: bool | None = None,
-        day1st: bool | None = None,
-        cfg: Configs = None,
-        unit: str = None,
-        name: Hashable | None = None,
+        yearfirst: bool = True,
+        dayfirst: bool = False,
+        as_unit: str = None,
         copy: bool = False,
+        name: Hashable | None = None,
+        cfg: Configs = None,
     ) -> Self:
-        """Parse from a datetime-like data `<'Pddt'>`.
+        """Parse from an array-like (1-dimensional) data `<'Pddt'>`.
 
-        :param data `<'object'>`: Datetime-like data to construct with.
+        :param data `<'Array-Like'>`: An array-like (1-dimensional) data containing datetime information.
+            Such as: `tuple`, `list`, `np.ndarray`, `DatetimeIndex`, `Series`, etc.
 
-        :param freq `<'str/timedelta/BaseOffset/None'>`: The frequency of the 'data', defaults to `None`.
-            - `<'str'>` A frequency string (e.g. 'D', 'h', 's', 'ms'), or 'infer' for auto-detection.
-            - `<'BaseOffset'>` A pandas Offset instance representing the frequency.
-            - `<'timedelta'>` A datetime.timedelta instance representing the frequency.
-            - `<'None'>` No specified frequency.
+        :param freq `<'str/timedelta/BaseOffset/None'>`: The frequency of the 'data'. Defaults to `None`.
 
-        :param tz `<'str/tzinfo/None'>`: Set the timezone of the index, defaults to `None`.
-            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
+            - `<'str'>` A frequency string (e.g. `'D', 'h', 's', 'ms'`), or `'infer'` for auto-detection.
+            - `<'timedelta'>` A datetime.timedelta instance.
+            - `<'BaseOffset'>` A pandas date offset instance.
+
+        :param tz `<'tzinfo/str/None'>`: The optional target timezone. Defaults to `None`.
+
             - `<'None'>` Timezone-naive.
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
+            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
 
-        :param ambiguous `<'str/ndarray'>`: How to handle ambiguous times, defaults to `'raise'`.
-            - `<'str'>` Accepts 'infer' or 'raise' for ambiguous times handling.
-            - `<'ndarray'>` A boolean array to specify ambiguous times ('True' for DST time).
+        :param ambiguous `<'str/ndarray[bool]'>`: Specified how ambiguous times should be handled. Defaults to `'raise'`.
 
-        :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
-            If 'year1st=None', use `cfg.year1st` if 'cfg' is specified; otherwise, defaults to `False`.
+            - `'raise'` will raise an `AmbiguousTimeError` if there are ambiguous times.
+            - `'infer'` will attempt to infer fall dst-transition hours based on order.
+            - `'NaT'` will yield NaT where there are ambiguous times.
+            - `<'ndarray[bool]'>` where True signifies a DST time, False signifies a non-DST
+                time (note that this flag is only applicable for ambiguous times)
 
-        :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `None`.
-            If 'day1st=None', use `cfg.day1st` if 'cfg' is specified; otherwise, defaults to `False`.
+        :param yearfirst `<'bool/None'>`: Parse the first ambiguous Y/M/D value as year. Defaults to `True`.
 
-        :param cfg `<'Configs/None'>`: Custom parser configurations, defaults to `None`.
+        :param dayfirst `<'bool/None'>`: Parse the first ambiguous Y/M/D values as day. Defaults to `False`.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        :param copy `<'bool'>`: Whether to make a copy of the 'data'. Defaults to `False`.
 
-        :param copy `<'bool'>`: Whether to make a copy of the 'data', defaults to `False`.
+        :param name `<'Hashable/None'>`: The name assigned to the index. Defaults to `None`.
+
+        :param cfg `<'Configs/None'>`: The Parser configuration. Defaults to `None`.
+            Only applicable to datetime-string parsing. If `None`, uses the module's default `Configs`.
+
+        :returns `<'Pddt'>`: The resulting datetime index.
         """
-        # fmt: off
-        return pddt_new(
-            data, freq, tz, ambiguous, year1st, 
-            day1st, cfg, unit, name, copy,
+        return cls(
+            data,
+            freq=freq,
+            tz=tz,
+            ambiguous=ambiguous,
+            yearfirst=yearfirst,
+            dayfirst=dayfirst,
+            as_unit=as_unit,
+            copy=copy,
+            name=name,
+            cfg=cfg,
         )
-        # fmt: on
 
     @classmethod
     def now(
         cls,
+        size: int | Any,
         tz: datetime.tzinfo | str | None = None,
-        size: object = 1,
-        unit: str = None,
+        as_unit: str = None,
         name: Hashable | None = None,
     ) -> Self:
-        """Construct from the current datetime with optional timezone `<'Pddt'>`.
+        """Construct an index from the current datetime with optional timezone `<'Pddt'>`.
 
-        :param tz `<'str/tzinfo/None'>`: The timezone of the index, defaults to `None`.
-            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
+        :param size `<'int/Any'>`: The target size of the index.
+
+            - `<'int'>` A positive integer number.
+            - `<'Any'>` Takes the `len(size)` value as the index size.
+
+        :param tz `<'tzinfo/str/None'>`: The optional timezone. Defaults to `None`.
+
             - `<'None'>` Timezone-naive.
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
+            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
 
-        :param size `<'int/str/bytes/object'>`: The size of the index to generate, defaults to `1`.
-            - `<'int/str/bytes'>` Representing an integer for the number of elements in the index.
-            - `<'object'>` Any object that implements `__len__()`, where its length represents the size of the index.
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+        :param name `<'Hashable/None'>`: Optional name of the index. Defaults to `None`.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        :returns `<'Pddt'>`: The resulting datetime index (naive when `tz` is None).
+
+        ## Notice
+        - This method only construct `datetime64[us]` index (microsecond resolution).
+        - Parameter `as_unit` converts it to other datetime units after construction.
         """
-        arr_size, tz = _parse_arr_size(size), utils.tz_parse(tz)
-        return _pddt_fr_dt(utils.dt_now(tz), arr_size, unit, name)
+        tz = utils.tz_parse(tz)
+        size_i: cython.Py_ssize_t = _parse_size(cls, size)
+        dt: datetime.datetime = utils.dt_now(tz, None)
+        us: cython.longlong = utils.dt_to_us(dt, False)
+        arr: np.ndarray = utils.dt64arr_fr_int64(us, size_i, "us")
+        return cls._new(arr, tz=tz, as_unit=as_unit, name=name)
 
     @classmethod
     def utcnow(
         cls,
-        size: object = 1,
-        unit: str = None,
+        size: int | Any,
+        as_unit: str = None,
         name: Hashable | None = None,
     ) -> Self:
-        """Construct from the current UTC datetime `<'Pddt'>`.
+        """Construct an index from the current `UTC` datetime (timezone-aware) `<'Pddt'>`.
 
-        :param size `<'int/str/bytes/object'>`: The size of the index to generate, defaults to `1`.
-            - `<'int/str/bytes'>` Representing an integer for the number of elements in the index.
-            - `<'object'>` Any object that implements `__len__()`, where its length represents the size of the index.
+        :param size `<'int/Any'>`: The target size of the index.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+            - `<'int'>` A positive integer number.
+            - `<'Any'>` Takes the `len(size)` value as the index size.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
+
+        :param name `<'Hashable/None'>`: Optional name of the index. Defaults to `None`.
+
+        :returns `<'Pddt'>`: The resulting datetime index (timezone-aware).
+
+        ## Notice
+        - This method only construct `datetime64[us]` index (microsecond resolution).
+        - Parameter `as_unit` converts it to other datetime units after construction.
         """
-        arr_size = _parse_arr_size(size)
-        return _pddt_fr_dt(utils.dt_now(utils.UTC), arr_size, unit, name)
+        return cls.now(size, tz=utils.UTC, as_unit=as_unit, name=name)
 
     @classmethod
     def today(
         cls,
-        size: object = 1,
-        unit: str = None,
+        size: int | Any,
+        as_unit: str = None,
         name: Hashable | None = None,
     ) -> Self:
-        """Construct from the current local datetime (timezone-naive) `<'Pddt'>`.
+        """Construct an index from the current `local` datetime (timezone-naive) `<'Pddt'>`.
 
-        :param size `<'int/str/bytes/object'>`: The size of the index to generate, defaults to `1`.
-            - `<'int/str/bytes'>` Representing an integer for the number of elements in the index.
-            - `<'object'>` Any object that implements `__len__()`, where its length represents the size of the index.
+        :param size `<'int/Any'>`: The target size of the index.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+            - `<'int'>` A positive integer number.
+            - `<'Any'>` Takes the `len(size)` value as the index size.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
+
+        :param name `<'Hashable/None'>`: Optional name of the index. Defaults to `None`.
+
+        :returns `<'Pddt'>`: The resulting datetime index (timezone-naive).
+
+        ## Notice
+        - This method only construct `datetime64[us]` index (microsecond resolution).
+        - Parameter `as_unit` converts it to other datetime units after construction.
+
+        ## Equivalent
+        >>> Pddt.now(size, tz=None)
         """
-        arr_size = _parse_arr_size(size)
-        return _pddt_fr_dt(utils.dt_now(None), arr_size, unit, name)
+        return cls.now(size, tz=None, as_unit=as_unit, name=name)
 
     @classmethod
     def combine(
         cls,
+        size: int | Any,
         date: datetime.date | str | None = None,
         time: datetime.time | str | None = None,
         tz: datetime.tzinfo | str | None = None,
-        size: object = 1,
-        unit: str = None,
+        as_unit: str = None,
         name: Hashable | None = None,
     ) -> Self:
-        """Combine date and time into datetime index `<'Pddt'>`.
+        """Combine date and time into a new datetime index `<'Pddt'>`.
 
-        :param date `<'date/str/None'>`: A date-like object, defaults to `None`.
-            - `<'datetime.date'>` An instance of `datetime.date`.
-            - `<'str'>` A date string.
-            - `<'None'>` Use the current local date.
+        :param size `<'int/Any'>`: The target size of the index.
 
-        :param time `<'time/str/None'>`: A time-like object, defaults to `None`.
-            - `<'datetime.time'>` An instance of `datetime.time`.
-            - `<'str'>` A time string.
-            - `<'None'>` Use the current local time.
+            - `<'int'>` A positive integer number.
+            - `<'Any'>` Takes the `len(size)` value as the index size.
 
-        :param tz `<'str/tzinfo/None'>`: The timezone of the index, defaults to `None`.
+        :param date `<'date/str/None'>`: A date-like object. Defaults to `None`.
+            If None, uses today's `local` date.
+
+        :param time `<'time/str/None'>`: A time-like object. Defaults to `None`.
+            If None, uses `00:00:00.000000`.
+
+        :param tz `<'tzinfo/str/None'>`: The optional timezone to `attach`. Defaults to `None`.
+
+            - `<'None'>` Timezone-naive (when `time` has no timezone info, see `Notes`).
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
             - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
-            - `<'None'>` Timezone-naive.
 
-        :param size `<'int/str/bytes/object'>`: The size of the index to generate, defaults to `1`.
-            - `<'int/str/bytes'>` Representing an integer for the number of elements in the index.
-            - `<'object'>` Any object that implements `__len__()`, where its length represents the size of the index.
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+        :param name `<'Hashable/None'>`: Optional name of the index. Defaults to `None`.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        :returns `<'Pddt'>`: The resulting datetime index.
+
+        ## Notice
+        - This method only construct `datetime64[us]` index (microsecond resolution).
+        - Parameter `as_unit` converts it to other datetime units after construction.
+
+        ## Notes
+        - Both `date` and `time` supports datetime-like object (please refer
+          to `Pydt.parse()` method for details), but only the corresponding date
+          or time fields are used for combination.
+        - If `tz` is `None`, but `time` contains timezone information, the
+          resulting datetime will be timezone-aware using `time`'s timezone.
+        - If `tz` is specified (not `None`), it `overrides` any timezone
+          information in `time`.
         """
-        arr_size, tz = _parse_arr_size(size), utils.tz_parse(tz)
+        # Timezone & size
+        tz = utils.tz_parse(tz)
+        size_i: cython.Py_ssize_t = _parse_size(cls, size)
+
+        # Parse date
         if date is not None and not utils.is_date(date):
-            date = _parse_dtobj(date)
+            try:
+                date = _parse_obj(date, None, True, False, True, True, None, None)
+            except Exception as err:
+                errors.raise_argument_error(cls, "combine(date, ...)", None, err)
+                return  # unreachable: suppress compiler warning
+            date = utils.date_fr_dt(date, None)
+
+        # Prase time
         if time is not None and not utils.is_time(time):
-            time = _parse_dtobj(time, datetime.date_new(1970, 1, 1)).timetz()
-        return _pddt_fr_dt(utils.dt_combine(date, time, tz), arr_size, unit, name)
+            try:
+                time = _parse_obj(
+                    time, utils.EPOCH_DT, True, False, False, True, None, None
+                )
+            except Exception as err:
+                errors.raise_argument_error(cls, "combine(time, ...)", None, err)
+                return  # unreachable: suppress compiler warning
+            time = utils.time_fr_dt(time, None)
+
+        # Combine datetime
+        dt: datetime.datetime = utils.dt_combine(date, time, tz, None)
+        us: cython.longlong = utils.dt_to_us(dt, False)
+        arr: np.ndarray = utils.dt64arr_fr_int64(us, size_i, "us")
+        return cls._new(arr, tz=tz, as_unit=as_unit, name=name)
 
     @classmethod
     def fromordinal(
         cls,
         ordinal: int | object,
+        size: int | Any | None = None,
         tz: datetime.tzinfo | str | None = None,
-        size: object = 1,
-        unit: str = None,
+        as_unit: str = None,
         name: Hashable | None = None,
     ) -> Self:
-        """Construct from Gregorian ordinal days with optional timezone `<'Pddt'>`.
+        """Construct an index from Gregorian ordinal days `<'Pddt'>`.
 
         :param ordinal `<'int/Array-like'>`: The ordinal days to construct with.
-            - `<'int'>` An integer representing the ordinal days.
-            - `<'Array-like'>` An array-like object containing the ordinal days.
 
-        :param tz `<'str/tzinfo/None'>`: The timezone of the index, defaults to `None`.
+            - `<'int'>` The integer representing the Gregorian ordinal day.
+            - `<'Array-like'>` An array-like object containing elements representing the ordinal days.
+
+        :param size `<'int/Any/None'>`: The target size of the index
+            (required when `ordinal` is an integer). Defaults to `None`.
+
+            - `<'int'>` A positive integer number.
+            - `<'Any'>` Takes the `len(size)` value as the index size.
+            - `<'None'>` Ignored when `ordinal` is an array-like object.
+
+        :param tz `<'tzinfo/str/None'>`: The optional timezone to `attach`. Defaults to `None`.
+
+            - `<'None'>` Timezone-naive (when `time` has no timezone info, see `Notes`).
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
             - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
-            - `<'None'>` Timezone-naive.
 
-        :param size `<'int/str/bytes/object'>`: The size of the index to generate, defaults to `1`.
-            - This argument is `ignored` if 'ordinal' is an array-like object.
-            - `<'int/str/bytes'>` Representing an integer for the number of elements in the index.
-            - `<'object'>` Any object that implements `__len__()`, where its length represents the size of the index.
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+        :param name `<'Hashable/None'>`: Optional name of the index. Defaults to `None`.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        :returns `<'Pddt'>`: The resulting datetime index (naive when `tz` is None).
+
+        ## Notice
+        - This method only construct `datetime64[us]` index (microsecond resolution).
+        - Parameter `as_unit` converts it to other datetime units after construction.
         """
-        # Validate
-        arr: np.ndarray
-        arr_size: cython.Py_ssize_t
-        val: cython.longlong
-
-        # Single value
-        if isinstance(ordinal, (int, float, str, bytes)):
-            # . convert to microseconds
-            arr_size = _parse_arr_size(size)
-            try:
-                val = int(ordinal)
-            except Exception as err:
-                raise errors.InvalidTypeError(
-                    "cannot convert '%s' to an integer "
-                    "to represent the ordinal value." % ordinal
-                ) from err
-            val = min(max(val, 1), utils.ORDINAL_MAX)
-            val = (val - utils.EPOCH_DAY) * utils.US_DAY
+        # Integer
+        if isinstance(ordinal, int):
+            if size is None:
+                errors.raise_argument_error(
+                    cls,
+                    "fromordinal(size)",
+                    "When 'ordinal' is an integer, 'size' must be specified.",
+                )
+            size_i: cython.Py_ssize_t = _parse_size(cls, size)
+            value: cython.longlong = int(ordinal)
+            value = (value - utils.EPOCH_DAY) * utils.US_DAY
             # . new instance
-            return _pddt_fr_us(val, arr_size, tz, unit, name)
+            arr: np.ndarray = utils.dt64arr_fr_int64(value, size_i, "us")
+            return cls._new(arr, tz=tz, as_unit=as_unit, name=name)
 
-        # <'list'/'tuple'>
+        # list / tuple
         if isinstance(ordinal, (list, tuple)):
-            # . convert to ndarray[datetime64]
-            arr_size = len(ordinal)
-            arr = np.PyArray_EMPTY(1, [arr_size], np.NPY_TYPES.NPY_INT64, 0)
-            arr_ptr = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
+            # . construct ndarray[int64] - unit: us
+            size_i: cython.Py_ssize_t = len(ordinal)
+            arr: np.ndarray = np.PyArray_EMPTY(1, [size_i], np.NPY_TYPES.NPY_INT64, 0)
+            arr_p = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
             i: cython.Py_ssize_t = 0
-            for item in ordinal:
+            for o in ordinal:
                 try:
-                    val = int(item)
+                    value: cython.longlong = int(o)
                 except Exception as err:
-                    raise errors.InvalidTypeError(
-                        "cannot convert '%s' to an integer "
-                        "to represent the ordinal value." % item
-                    ) from err
-                val = min(max(val, 1), utils.ORDINAL_MAX)
-                val = (val - utils.EPOCH_DAY) * utils.US_DAY
-                arr_ptr[i] = val
+                    errors.raise_argument_error(
+                        cls,
+                        "fromordinal(ordinal)",
+                        "Expects integer element from %s, got '%s' %s."
+                        % (type(ordinal).__name__, o, type(o)),
+                        err,
+                    )
+                    return  # unreachable: suppress compiler warning
+                arr_p[i] = (value - utils.EPOCH_DAY) * utils.US_DAY
                 i += 1
-            arr = arr.astype(utils.DT64_DTYPE_US)
             # . new instance
-            return pddt_new_simple(arr, tz, unit, name)
+            return cls._new(
+                arr.astype(utils.DT64_DTYPE_US), tz=tz, as_unit=as_unit, name=name
+            )
 
-        # <'pandas.Series'>
-        if isinstance(ordinal, (Series, Index)):
+        # pd.Index (DatetimeIndex) / pd.Series
+        if isinstance(ordinal, (pd.Index, pd.Series)):
             ordinal = ordinal.values
 
-        # <'numpy.ndarray'>
+        # numpy.ndarray
         if isinstance(ordinal, np.ndarray):
-            # . validate array
-            arr = ordinal
+            # . validate 1-D array
+            arr: np.ndarray = ordinal
             if arr.ndim != 1:
-                raise errors.InvalidTypeError(
-                    "must be an 1-dimensional ndarray, instead of %d-dim." % arr.ndim
+                errors.raise_argument_error(
+                    cls,
+                    "fromordinal(ordinal)",
+                    "Expects a 1-dimensional array, got %d-dim." % arr.ndim,
                 )
-            # . convert to ndarray[datetime64]
-            arr = utils.arr_assure_int64_like(arr)
-            arr = utils.arr_clamp(arr, 1, utils.ORDINAL_MAX, -utils.EPOCH_DAY)
-            arr = utils.arr_mul(arr, utils.US_DAY)
-            arr = arr.astype(utils.DT64_DTYPE_US)
+            # . convert to ndarray[int64] - unit: us
+            if utils.is_arr_int(arr) or utils.is_arr_uint(arr):
+                arr = utils.arr_add(arr, -utils.EPOCH_DAY, True)
+            elif utils.is_dt64arr(arr):
+                arr = utils.dt64arr_as_int64_D(arr, -1, 0, True)
+            else:
+                errors.raise_argument_error(
+                    cls,
+                    "fromordinal(ordinal)",
+                    "Unsupported array dtype [%s]." % arr.dtype,
+                )
+            arr = utils.arr_mul(arr, utils.US_DAY, 0, False)
             # . new instance
-            return pddt_new_simple(arr, tz, unit, name)
+            return cls._new(
+                arr.astype(utils.DT64_DTYPE_US), tz=tz, as_unit=as_unit, name=name
+            )
 
-        # Invalid
-        raise errors.InvalidTypeError(
-            "unsupported type %s for argument 'ordinal'." % type(ordinal)
+        # Unsupported type
+        errors.raise_type_error(
+            cls,
+            "fromordinal(ordinal)",
+            "Unsupported 'ordinal' data type %s." % type(ordinal),
         )
 
     @classmethod
     def fromseconds(
         cls,
         seconds: int | float | object,
+        size: int | Any | None = None,
         tz: datetime.tzinfo | str | None = None,
-        size: object = 1,
-        unit: str = None,
+        as_unit: str = None,
         name: Hashable | None = None,
     ) -> Self:
-        """Construct from seconds since Unix Epoch with optional timezone `<'Pddt'>`.
+        """Construct an index from seconds since the epoch `<'Pddt'>`.
 
         :param seconds `<'int/float/Array-like'>`: The seconds to construct with.
-            - `<'int/float'>` A numeric value representing the seconds since Unix Epoch.
-            - `<'Array-like'>` An array-like object containing the seconds.
 
-        :param tz `<'str/tzinfo/None'>`: The timezone of the index, defaults to `None`.
+            - `<'int/float'>` A numeric value representing seconds since epoch.
+            - `<'Array-like'>` An array-like object containing elements representing the seconds.
+
+        :param size `<'int/Any/None'>`: The target size of the index
+            (required when `seconds` is a float or integer ). Defaults to `None`.
+
+            - `<'int'>` A positive integer number.
+            - `<'Any'>` Takes the `len(size)` value as the index size.
+            - `<'None'>` Ignored when `seconds` is an array-like object.
+
+        :param tz `<'tzinfo/str/None'>`: The optional timezone to `attach`. Defaults to `None`.
+
+            - `<'None'>` Timezone-naive (when `time` has no timezone info, see `Notes`).
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
             - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
-            - `<'None'>` Timezone-naive.
 
-        :param size `<'int/str/bytes/object'>`: The size of the index to generate, defaults to `1`.
-            - This argument is `ignored` if 'seconds' is an array-like object.
-            - `<'int/str/bytes'>` Representing an integer for the number of elements in the index.
-            - `<'object'>` Any object that implements `__len__()`, where its length represents the size of the index.
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+        :param name `<'Hashable/None'>`: Optional name of the index. Defaults to `None`.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        :returns `<'Pddt'>`: The resulting datetime index (naive when `tz` is None).
+
+        ## Notice
+        - This method only construct `datetime64[us]` index (microsecond resolution).
+        - Parameter `as_unit` converts it to other datetime units after construction.
+        - Unlike `fromtimestamp()`, this method never assumes local time when
+          `tz is None`, and interprets `seconds` as-is without any local-time conversion.
+        - When `tz` is specified, the timezone is simply `attached` without any conversion.
         """
-        # Validate
-        arr: np.ndarray
-        arr_size: cython.Py_ssize_t
-        sec: cython.double
-        val: cython.longlong
-
-        # Single value
-        if isinstance(seconds, (int, float, str, bytes)):
-            # . convert to microseconds
-            arr_size = _parse_arr_size(size)
-            try:
-                sec = float(seconds)
-            except Exception as err:
-                raise errors.InvalidTypeError(
-                    "cannot covnert '%s' to float "
-                    "to represent the seconds value." % seconds
-                ) from err
-            val = int(sec * utils.US_SECOND)
+        # Integer / Float
+        if isinstance(seconds, (int, float)):
+            if size is None:
+                errors.raise_argument_error(
+                    cls,
+                    "fromseconds(size)",
+                    "When 'seconds' is a float or integer, 'size' must be specified.",
+                )
+            size_i: cython.Py_ssize_t = _parse_size(cls, size)
+            value: cython.double = float(seconds)
+            us: cython.longlong = utils.sec_to_us(value)
             # . new instance
-            return _pddt_fr_us(val, arr_size, tz, unit, name)
+            arr: np.ndarray = utils.dt64arr_fr_int64(us, size_i, "us")
+            return cls._new(arr, tz=tz, as_unit=as_unit, name=name)
 
-        # <'list'/'tuple'>
+        # list / tuple
         if isinstance(seconds, (list, tuple)):
-            # . convert to ndarray[datetime64]
-            arr_size = len(seconds)
-            arr = np.PyArray_EMPTY(1, [arr_size], np.NPY_TYPES.NPY_INT64, 0)
-            arr_ptr = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
+            # . construct ndarray[int64] - unit: us
+            size_i: cython.Py_ssize_t = len(seconds)
+            arr: np.ndarray = np.PyArray_EMPTY(1, [size_i], np.NPY_TYPES.NPY_INT64, 0)
+            arr_p = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
             i: cython.Py_ssize_t = 0
-            for item in seconds:
+            for o in seconds:
                 try:
-                    sec = float(item)
+                    value: cython.double = float(o)
                 except Exception as err:
-                    raise errors.InvalidTypeError(
-                        "cannot covnert '%s' to float "
-                        "to represent the seconds value." % item
-                    ) from err
-                val = int(sec * utils.US_SECOND)
-                arr_ptr[i] = val
+                    errors.raise_argument_error(
+                        cls,
+                        "fromseconds(seconds)",
+                        "Expects float or integer element from %s, got '%s' %s."
+                        % (type(seconds).__name__, o, type(o)),
+                        err,
+                    )
+                    return  # unreachable: suppress compiler warning
+                arr_p[i] = utils.sec_to_us(value)
                 i += 1
-            arr = arr.astype(utils.DT64_DTYPE_US)
             # . new instance
-            return pddt_new_simple(arr, tz, unit, name)
+            return cls._new(
+                arr.astype(utils.DT64_DTYPE_US), tz=tz, as_unit=as_unit, name=name
+            )
 
-        # <'pandas.Series'>
-        if isinstance(seconds, (Series, Index)):
+        # pd.Index (DatetimeIndex) / pd.Series
+        if isinstance(seconds, (pd.Index, pd.Series)):
             seconds = seconds.values
 
-        # <'numpy.ndarray'>
+        # numpy.ndarray
         if isinstance(seconds, np.ndarray):
-            # . validate array
-            arr = seconds
+            # . validate 1-D array
+            arr: np.ndarray = seconds
             if arr.ndim != 1:
-                raise errors.InvalidTypeError(
-                    "must be an 1-dimensional ndarray, instead of %d-dim." % arr.ndim
+                errors.raise_argument_error(
+                    cls,
+                    "fromseconds(seconds)",
+                    "Expects a 1-dimensional array, got %d-dim." % arr.ndim,
                 )
-            # . convert to ndarray[datetime64]
-            kind: cython.Py_UCS4 = arr.descr.kind
-            if kind == "f":  # float64
-                arr = utils.arr_assure_float64(arr)
-                arr = utils.arr_assure_int64(arr * utils.US_SECOND)
+            # . convert to ndarray[int64] - unit: us
+            if utils.is_arr_float(arr):
+                arrf: np.ndarray = utils.arr_assure_float64(arr, False)
+                arrf_p = cython.cast(
+                    cython.pointer(np.npy_float64), np.PyArray_DATA(arrf)
+                )
+                size_i: cython.Py_ssize_t = arrf.shape[0]
+                arr = np.PyArray_EMPTY(1, [size_i], np.NPY_TYPES.NPY_INT64, 0)
+                arr_p = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
+                i: cython.Py_ssize_t
+                for i in range(size_i):
+                    arr_p[i] = utils.sec_to_us(arrf_p[i])
+            elif utils.is_arr_int(arr) or utils.is_arr_uint(arr):
+                arr = utils.arr_mul(arr, utils.US_SECOND, 0, True)
+            elif utils.is_dt64arr(arr):
+                arr = utils.dt64arr_as_int64_us(arr, -1, 0, True)
             else:
-                arr = utils.arr_assure_int64_like(arr)
-                arr = utils.arr_mul(arr, utils.US_SECOND)
-            arr = arr.astype(utils.DT64_DTYPE_US)
+                errors.raise_argument_error(
+                    cls,
+                    "fromseconds(seconds)",
+                    "Unsupported array dtype [%s]." % arr.dtype,
+                )
             # . new instance
-            return pddt_new_simple(arr, tz, unit, name)
+            return cls._new(
+                arr.astype(utils.DT64_DTYPE_US), tz=tz, as_unit=as_unit, name=name
+            )
 
-        # Invalid
-        raise errors.InvalidTypeError(
-            "unsupported type %s for argument 'seconds'." % type(seconds)
+        # Unsupported type
+        errors.raise_type_error(
+            cls,
+            "fromseconds(seconds)",
+            "Unsupported 'seconds' data type %s." % type(seconds),
         )
 
     @classmethod
-    def fromicroseconds(
+    def frommicroseconds(
         cls,
         us: int | object,
+        size: int | Any | None = None,
         tz: datetime.tzinfo | str | None = None,
-        size: object = 1,
-        unit: str = None,
+        as_unit: str = None,
         name: Hashable | None = None,
     ) -> Self:
-        """Construct from microseconds since Unix Epoch with optional timezone `<'Pddt'>`.
+        """Construct an index from microseconds since the epoch `<'Pddt'>`.
 
         :param us `<'int/Array-like'>`: The microseconds to construct with.
-            - `<'int'>` An integer value representing the microseconds since Unix Epoch.
-            - `<'Array-like'>` An array-like object containing the microseconds.
 
-        :param tz `<'str/tzinfo/None'>`: The timezone of the index, defaults to `None`.
+            - `<'int'>` The integer representing microseconds since epoch.
+            - `<'Array-like'>` An array-like object containing elements representing the microseconds.
+
+        :param size `<'int/Any/None'>`: The target size of the index
+            (required when `us` is an integer ). Defaults to `None`.
+
+            - `<'int'>` A positive integer number.
+            - `<'Any'>` Takes the `len(size)` value as the index size.
+            - `<'None'>` Ignored when `us` is an array-like object.
+
+        :param tz `<'tzinfo/str/None'>`: The optional timezone to `attach`. Defaults to `None`.
+
+            - `<'None'>` Timezone-naive (when `time` has no timezone info, see `Notes`).
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
             - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
-            - `<'None'>` Timezone-naive.
 
-        :param size `<'int/str/bytes/object'>`: The size of the index to generate, defaults to `1`.
-            - This argument is `ignored` if 'us' is an array-like object.
-            - `<'int/str/bytes'>` Representing an integer for the number of elements in the index.
-            - `<'object'>` Any object that implements `__len__()`, where its length represents the size of the index.
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+        :param name `<'Hashable/None'>`: Optional name of the index. Defaults to `None`.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        :returns `<'Pddt'>`: The resulting datetime index (naive when `tz` is None).
+
+        ## Notice
+        - This method only construct `datetime64[us]` index (microsecond resolution).
+        - Parameter `as_unit` converts it to other datetime units after construction.
+        - Unlike `fromtimestamp()`, this method never assumes local time when
+          `tz is None`, and interprets `us` as-is without any local-time conversion.
+        - When `tz` is specified, the timezone is simply `attached` without any conversion.
         """
-        # Validate
-        arr: np.ndarray
-        arr_size: cython.Py_ssize_t
-        val: cython.longlong
-
-        # Single value
-        if isinstance(us, (int, float, str, bytes)):
-            # . convert to microseconds
-            arr_size = _parse_arr_size(size)
-            try:
-                val = int(us)
-            except Exception as err:
-                raise errors.InvalidTypeError(
-                    "cannot covnert '%s' to an integer "
-                    "to represent the microseconds value." % us
-                ) from err
+        # Integer
+        if isinstance(us, int):
+            if size is None:
+                errors.raise_argument_error(
+                    cls,
+                    "frommicroseconds(size)",
+                    "When 'us' is an integer, 'size' must be specified.",
+                )
+            size_i: cython.Py_ssize_t = _parse_size(cls, size)
+            value: cython.longlong = int(us)
             # . new instance
-            return _pddt_fr_us(val, arr_size, tz, unit, name)
+            arr: np.ndarray = utils.dt64arr_fr_int64(value, size_i, "us")
+            return cls._new(arr, tz=tz, as_unit=as_unit, name=name)
 
-        # <'list'/'tuple'>
+        # list / tuple
         if isinstance(us, (list, tuple)):
-            # . convert to ndarray[datetime64]
-            arr_size = len(us)
-            arr = np.PyArray_EMPTY(1, [arr_size], np.NPY_TYPES.NPY_INT64, 0)
-            arr_ptr = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
+            # . construct ndarray[int64] - unit: us
+            size_i: cython.Py_ssize_t = len(us)
+            arr: np.ndarray = np.PyArray_EMPTY(1, [size_i], np.NPY_TYPES.NPY_INT64, 0)
+            arr_p = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
             i: cython.Py_ssize_t = 0
-            for item in us:
+            for o in us:
                 try:
-                    val = int(item)
+                    value: cython.longlong = int(o)
                 except Exception as err:
-                    raise errors.InvalidTypeError(
-                        "cannot covnert '%s' to an integer "
-                        "to represent the microseconds value." % item
-                    ) from err
-                arr_ptr[i] = val
+                    errors.raise_argument_error(
+                        cls,
+                        "frommicroseconds(us)",
+                        "Expects integer element from %s, got '%s' %s."
+                        % (type(us).__name__, o, type(o)),
+                        err,
+                    )
+                    return  # unreachable: suppress compiler warning
+                arr_p[i] = value
                 i += 1
-            arr = arr.astype(utils.DT64_DTYPE_US)
             # . new instance
-            return pddt_new_simple(arr, tz, unit, name)
+            return cls._new(
+                arr.astype(utils.DT64_DTYPE_US), tz=tz, as_unit=as_unit, name=name
+            )
 
-        # <'pandas.Series'>
-        if isinstance(us, (Series, Index)):
+        # pd.Index (DatetimeIndex) / pd.Series
+        if isinstance(us, (pd.Index, pd.Series)):
             us = us.values
 
-        # <'numpy.ndarray'>
+        # numpy.ndarray
         if isinstance(us, np.ndarray):
-            # . validate array
-            arr = us
+            # . validate 1-D array
+            arr: np.ndarray = us
             if arr.ndim != 1:
-                raise errors.InvalidTypeError(
-                    "must be an 1-dimensional ndarray, instead of %d-dim." % arr.ndim
+                errors.raise_argument_error(
+                    cls,
+                    "frommicroseconds(us)",
+                    "Expects a 1-dimensional ndarray, got %d-dim." % arr.ndim,
                 )
-            # . convert to ndarray[datetime64]
-            arr = utils.arr_assure_int64_like(arr)
-            arr = arr.astype(utils.DT64_DTYPE_US)
+            # . convert to ndarray[int64] - unit: us
+            if utils.is_arr_int(arr) or utils.is_arr_uint(arr):
+                arr = utils.arr_assure_int64(arr, True)
+            elif utils.is_dt64arr(arr):
+                arr = utils.dt64arr_as_int64_us(arr, -1, 0, True)
+            else:
+                errors.raise_argument_error(
+                    cls,
+                    "frommicroseconds(us)",
+                    "Unsupported array dtype [%s]." % arr.dtype,
+                )
             # . new instance
-            return pddt_new_simple(arr, tz, unit, name)
+            return cls._new(
+                arr.astype(utils.DT64_DTYPE_US), tz=tz, as_unit=as_unit, name=name
+            )
 
-        # Invalid
-        raise errors.InvalidTypeError(
-            "unsupported type %s for argument 'us'." % type(us)
+        # Unsupported type
+        errors.raise_type_error(
+            cls,
+            "frommicroseconds(us)",
+            "Unsupported 'us' data type %s." % type(us),
         )
 
     @classmethod
     def fromtimestamp(
         cls,
         ts: int | float | object,
+        size: int | Any | None = None,
         tz: datetime.tzinfo | str | None = None,
-        size: object = 1,
-        unit: str = None,
+        as_unit: str = None,
         name: Hashable | None = None,
     ) -> Self:
-        """Construct from POSIX timestamps with optional timezone `<'Pddt'>`.
+        """Construct an index from POSIX timestamps optionally converted to a timezone `<'Pddt'>`.
 
         :param ts `<'int/float/Array-like'>`: The POSIX timestamps to construct with.
+
             - `<'int/float'>` A numeric value representing the timestamp.
-            - `<'Array-like'>` An array-like object containing the timestamps.
+            - `<'Array-like'>` An array-like object containing elements representing the timestamps.
 
-        :param tz `<'str/tzinfo/None'>`: The timezone of the index, defaults to `None`.
+        :param size `<'int/Any/None'>`: The target size of the index
+            (required when `ts` is a float or integer ). Defaults to `None`.
+
+            - `<'int'>` A positive integer number.
+            - `<'Any'>` Takes the `len(size)` value as the index size.
+            - `<'None'>` Ignored when `ts` is an array-like object.
+
+        :param tz `<'tzinfo/str/None'>`: Target timezone. Defaults to `None`.
+
+            - `<'None'>` naive `local` time (assumes local timezone).
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
             - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
-            - `<'None'>` Timezone-naive.
 
-        :param size `<'int/str/bytes/object'>`: The size of the index to generate, defaults to `1`.
-            - This argument is `ignored` if 'us' is an array-like object.
-            - `<'int/str/bytes'>` Representing an integer for the number of elements in the index.
-            - `<'object'>` Any object that implements `__len__()`, where its length represents the size of the index.
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+        :param name `<'Hashable/None'>`: Optional name of the index. Defaults to `None`.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        :returns `<'Pddt'>`: The resulting datetime index (naive when `tz` is None).
+
+        ## Notice
+        - This method only construct `datetime64[us]` index (microsecond resolution).
+        - Parameter `as_unit` converts it to other datetime units after construction.
         """
-        # Validate
-        arr: np.ndarray
-        arr_size: cython.Py_ssize_t
-        sec: cython.double
+        # Parse timezone
         tz = utils.tz_parse(tz)
 
-        # Single value
-        if isinstance(ts, (int, float, str, bytes)):
-            # . convert to datetime
-            arr_size = _parse_arr_size(size)
+        # Integer / Float
+        if isinstance(ts, (int, float)):
+            if size is None:
+                errors.raise_argument_error(
+                    cls,
+                    "fromtimestamp(ts)",
+                    "When 'ts' is a float or integer, 'size' must be specified.",
+                )
+            size_i: cython.Py_ssize_t = _parse_size(cls, size)
+            value: cython.double = float(ts)
             try:
-                sec = float(ts)
+                dt: datetime.datetime = utils.dt_fr_ts(value, tz, None)
             except Exception as err:
-                raise errors.InvalidTypeError(
-                    "cannot convert '%s' to float "
-                    "to represent the timestamp value." % ts
-                ) from err
-            dt = utils.dt_fr_ts(sec, tz)
+                errors.raise_argument_error(
+                    cls,
+                    "fromtimestamp(ts)",
+                    "Cannot convert timestamp '%s' to datetime." % value,
+                    err,
+                )
+                return  # unreachable: suppress compiler warning
+            us: cython.longlong = utils.dt_to_us(dt, False)
             # . new instance
-            return _pddt_fr_dt(dt, arr_size, unit, name)
+            arr: np.ndarray = utils.dt64arr_fr_int64(us, size_i, "us")
+            return cls._new(arr, tz=tz, as_unit=as_unit, name=name)
 
-        # Array-like
-        if isinstance(ts, (list, tuple, Series, Index, np.ndarray)):
-            # . convert to ndarray[datetime64]
-            arr_size = len(ts)
-            arr = np.PyArray_EMPTY(1, [arr_size], np.NPY_TYPES.NPY_INT64, 0)
-            arr_ptr = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
+        # list / tuple
+        if isinstance(ts, (list, tuple)):
+            # . construct ndarray[int64] - unit: us
+            size_i: cython.Py_ssize_t = len(ts)
+            arr: np.ndarray = np.PyArray_EMPTY(1, [size_i], np.NPY_TYPES.NPY_INT64, 0)
+            arr_p = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
             i: cython.Py_ssize_t = 0
-            for item in ts:
+            for o in ts:
                 try:
-                    sec = float(item)
+                    value: cython.double = float(o)
                 except Exception as err:
-                    raise errors.InvalidTypeError(
-                        "cannot convert '%s' to float "
-                        "to represent the timestamp value." % item
-                    ) from err
-                dt = utils.dt_fr_ts(sec, tz)
-                arr_ptr[i] = utils.dt_to_us(dt, False)
+                    errors.raise_argument_error(
+                        cls,
+                        "fromtimestamp(ts)",
+                        "Expects float or integer element from %s, got '%s' %s."
+                        % (type(ts).__name__, o, type(o)),
+                        err,
+                    )
+                    return  # unreachable: suppress compiler warning
+                try:
+                    dt: datetime.datetime = utils.dt_fr_ts(value, tz, None)
+                except Exception as err:
+                    errors.raise_argument_error(
+                        cls,
+                        "fromtimestamp(ts)",
+                        "Cannot convert %s element '%s' to datetime."
+                        % (type(ts).__name__, value),
+                        err,
+                    )
+                    return  # unreachable: suppress compiler warning
+                arr_p[i] = utils.dt_to_us(dt, False)
                 i += 1
-            arr = arr.astype(utils.DT64_DTYPE_US)
             # . new instance
-            return pddt_new_simple(arr, tz, unit, name)
+            return cls._new(
+                arr.astype(utils.DT64_DTYPE_US), tz=tz, as_unit=as_unit, name=name
+            )
 
-        # Invalid
-        raise errors.InvalidTypeError(
-            "unsupported type %s for argument 'ts'." % type(ts)
+        # pd.Index (DatetimeIndex) / pd.Series
+        if isinstance(ts, (pd.Index, pd.Series)):
+            ts = ts.values
+
+        # numpy.ndarray
+        if isinstance(ts, np.ndarray):
+            # . validate 1-D array
+            arr: np.ndarray = ts
+            if arr.ndim != 1:
+                errors.raise_argument_error(
+                    cls,
+                    "fromtimestamp(ts)",
+                    "Expects a 1-dimensional array, got %d-dim." % arr.ndim,
+                )
+            # . convert to ndarray[int64] - unit: us
+            if (
+                utils.is_arr_float(arr)
+                or utils.is_arr_int(arr)
+                or utils.is_arr_uint(arr)
+            ):
+                arrf: np.ndarray = utils.arr_assure_float64(arr, False)
+                arrf_p = cython.cast(
+                    cython.pointer(np.npy_float64), np.PyArray_DATA(arrf)
+                )
+                size_i: cython.Py_ssize_t = arrf.shape[0]
+                arr = np.PyArray_EMPTY(1, [size_i], np.NPY_TYPES.NPY_INT64, 0)
+                arr_p = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
+                i: cython.Py_ssize_t
+                for i in range(size_i):
+                    try:
+                        dt = utils.dt_fr_ts(arrf_p[i], tz, None)
+                    except Exception as err:
+                        errors.raise_argument_error(
+                            cls,
+                            "fromtimestamp(ts)",
+                            "Cannot convert array element '%s' to datetime."
+                            % arrf_p[i],
+                            err,
+                        )
+                        return  # unreachable: suppress compiler warning
+                    arr_p[i] = utils.dt_to_us(dt, False)
+            elif utils.is_dt64arr(arr):
+                arr = utils.dt64arr_as_int64_us(arr, -1, 0, True)
+            else:
+                errors.raise_argument_error(
+                    cls,
+                    "fromtimestamp(ts)",
+                    "Unsupported array dtype [%s]." % arr.dtype,
+                )
+            # . new instance
+            return cls._new(
+                arr.astype(utils.DT64_DTYPE_US), tz=tz, as_unit=as_unit, name=name
+            )
+
+        # Unsupported type
+        errors.raise_type_error(
+            cls,
+            "fromtimestamp(ts)",
+            "Unsupported 'ts' data type %s." % type(ts),
         )
 
     @classmethod
     def utcfromtimestamp(
         cls,
         ts: int | float | object,
-        size: object = 1,
-        unit: str = None,
+        size: int | Any | None = None,
+        as_unit: str = None,
         name: Hashable | None = None,
     ) -> Self:
-        """Construct from POSIX timestamps with UTC timezone `<'Pddt'>`.
+        """Construct a UTC-aware index from POSIX timestamps (timezone-aware) `<'Pddt'>`.
 
         :param ts `<'int/float/Array-like'>`: The POSIX timestamps to construct with.
+
             - `<'int/float'>` A numeric value representing the timestamp.
-            - `<'Array-like'>` An array-like object containing the timestamps.
+            - `<'Array-like'>` An array-like object containing elements representing the timestamps.
 
-        :param size `<'int/str/bytes/object'>`: The size of the index to generate, defaults to `1`.
-            - This argument is `ignored` if 'us' is an array-like object.
-            - `<'int/str/bytes'>` Representing an integer for the number of elements in the index.
-            - `<'object'>` Any object that implements `__len__()`, where its length represents the size of the index.
+        :param size `<'int/Any/None'>`: The target size of the index
+            (required when `ts` is a float or integer ). Defaults to `None`.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+            - `<'int'>` A positive integer number.
+            - `<'Any'>` Takes the `len(size)` value as the index size.
+            - `<'None'>` Ignored when `ts` is an array-like object.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
+
+        :param name `<'Hashable/None'>`: Optional name of the index. Defaults to `None`.
+
+        :returns `<'Pddt'>`: The resulting datetime index (timezone-aware).
+
+        ## Notice
+        - This method only construct `datetime64[us]` index (microsecond resolution).
+        - Parameter `as_unit` converts it to other datetime units after construction.
+
+        ## Equivalent
+        >>> Pddt.fromtimestamp(ts, size=size, tz=utils.UTC)
         """
-        return cls.fromtimestamp(ts, utils.UTC, size, unit, name)
+        return cls.fromtimestamp(
+            ts, size=size, tz=utils.UTC, as_unit=as_unit, name=name
+        )
 
     @classmethod
     def fromisoformat(
         cls,
         dtstr: str | object,
-        size: object = 1,
-        unit: str = None,
+        size: int | Any | None = None,
+        as_unit: str = None,
         name: Hashable | None = None,
     ) -> Self:
-        """Construct from ISO format strings `<'Pddt'>`.
+        """Construct an index from ISO format strings `<'Pddt'>`.
 
         :param dtstr `<'str/Array-like'>`: The ISO format datetime string(s) to construct with.
+
             - `<'str'>` A ISO format datetime string.
-            - `<'Array-like'>` An array-like object containing the datetime strings.
+            - `<'Array-like'>` An array-like object containing elements representing the datetime strings.
 
-        :param size `<'int/str/bytes/object'>`: The size of the index to generate, defaults to `1`.
-            - This argument is `ignored` if 'us' is an array-like object.
-            - `<'int/str/bytes'>` Representing an integer for the number of elements in the index.
-            - `<'object'>` Any object that implements `__len__()`, where its length represents the size of the index.
+        :param size `<'int/Any/None'>`: The target size of the index
+            (required when `dtstr` is a literal string ). Defaults to `None`.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+            - `<'int'>` A positive integer number.
+            - `<'Any'>` Takes the `len(size)` value as the index size.
+            - `<'None'>` Ignored when `dtstr` is an array-like object.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
+
+        :param name `<'Hashable/None'>`: Optional name of the index. Defaults to `None`.
+
+        :returns `<'Pddt'>`: The resulting datetime index.
         """
-        # <'str'>
+        # String -> list[str]
         if isinstance(dtstr, str):
-            arr_size = _parse_arr_size(size)
-            return _pddt_fr_dt(_parse_dtobj(dtstr), arr_size, unit, name)
+            if size is None:
+                errors.raise_argument_error(
+                    cls,
+                    "fromisoformat(size)",
+                    "When 'dtstr' is a literal string, 'size' must be specified.",
+                )
+            size_i: cython.Py_ssize_t = _parse_size(cls, size)
+            dtstr = [dtstr for _ in range(size_i)]
 
-        # Other types
-        return pddt_new_simple(dtstr, None, unit, name)
+        # Array-like
+        try:
+            return cls._new(dtstr, as_unit=as_unit, name=name)
+        except Exception as err:
+            errors.raise_argument_error(cls, "fromisoformat(...)", None, err)
 
     @classmethod
     def fromisocalendar(
         cls,
-        iso: object,
-        year: int | None = None,
-        week: int | None = None,
-        weekday: int | None = None,
+        iso: dict | list | tuple | pd.DataFrame,
+        size: int | Any | None = None,
         tz: datetime.tzinfo | str | None = None,
-        size: object = 1,
-        unit: str = None,
+        as_unit: str = None,
         name: Hashable | None = None,
     ) -> Self:
-        """Construct from ISO calendar values `<'Pddt'>`.
+        """Construct an index from ISO calendar values `<'Pddt'>`.
 
         :param iso `<'dict/list/tuple/DataFrame'>`: The ISO calendar values to construct with.
-        :param year `<'int/None'>`: The ISO year, defaults to `None`.
-        :param week `<'int/None'>`: The ISO week number (1-53), defaults to `None`.
-        :param weekday `<'int'>`: The ISO weekday (1=Mon...7=Sun), defaults to `None`.
-        :param tz `<'str/tzinfo/None'>`: The timezone of the index, defaults to `None`.
-            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
+
+            - `<'dict'>` A dictionary containing the ISO calendar values with keys:
+                `'year'`, `'week'` and `'weekday'` (or `'day'`).
+            - `<'list/tuple'>` A list or tuple of dictionaries, each containing the ISO calendar values.
+            - `<'DataFrame'>` A pandas DataFrame with columns: `'year'`, `'week'` and `'weekday'` (or `'day'`).
+
+        :param size `<'int/Any/None'>`: The target size of the index
+            (required when `iso` is a dict ). Defaults to `None`.
+
+            - `<'int'>` A positive integer number.
+            - `<'Any'>` Takes the `len(size)` value as the index size.
+            - `<'None'>` Ignored when `iso` is a dictionary.
+
+        :param tz `<'tzinfo/str/None'>`: The optional timezone to `attach`. Defaults to `None`.
+
             - `<'None'>` Timezone-naive.
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
+            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
 
-        :param size `<'int/str/bytes/object'>`: The size of the index to generate, defaults to `1`.
-            - This argument is `ignored` if 'us' is an array-like object.
-            - `<'int/str/bytes'>` Representing an integer for the number of elements in the index.
-            - `<'object'>` Any object that implements `__len__()`, where its length represents the size of the index.
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+        :param name `<'Hashable/None'>`: Optional name of the index. Defaults to `None`.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        :returns `<'Pddt'>`: The resulting datetime index.
+
+        ## Notice
+        - This method only construct `datetime64[us]` index (microsecond resolution).
+        - Parameter `as_unit` converts it to other datetime units after construction.
         """
-
-        def _parse_dict(item: dict) -> object:
-            yy = item.get("year", year)
-            ww = item.get("week", week)
-            dd = item.get("weekday", item.get("day", weekday))
-            try:
-                _ymd = utils.ymd_fr_isocalendar(yy, ww, dd)
-            except Exception as err:
-                raise errors.InvalidArgumentError(
-                    "cannot unpack '%s' to iso calendar "
-                    "values (year, week, day)." % item
-                ) from err
-            return datetime.datetime_new(
-                _ymd.year, _ymd.month, _ymd.day, 0, 0, 0, 0, tz, 0
-            )
-
-        def _parse_sequence(item: object) -> object:
-            try:
-                if len(item) != 3:
-                    raise ValueError("sequence must have 3 items.")
-                _ymd = utils.ymd_fr_isocalendar(item[0], item[1], item[2])
-            except Exception as err:
-                raise errors.InvalidArgumentError(
-                    "cannot unpack '%s' to iso calendar "
-                    "values (year, week, day)." % item
-                ) from err
-            return datetime.datetime_new(
-                _ymd.year, _ymd.month, _ymd.day, 0, 0, 0, 0, tz, 0
-            )
-
-        # Validate
-        tz = utils.tz_parse(tz)
-        dts: list = []
-
-        # <'ditc'>
+        # dict
         if isinstance(iso, dict):
-            dts.append(_parse_dict(iso))
+            if size is None:
+                errors.raise_argument_error(
+                    cls,
+                    "fromisocalendar(iso)",
+                    "When 'iso' is a dictionary, 'size' must be specified.",
+                )
+            size_i: cython.Py_ssize_t = _parse_size(cls, size)
+            us: cython.longlong = _parse_us_from_iso_dict(cls, iso)
+            arr: np.ndarray = utils.dt64arr_fr_int64(us, size_i, "us")
+            return cls._new(arr, tz=tz, as_unit=as_unit, name=name)
 
-        # <'list'/'tuple'>
-        elif isinstance(iso, (list, tuple)):
-            for item in iso:
-                if isinstance(item, dict):
-                    dts.append(_parse_dict(item))
-                elif isinstance(item, (list, tuple)):
-                    dts.append(_parse_sequence(item))
-                elif isinstance(item, int):
-                    dts.append(_parse_sequence(iso))
-                    break
+        # list / tuple
+        if isinstance(iso, (list, tuple)):
+            size_i: cython.Py_ssize_t = len(iso)
+            arr: np.ndarray = np.PyArray_EMPTY(1, [size_i], np.NPY_TYPES.NPY_INT64, 0)
+            arr_p = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
+            i: cython.Py_ssize_t = 0
+            for o in iso:
+                if isinstance(o, dict):
+                    us: cython.longlong = _parse_us_from_iso_dict(cls, o)
                 else:
-                    raise errors.InvalidTypeError(
-                        "unsupported type %s for argument 'iso'." % type(item)
+                    errors.raise_argument_error(
+                        cls,
+                        "fromisocalendar(iso)",
+                        "Expects dict element from %s, got '%s' %s."
+                        % (type(iso).__name__, o, type(o)),
                     )
-
-        # <'DataFrame'>
-        elif isinstance(iso, DataFrame):
-            for item in iso.itertuples(index=False):
-                dts.append(_parse_sequence(item))
-
-        # Y/M/D values
-        elif year is not None and week is not None and weekday is not None:
-            dts.append(_parse_sequence([year, week, weekday]))
-
-        # Invalid
-        else:
-            raise errors.InvalidTypeError(
-                "unsupported type %s for argument 'iso'." % type(iso)
+                    return  # unreachable: suppress compiler warning
+                arr_p[i] = us
+                i += 1
+            return cls._new(
+                arr.astype(utils.DT64_DTYPE_US), tz=tz, as_unit=as_unit, name=name
             )
 
-        # Create Pddt
-        if len(dts) == 1:
-            arr_size = _parse_arr_size(size)
-            return _pddt_fr_dt(dts[0], arr_size, unit, name)
-        else:
-            return pddt_new_simple(dts, None, unit, name)
+        # DataFrame
+        if isinstance(iso, pd.DataFrame):
+            size_i: cython.Py_ssize_t = len(iso)
+            arr: np.ndarray = np.PyArray_EMPTY(1, [size_i], np.NPY_TYPES.NPY_INT64, 0)
+            arr_p = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
+            i: cython.Py_ssize_t = 0
+            for row in iso.to_dict(orient="records"):
+                arr_p[i] = _parse_us_from_iso_dict(cls, row)
+                i += 1
+            return cls._new(
+                arr.astype(utils.DT64_DTYPE_US), tz=tz, as_unit=as_unit, name=name
+            )
+
+        # Unsupported type
+        errors.raise_type_error(
+            cls,
+            "fromisocalendar(iso)",
+            "Unsupported 'iso' data type %s." % type(iso),
+        )
+
+    @classmethod
+    def fromdayofyear(
+        cls,
+        doy: dict | list | tuple | pd.DataFrame,
+        size: int | Any | None = None,
+        tz: datetime.tzinfo | str | None = None,
+        as_unit: str = None,
+        name: Hashable | None = None,
+    ) -> Self:
+        """Construct an index from day-of-year values `<'Pddt'>`.
+
+        :param doy `<'dict/list/tuple/DataFrame'>`: The day-of-year values to construct with.
+
+            - `<'dict'>` A dictionary containing the day-of-year values with keys:
+                `'year'` and `'doy'` (or `'day'`).
+            - `<'list/tuple'>` A list or tuple of dictionaries, each containing the day-of-year values.
+            - `<'DataFrame'>` A pandas DataFrame with columns: `'year'` and `'doy'` (or `'day'`).
+
+        :param size `<'int/Any/None'>`: The target size of the index
+            (required when `doy` is a dict ). Defaults to `None`.
+
+            - `<'int'>` A positive integer number.
+            - `<'Any'>` Takes the `len(size)` value as the index size.
+            - `<'None'>` Ignored when `doy` is a dictionary.
+
+        :param tz `<'tzinfo/str/None'>`: The optional timezone to `attach`. Defaults to `None`.
+
+            - `<'None'>` Timezone-naive.
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
+            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
+
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
+
+        :param name `<'Hashable/None'>`: Optional name of the index. Defaults to `None`.
+
+        :returns `<'Pddt'>`: The resulting datetime index.
+
+        ## Notice
+        - This method only construct `datetime64[us]` index (microsecond resolution).
+        - Parameter `as_unit` converts it to other datetime units after construction.
+        """
+        # dict
+        if isinstance(doy, dict):
+            if size is None:
+                errors.raise_argument_error(
+                    cls,
+                    "fromdayofyear(doy)",
+                    "When 'doy' is a dictionary, 'size' must be specified.",
+                )
+            size_i: cython.Py_ssize_t = _parse_size(cls, size)
+            us: cython.longlong = _parse_us_from_doy_dict(cls, doy)
+            arr: np.ndarray = utils.dt64arr_fr_int64(us, size_i, "us")
+            return cls._new(arr, tz=tz, as_unit=as_unit, name=name)
+
+        # list / tuple
+        if isinstance(doy, (list, tuple)):
+            size_i: cython.Py_ssize_t = len(doy)
+            arr: np.ndarray = np.PyArray_EMPTY(1, [size_i], np.NPY_TYPES.NPY_INT64, 0)
+            arr_p = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
+            i: cython.Py_ssize_t = 0
+            for o in doy:
+                if isinstance(o, dict):
+                    us: cython.longlong = _parse_us_from_doy_dict(cls, o)
+                else:
+                    errors.raise_argument_error(
+                        cls,
+                        "fromdayofyear(doy)",
+                        "Expects dict element from %s, got '%s' %s."
+                        % (type(doy).__name__, o, type(o)),
+                    )
+                    return  # unreachable: suppress compiler warning
+                arr_p[i] = us
+                i += 1
+            return cls._new(
+                arr.astype(utils.DT64_DTYPE_US), tz=tz, as_unit=as_unit, name=name
+            )
+
+        # DataFrame
+        if isinstance(doy, pd.DataFrame):
+            size_i: cython.Py_ssize_t = len(doy)
+            arr: np.ndarray = np.PyArray_EMPTY(1, [size_i], np.NPY_TYPES.NPY_INT64, 0)
+            arr_p = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
+            i: cython.Py_ssize_t = 0
+            for row in doy.to_dict(orient="records"):
+                arr_p[i] = _parse_us_from_doy_dict(cls, row)
+                i += 1
+            return cls._new(
+                arr.astype(utils.DT64_DTYPE_US), tz=tz, as_unit=as_unit, name=name
+            )
+
+        # Unsupported type
+        errors.raise_type_error(
+            cls,
+            "fromdayofyear(doy)",
+            "Unsupported 'doy' data type %s." % type(doy),
+        )
 
     @classmethod
     def fromdate(
         cls,
         date: datetime.date | object,
+        size: int | Any | None = None,
         tz: datetime.tzinfo | str | None = None,
-        size: object = 1,
-        unit: str = None,
+        as_unit: str = None,
         name: Hashable | None = None,
     ) -> Self:
-        """Construct from instances of date (all time fields set to 0) `<'Pddt'>`.
+        """Construct an index from instances of date `<'Pddt'>`.
 
         :param date `<'date/Array-like'>`: The date-like object(s) to construct with.
-            - `<'datetime.date'>` An instance of `datetime.date`.
-            - `<'Array-like'>` An array-like object containing the date-like objects.
 
-        :param tz `<'str/tzinfo/None'>`: The timezone of the index, defaults to `None`.
-            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
+            - `<'datetime.date'>` An instance or subclass of `datetime.date`.
+            - `<'Array-like'>` An array-like object containing elements of date-like objects.
+
+        :param size `<'int/Any/None'>`: The target size of the index
+            (required when `date` is a date instance ). Defaults to `None`.
+
+            - `<'int'>` A positive integer number.
+            - `<'Any'>` Takes the `len(size)` value as the index size.
+            - `<'None'>` Ignored when `date` is an array-like object.
+
+        :param tz `<'tzinfo/str/None'>`: The optional timezone to `attach`. Defaults to `None`.
+
             - `<'None'>` Timezone-naive.
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
+            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
 
-        :param size `<'int/str/bytes/object'>`: The size of the index to generate, defaults to `1`.
-            - This argument is `ignored` if 'us' is an array-like object.
-            - `<'int/str/bytes'>` Representing an integer for the number of elements in the index.
-            - `<'object'>` Any object that implements `__len__()`, where its length represents the size of the index.
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+        :param name `<'Hashable/None'>`: Optional name of the index. Defaults to `None`.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        :returns `<'Pddt'>`: The resulting datetime index.
         """
-        # Validate
-
-        # <'date'>
+        # date
         if utils.is_date(date):
-            arr_size, tz = _parse_arr_size(size), utils.tz_parse(tz)
-            return _pddt_fr_dt(utils.dt_fr_date(date, tz), arr_size, unit, name)
+            if size is None:
+                errors.raise_argument_error(
+                    cls,
+                    "fromdate(size)",
+                    "When 'date' is a date instance, 'size' must be specified.",
+                )
+            size_i = _parse_size(cls, size)
+            date = [date for _ in range(size_i)]
 
-        # Other types
-        return pddt_new_simple(date, tz, unit, name)
+        # Array-like
+        try:
+            return cls._new(date, tz=tz, as_unit=as_unit, name=name)
+        except Exception as err:
+            errors.raise_argument_error(cls, "fromdate(...)", None, err)
 
     @classmethod
     def fromdatetime(
         cls,
-        dt: datetime.datetime | object,
-        size: object = 1,
-        unit: str = None,
+        dt: datetime.datetime | np.datetime64 | object,
+        size: int | Any | None = None,
+        tz: datetime.tzinfo | str | None = None,
+        as_unit: str = None,
         name: Hashable | None = None,
     ) -> Self:
-        """Construct from instances of datetime `<'Pddt'>`.
+        """Construct an index from instances of datetime `<'Pddt'>`.
 
-        :param dt `<'datetime/Array-like'>`: The datetime-like object(s) to construct with.
-            - `<'datetime.datetime'>` An instance of `datetime.datetime`.
-            - `<'Array-like'>` An array-like object containing the datetime-like objects.
+        :param dt `<'Datetime-Like/Array-like'>`: The datetime-like object(s) to construct with.
 
-        :param size `<'int/str/bytes/object'>`: The size of the index to generate, defaults to `1`.
-            - This argument is `ignored` if 'us' is an array-like object.
-            - `<'int/str/bytes'>` Representing an integer for the number of elements in the index.
-            - `<'object'>` Any object that implements `__len__()`, where its length represents the size of the index.
+            - `<'datetime.datetime'>` An instance or subclass of `datetime.datetime`.
+            - `<'np.datetime64'>` An instance of `np.datetime64`.
+            - `<'Array-like'>` An array-like object containing elements of the datetime-like objects.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+        :param size `<'int/Any/None'>`: The target size of the index
+            (required when `dt` is a datetime-like object). Defaults to `None`.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+            - `<'int'>` A positive integer number.
+            - `<'Any'>` Takes the `len(size)` value as the index size.
+            - `<'None'>` Ignored when `dt` is an array-like object.
+
+        :param tz `<'tzinfo/str/None'>`: The optional timezone to `attach`. Defaults to `None`.
+
+            - `<'None'>` Timezone-naive.
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
+            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
+
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
+
+        :param name `<'Hashable/None'>`: Optional name of the index. Defaults to `None`.
+
+        :returns `<'Pddt'>`: The resulting datetime index.
         """
-        # <'str'/'Timestamp'/'datetime64'>
-        if isinstance(dt, (str, Timestamp, np.datetime64)):
-            arr_size = _parse_arr_size(size)
-            dts = [dt for _ in range(arr_size)]
-            return pddt_new_simple(dts, None, unit, name)
+        # datetime / datetime64 / str
+        if isinstance(dt, (datetime.datetime, np.datetime64, str)):
+            if size is None:
+                errors.raise_argument_error(
+                    cls,
+                    "fromdatetime(size)",
+                    "When 'dt' is a datetime-like instance, 'size' must be specified.",
+                )
+            size_i = _parse_size(cls, size)
+            dt = [dt for _ in range(size_i)]
 
-        # <'datetime'>
-        if utils.is_dt(dt):
-            arr_size = _parse_arr_size(size)
-            return _pddt_fr_dt(dt, arr_size, unit, name)
-
-        # Other types
-        return pddt_new_simple(dt, None, unit, name)
+        # Array-like
+        try:
+            return cls._new(dt, tz=tz, as_unit=as_unit, name=name)
+        except Exception as err:
+            errors.raise_argument_error(cls, "fromdatetime(...)", None, err)
 
     @classmethod
     def fromdatetime64(
         cls,
-        dt64: np.datetime64 | object,
+        dt64: datetime.datetime | np.datetime64 | object,
+        size: int | Any | None = None,
         tz: datetime.tzinfo | str | None = None,
-        size: object = 1,
-        unit: str = None,
+        as_unit: str = None,
         name: Hashable | None = None,
     ) -> Self:
-        """Construct from instances of datetime64 `<'Pddt'>`.
+        """Construct an index from instances of datetime `<'Pddt'>`.
 
-        :param dt64 `<'datetime64/Array-like'>`: The datetime-like object(s) to construct with.
-            - `<'np..datetime64'>` An instance of `np.datetime64`.
-            - `<'Array-like'>` An array-like object containing the datetime-like objects.
-
-        :param tz `<'str/tzinfo/None'>`: The timezone of the index, defaults to `None`.
-            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
-            - `<'None'>` Timezone-naive.
-
-        :param size `<'int/str/bytes/object'>`: The size of the index to generate, defaults to `1`.
-            - This argument is `ignored` if 'us' is an array-like object.
-            - `<'int/str/bytes'>` Representing an integer for the number of elements in the index.
-            - `<'object'>` Any object that implements `__len__()`, where its length represents the size of the index.
-
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
-
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        - Alias of `fromdatetime()`.
         """
-        # <'datetime64'>
-        if utils.is_dt64(dt64):
-            arr_size = _parse_arr_size(size)
-            dts = [dt64 for _ in range(arr_size)]
-            return pddt_new_simple(dts, tz, unit, name)
-
-        # Other types
-        return pddt_new_simple(dt64, tz, unit, name)
+        return cls.fromdatetime(dt64, size=size, tz=tz, as_unit=as_unit, name=name)
 
     @classmethod
     def strptime(
         cls,
         dtstr: str | object,
         fmt: str,
-        size: object = 1,
-        unit: str = None,
+        size: int | Any | None = None,
+        as_unit: str = None,
         name: Hashable | None = None,
     ) -> Self:
-        """Construct from datetime strings according to the given format `<'Pddt'>`.
+        """Construct an index from parsing datetime-strings `<'Pddt'>`.
 
         :param dtstr `<'str/Array-like'>`: The datetime string(s) to construct with.
+
             - `<'str'>` A datetime string.
-            - `<'Array-like'>` An array-like object containing the datetime strings.
+            - `<'Array-like'>` An array-like object containing elements of the datetime strings.
 
-        :param fmt `<'str'>`: The format used to parse the datetime strings.
+        :param format `<'str'>`: The format used to parse the strings.
 
-        :param size `<'int/str/bytes/object'>`: The size of the index to generate, defaults to `1`.
-            - This argument is `ignored` if 'us' is an array-like object.
-            - `<'int/str/bytes'>` Representing an integer for the number of elements in the index.
-            - `<'object'>` Any object that implements `__len__()`, where its length represents the size of the index.
+        :param size `<'int/Any/None'>`: The target size of the index
+            (required when `dtstr` is a literal string ). Defaults to `None`.
 
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+            - `<'int'>` A positive integer number.
+            - `<'Any'>` Takes the `len(size)` value as the index size.
+            - `<'None'>` Ignored when `dtstr` is an array-like object.
 
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
+        :param as_unit `<'str/None'>`: Convert to specified datetime unit after construction. Defaults to `None`.
+            Supports: `'s'`, `'ms'`, `'us'`, `'ns'`.
+
+        :param name `<'Hashable/None'>`: Optional name of the index. Defaults to `None`.
+
+        :returns `<'Pddt'>`: The resulting datetime index.
+
+        ## Notice
+        - This method only construct `datetime64[us]` index (microsecond resolution).
+        - Parameter `as_unit` converts it to other datetime units after construction.
         """
-        # <'str'>
+        # String
         if isinstance(dtstr, str):
-            arr_size = _parse_arr_size(size)
+            if size is None:
+                errors.raise_argument_error(
+                    cls,
+                    "strptime(dtstr)",
+                    "When 'dtstr' is a literal string, 'size' must be specified.",
+                )
+            size_i: cython.Py_ssize_t = _parse_size(cls, size)
             try:
                 dt = datetime.datetime.strptime(dtstr, fmt)
             except Exception as err:
-                raise errors.InvalidArgumentError(err) from err
-            return _pddt_fr_dt(dt, arr_size, unit, name)
+                errors.raise_argument_error(cls, "strptime(dtstr, fmt)", None, err)
+                return  # unreachable: suppress compiler warning
+            return cls._new([dt for _ in range(size_i)], as_unit=as_unit, name=name)
 
         # Array-like
-        if isinstance(dtstr, (list, tuple, Series, Index, np.ndarray)):
+        if isinstance(dtstr, (list, tuple, pd.Index, pd.Series, np.ndarray)):
             dts: list = []
-            for item in dtstr:
+            for o in dtstr:
                 try:
-                    dts.append(datetime.datetime.strptime(item, fmt))
+                    dt = datetime.datetime.strptime(o, fmt)
                 except Exception as err:
-                    raise errors.InvalidArgumentError(err) from err
-            return pddt_new_simple(dts, None, unit, name)
+                    errors.raise_argument_error(
+                        cls,
+                        "strptime(dtstr, fmt)",
+                        "Connot parse element '%s' from %s."
+                        % (o, type(dtstr).__name__),
+                        err,
+                    )
+                    return  # unreachable: suppress compiler warning
+                dts.append(dt)
+            return cls._new(dts, as_unit=as_unit, name=name)
 
-        # Invalid
-        raise errors.InvalidTypeError(
-            "unsupported type %s for argument 'dtstr'." % type(dtstr)
+        # Unsupported type
+        errors.raise_type_error(
+            cls,
+            "strptime(dtstr)",
+            "Unsupported 'dtstr' data type %s." % type(dtstr),
         )
 
     # Convertor ----------------------------------------------------------------------------
-    def ctime(self) -> Index[str]:
-        """Convert to index of strings in C time format `<'Index[str]'>`.
+    def ctime(self) -> pd.Index[str]:
+        """Return ctime-stype string index `<'Index[str]'>`.
 
-        - ctime format: 'Tue Oct 10 08:19:05 2024'
+        - ctime-stype: 'Tue Oct 1 08:19:05 2024'
         """
         return self.strftime("%a %b %d %H:%M:%S %Y")
 
-    def isoformat(self, sep: str = "T") -> Index[str]:
-        """Convert to index of strings in ISO format `<'Index[str]'>`.
+    def strftime(self, fmt: str) -> pd.Index[str]:
+        """Format to index of strings according to the given format `<'str'>`.
 
-        :param sep `<'str'>`: The separator between date and time components, defaults to `'T'`.
+        :param fmt `<'str'>`: The format, e.g.: `'%d/%m/%Y, %H:%M:%S'`.
+        :returns `<'Index[str]'>`: The formatted index of strings.
+        """
+        try:
+            return DatetimeIndex.strftime(self, fmt)
+        except Exception as err:
+            errors.raise_argument_error(self.__class__, "strftime(fmt)", None, err)
+
+    def isoformat(self, sep: str = "T") -> pd.Index[str]:
+        """Return the date and time formatted according to ISO format `<'str'>`.
+
+        :param sep `<'str'>`: The separator between date and time components. Defaults to `'T'`.
+        :returns `<'Index[str]'>`: Index of ISO formatted strings.
         """
         return self.strftime(f"%Y-%m-%d{sep}%H:%M:%S.%f%z")
 
-    def timedf(self) -> DataFrame:
-        """Convert to DataFrame of time components `<'DataFrame'>`."""
+    def timedf(self) -> pd.DataFrame:
+        """Return `local` time DataFrame compatible with `time.localtime()` `<'DataFrame'>`.
+
+        ## Example
+        >>> pt.timedf()
+        ```
+        _  tm_year  tm_mon  tm_mday  tm_hour  tm_min  tm_sec  tm_wday  tm_yday
+        0     2025      11       12       18      12      42        2      316
+        ...
+        ```
+        """
         arr: np.ndarray = self.values_naive
-        return DataFrame(
+        unit: cython.int = utils.get_arr_nptime_unit(arr)
+        return pd.DataFrame(
             {
-                "tm_year": utils.dt64arr_year(arr),
-                "tm_mon": utils.dt64arr_month(arr),
-                "tm_mday": utils.dt64arr_day(arr),
-                "tm_hour": utils.dt64arr_hour(arr),
-                "tm_min": utils.dt64arr_minute(arr),
-                "tm_sec": utils.dt64arr_second(arr),
-                "tm_wday": utils.dt64arr_weekday(arr),
-                "tm_yday": utils.dt64arr_days_of_year(arr),
+                "tm_year": utils.dt64arr_year(arr, unit, 0, True),
+                "tm_mon": utils.dt64arr_month(arr, unit, 0, True),
+                "tm_mday": utils.dt64arr_day(arr, unit, 0, True),
+                "tm_hour": utils.dt64arr_hour(arr, unit, 0, True),
+                "tm_min": utils.dt64arr_minute(arr, unit, 0, True),
+                "tm_sec": utils.dt64arr_second(arr, unit, 0, True),
+                "tm_wday": utils.dt64arr_weekday(arr, unit, 0, True),
+                "tm_yday": utils.dt64arr_day_of_year(arr, unit, True),
             },
         )
 
-    def utctimedf(self) -> DataFrame:
-        """Convert to DataFrame of time components representing the UTC time `<'DataFrame'>`."""
-        my_tz = self.tzinfo
-        if my_tz is None or my_tz is utils.UTC:
+    def utctimedf(self) -> pd.DataFrame:
+        """Return `UTC` time DataFrame compatible with `time.gmtime()` `<'DataFrame'>`.
+
+        ## Example
+        >>> pt.timedf()
+        ```
+        _  tm_year  tm_mon  tm_mday  tm_hour  tm_min  tm_sec  tm_wday  tm_yday
+        0     2025      11       12       10      12      42        2      316
+        ...
+        ```
+        """
+        tz: object = self.tzinfo
+        if tz is None or tz is utils.UTC:
             return self.timedf()
-        return self.tz_convert(utils.UTC).timedf()
+        else:
+            return self.tz_convert(utils.UTC).timedf()
 
-    def toordinal(self) -> Index[np.int64]:
-        """Convert to index of proleptic Gregorian ordinal days `<'Index[int64]'>`.
+    def toordinal(self) -> pd.Index[np.int64]:
+        """Return an index of proleptic Gregorian ordinals from the dates `<'Index[int64]'>`.
 
-        - Day 1 (ordinal=1) is `0001-01-01`.
+        - Only the year, month and day values contribute to the result.
+        - '0001-01-01' is day 1.
         """
-        return Index(utils.dt64arr_to_ordinal(self.values), name="ordinal")
+        arr = utils.dt64arr_to_ord(self.values_naive, -1, 0, True)
+        return pd.Index(arr, name="ordinal")
 
-    def seconds(self, utc: cython.bint = False) -> Index[np.float64]:
-        """Convert to index of seconds since Unix Epoch `<'Index[float64]'>`.
+    def toseconds(self, utc: cython.bint = False) -> pd.Index[np.float64]:
+        """Return an index of total seconds since epoch `<'Index[float64]'>`.
 
-        Unlike 'timesamp()', this method does `NOT` take local
-        timezone into consideration at conversion.
+        :param utc `<'bool'>`: Whether to subtract the UTC offset. Defaults to `False`.
 
-        :param utc `<'bool'>`: Whether to subtract the UTC offset from the result, defaults to `False`.
-            Only applicable when instance is timezone-aware; otherwise ignored.
+            - When `True` and the datetime index is `timezone-aware`, subtract
+              the UTC offset first (i.e., normalize to UTC) before computing the
+              epoch difference.
+            - For `naive` datetime index this flag is ignored.
+
+        :returns `<'Index[float64]'>`: Seconds since epoch.
+
+        ## Notes
+        - Unlike `timestamp()`, this method never assumes local time for
+          naive datetimes index. Naive values are interpreted `as-is`
+          without any local-time conversion.
+        - For aware datetime index, offset handling (including DST folds/gaps)
+          follows the attached timezone.
         """
-        my_tz = self.tzinfo
-        if my_tz is None:
+        if self.tzinfo is None:
             arr = self.values
         elif not utc:
             arr = self.values_naive
         else:
             arr = self.tz_convert(utils.UTC).values_naive
-        return Index(utils.dt64arr_to_ts(arr), name="seconds")
+        return pd.Index(utils.dt64arr_to_ts(arr, -1, True), name="seconds")
 
-    def microseconds(self, utc: cython.bint = False) -> Index[np.int64]:
-        """Convert to index of microseconds since Unix Epoch `<'Index[int64]'>`.
+    def tomicroseconds(self, utc: cython.bint = False) -> pd.Index[np.int64]:
+        """Return an index of total microseconds since epoch `<'Index[float64]'>`.
 
-        Unlike 'timesamp()', this method does `NOT` take local
-        timezone into consideration at conversion.
+        :param utc `<'bool'>`: Whether to subtract the UTC offset. Defaults to `False`.
 
-        :param utc `<'bool'>`: Whether to subtract the UTC offset from the result, defaults to `False`.
-            Only applicable when instance is timezone-aware; otherwise ignored.
+            - When `True` and the datetime index is `timezone-aware`, subtract
+              the UTC offset first (i.e., normalize to UTC) before computing the
+              epoch difference.
+            - For `naive` datetime index this flag is ignored.
+
+        :returns `<'Index[float64]'>`: Microseconds since epoch.
+
+        ## Notes
+        - Unlike `timestamp()`, this method never assumes local time for
+          naive datetimes index. Naive values are interpreted `as-is`
+          without any local-time conversion.
+        - For aware datetime index, offset handling (including DST folds/gaps)
+          follows the attached timezone.
         """
-        my_tz = self.tzinfo
-        if my_tz is None:
+        if self.tzinfo is None:
             arr = self.values
         elif not utc:
             arr = self.values_naive
         else:
             arr = self.tz_convert(utils.UTC).values_naive
-        return Index(utils.dt64arr_as_int64_us(arr), name="microseconds")
+        return pd.Index(
+            utils.dt64arr_as_int64_us(arr, -1, 0, True), name="microseconds"
+        )
 
-    def timestamp(self) -> Index[np.float64]:
-        """Convert to index of POSIX timestamps `<'Index[float64]'>`."""
+    def timestamp(self) -> pd.Index[np.float64]:
+        """Return an index of POSIX timestamps `<'Index[float64]'>`."""
         # fmt: off
         if self.tzinfo is None:
-            arr = self.tz_localize(utils.tz_local(None), "infer", "shift_forward").values
+            arr = self.tz_localize(utils.tz_local(), "infer", "shift_forward").values
         else:
             arr = self.values
         # fmt: on
-        return Index(utils.dt64arr_to_ts(arr), name="timestamp")
+        return pd.Index(utils.dt64arr_to_ts(arr, -1, True), name="timestamp")
 
-    def datetime(self) -> np.ndarray[datetime.datetime]:
-        """Convert to array of datetime.datetime `<'ndarray[datetime]'>`.
+    def datetime(self) -> np.ndarray[Pydt]:
+        """Return an array of datetime `<'ndarray[Pydt]'>`.
 
-        #### Alias of `to_pydatetime()`.
+        - Alias of `to_pydatetime()`, but returns array of `Pydt` instead of `datetime.datetime`.
         """
-        return DatetimeIndex.to_pydatetime(self)
+        # Convert to microseconds array
+        arr: np.ndarray = utils.dt64arr_as_int64_us(self.values_naive, -1, 0, True)
+        arr_p = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
+        size_i: cython.Py_ssize_t = arr.shape[0]
+
+        # Setup output array
+        tz: object = self.tzinfo
+        out: np.ndarray = np.PyArray_EMPTY(1, [size_i], np.NPY_TYPES.NPY_OBJECT, 0)
+        i: cython.Py_ssize_t
+        v: np.npy_int64
+        for i in range(size_i):
+            v = arr_p[i]
+            # Preserve NaT
+            if v == utils.LLONG_MIN:
+                out[i] = utils.NAT
+                continue
+            # Create Pydt
+            out[i] = Pydt.frommicroseconds(v, tz)
+
+        return out
 
     def date(self) -> np.ndarray[datetime.date]:
-        """Convert to array of datetime.date `<'ndarray[date]'>`."""
+        """Return an array of date `<'ndarray[date]'>`."""
         return super(Pddt, self).date
 
     def time(self) -> np.ndarray[datetime.time]:
-        """Convert to array of datetime.time (`WITHOUT` timezone) `<'ndarray[time]'>`."""
+        """Return an array of time (without timezone information) `<'ndarray[time]'>`."""
         return super(Pddt, self).time
 
     def timetz(self) -> np.ndarray[datetime.time]:
-        """Convert to array of datetime.time (`WITH` timezone) `<'ndarray[time]'>`."""
+        """Return an array of time (with the same timezone information) `<'ndarray[time]'>`."""
         return super(Pddt, self).timetz
 
     # Manipulator --------------------------------------------------------------------------
@@ -1604,48 +2084,74 @@ class Pddt(DatetimeIndex):
     ) -> Self:
         """Replace the specified datetime fields with new values `<'Pddt'>`.
 
-        #### Fields set to `-1` means retaining the original values.
+        :param year `<'int'>`: Absolute year. Defaults to `SENTINEL` (no change).
+        :param month `<'int'>`: Absolute month. Defaults to `SENTINEL` (no change).
+            If specified (greater than `0`), clamps to [1..12].
+        :param day `<'int'>`: Absolute day. Defaults to `SENTINEL` (no change).
+            If specified (greater than `0`), clamps to [1..maximum days the resulting month].
+        :param hour `<'int'>`: Absolute hour. Defaults to `SENTINEL` (no change).
+            If specified (greater than or equal to `0`), clamps to [0..23].
+        :param minute `<'int'>`: Absolute minute. Defaults to `SENTINEL` (no change).
+            If specified (greater than or equal to `0`), clamps to [0..59].
+        :param second `<'int'>`: Absolute second. Defaults to `SENTINEL` (no change).
+            If specified (greater than or equal to `0`), clamps to [0..59].
+        :param microsecond `<'int'>`: Absolute microsecond. Defaults to `SENTINEL` (no change).
+            If specified (greater than or equal to `0`), clamps to [0..999999].
+        :param nanosecond `<'int'>`: Absolute nanosecond. Defaults to `SENTINEL` (no change).
+            If specified (greater than or equal to `0`), clamps to [0..999].
+        :param tzinfo `<'tzinfo/None'>`: The timeone. Defaults to `SENTINEL` (no change).
 
-        :param year `<'int'>`: Year value, defaults to `-1`.
-        :param month `<'int'>`: Yonth value (1-12), defaults to `-1`.
-        :param day `<'int'>`: Day value (1-31), automacially clamped to the maximum days in the month, defaults to `-1`.
-        :param hour `<'int'>`: Hour value (0-23), defaults to `-1`.
-        :param minute `<'int'>`: Minute value (0-59), defaults to `-1`.
-        :param second `<'int'>`: Second value (0-59), defaults to `-1`.
-        :param microsecond `<'int'>`: Microsecond value (0-999999), defaults to `-1`.
-        :param tz `<'tzinfo/str/None'>`: The timezone, defaults to `-1`.
-            - `<'int'>` Retains the original timezone.
-            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
-            - `<'None'>` Timezone-naive.
+            - `<'None'>`: removes tzinfo (makes datetime index naive).
+            - `<'str'>`: Timezone name; or `'local'` for local timezone.
+            - `<'datetime.tzinfo'>`: A subclass of `datetime.tzinfo`.
+
+        :returns `<'Pddt'>`: The resulting datetime index after applying the specified field replacements.
+
+        ## Behavior
+        - Replacements are `component-wise`:
+            * Any of the date fields may be left as `<= 0` to keep original values.
+            * Any of the time fields may be left as `< 0` to keep original values.
+            * If `tzinfo` is left as `SENTINEL`, the original timezone is retained.
+        - Day values are `clamped` to the maximum valid day in the resulting month.
+        - Only time components within the index resolution are modified;
+          e.g., when index is in `'s'` resolution, `microsecond` and `nanosecond`
+          replacements are ignored.
+        - Timezone handling:
+            * If `tzinfo` is `SENTINEL`, the original timezone is retained.
+            * If `tzinfo` is `None`, the resulting datetime index will be localized to `naive`,
+              without affecting the datetime values.
+            * If `tzinfo` is specified and different from the original timezone,
+              the resulting datetime index will be replaced with the new timezone,
+              preserving the original datetime values.
+
+        ## Equivalent
+        >>> datetime.datetime.replace()
         """
-        # Access my_tzinfo
-        my_tz = self.tzinfo
-        pt = self if my_tz is None else self.tz_localize(None)  # timezone-naive
+        # Fast-path
+        # . retain timezone
+        if isinstance(tzinfo, int):
+            return self.to_datetime(
+                year, month, day, hour, minute, second, microsecond, nanosecond
+            )
+        # . same timezone
+        tzinfo: object = utils.tz_parse(tzinfo)
+        tz: object = self.tzinfo
+        if tzinfo is tz:
+            return self.to_datetime(
+                year, month, day, hour, minute, second, microsecond, nanosecond
+            )
 
-        # Replace datetime
+        # Replace datetime (timezone-naive)
+        pt = self if tz is None else self.tz_localize(None)
         pt = pt.to_datetime(
             year, month, day, hour, minute, second, microsecond, nanosecond
         )
 
         # Replace timezone
-        # . timezone-naive
-        if my_tz is None:
-            if isinstance(tzinfo, int):
-                return pt  # exit: keep naive
-            tzinfo = utils.tz_parse(tzinfo)
-            if tzinfo is None:
-                return pt  # exit: keep naive
-        # . timezone-aware
-        else:
-            if isinstance(tzinfo, int):
-                return pt.tz_localize(
-                    my_tz, "infer", "shift_forward"
-                )  # exit: keep mytz
-            tzinfo = utils.tz_parse(tzinfo)
-            if tzinfo is None:
-                return pt  # exit: keep naive
-        # . localize to new timezone
+        # . timezone-aware -> naive
+        if tzinfo is None:
+            return pt.tz_localize(None)
+        # . timezone-naive/aware -> aware
         return pt.tz_localize(tzinfo, "infer", "shift_forward")
 
     # . year
@@ -1656,71 +2162,82 @@ class Pddt(DatetimeIndex):
     ) -> Self:
         """Adjust the date to the specified month and day in the current year `<'Pddt'>`.
 
-        :param month `<'int/str/None'>`: Month value, defaults to `None`.
-            - `<'int'>` Month number (1=Jan...12=Dec).
-            - `<'str'>` Month name (case-insensitive), e.g., 'Jan', 'februar', '三月'.
-            - `<'None'>` Retains the original months.
+        :param month `<'int/str/None'>`: Month value. Defaults to `None`.
 
-        :param day `<'int'>`: Day value (1-31), defaults to `-1`.
-            If `-1`, retains the original days. The final day
-            values are clamped to the maximum days in the month.
+            - `<'int'>`  Month number (1=Jan...12=Dec).
+            - `<'str'>`  Month name in lowercase, uppercase or titlecase (e.g., 'Jan', 'februar', '三月').
+            - `<'None'>` Retains the original month.
 
-        ### Example:
-        >>> pt.to_curr_year("Feb", 31)  # The last day of February in the current year
-        >>> pt.to_curr_year(11)         # The same day of November in the current year
-        >>> pt.to_curr_year(day=1)      # The first day of the current month
+        :param day `<'int'>`: Day value (1-31). Defaults to `SENTINEL` (no change).
+            The final day value is automatically clamped to the maximum days in the month.
+
+        :returns `<'Pddt'>`: The adjusted datetime index in the current year.
+
+        ## Example
+        >>> pt.to_curr_year(month="Feb", day=31)    # The last day of February in the current year
+        >>> pt.to_curr_year(month=11)               # The same day of November in the current year
+        >>> pt.to_curr_year(day=1)                  # The 1st day of the current month
         """
-        # No month adjustment
-        mm: cython.int = _parse_month(month, True)
+        # Fast-path: no month adjustment
+        mm: cython.int = _parse_month(month, None, True)
         if mm == -1:
             return self.to_curr_month(day)
 
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
         my_unit: str = self.unit
-        delta: np.ndarray
+        my_reso: cython.int = utils.nptime_unit_str2int(my_unit)
 
-        # Seperate times
-        times = utils.dt64arr_times(arr, my_unit)  # int64[my_unit]
+        # Seperate times -> int64[my_unit]
+        times = utils.dt64arr_times(arr, my_reso, 0, True)
 
-        # Adjust dates
-        datesY = utils.dt64arr_as_int64_Y(arr, my_unit)
-        datesM = utils.dt64arr_as_int64_M(datesY, "Y", mm - 1)
-        # . add back original day
+        # Adjust dates -> int64[Y] -> int64[M]
+        dateY = utils.dt64arr_as_int64_Y(arr, my_reso, 0, True)
+        dateM = utils.dt64arr_as_int64_M(dateY, utils.DT_NPY_UNIT_YY, mm - 1, False)
+        # . retain original days -> int64[D]
         if day < 1:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            delta = utils.arr_min_arr(delta, utils.dt64arr_day(arr, my_unit))
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
-        # . first day
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            delta = utils.arr_min_arr(delta, utils.dt64arr_day(arr, my_reso), 0, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
+        # . 1st day -> int64[D]
         elif day == 1:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, False)
         # . days before 29
         elif day < 29:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M", day - 1)  # int64[D]
-        # . days before 31
+            dateD = utils.dt64arr_as_int64_D(
+                dateM, utils.DT_NPY_UNIT_MM, day - 1, False
+            )
+        # . days before 31 -> int64[D]
         elif day < 31:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            delta = utils.arr_min(delta, day)
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
-        # . last day
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            delta = utils.arr_min(delta, day, 0, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
+        # . last day -> int64[D]
         else:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
 
         # Combine dates & times
-        my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
-        if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
-            dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
+        # . my_unit[ns] & out of ns range -> int64[us]
+        if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+            dateD, utils.DT_NPY_UNIT_DD
+        ):
+            dates = utils.arr_mul(dateD, utils.US_DAY, 0, False)
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND, 0, False)
             dtype = utils.DT64_DTYPE_US
+        # . my_unit safe -> int64[my_unit]
         else:
-            dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
-            dtype = utils.map_nptime_unit_str2dt64(my_unit)
-        arr = utils.arr_add_arr(dates, times).astype(dtype)  # dt64[my_unit]
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+            dates = utils.dt64arr_as_int64(
+                dateD, my_unit, utils.DT_NPY_UNIT_DD, 0, False
+            )
+            dtype = utils.nptime_unit_str2dt64(my_unit)
+        arr = utils.arr_add_arr(dates, times, 0, False)  # int64
+
+        # New instance
+        return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
 
     def to_prev_year(
         self,
@@ -1729,19 +2246,21 @@ class Pddt(DatetimeIndex):
     ) -> Self:
         """Adjust the date to the specified month and day in the previous year `<'Pddt'>`.
 
-        :param month `<'int/str/None'>`: Month value, defaults to `None`.
-            - `<'int'>` Month number (1=Jan...12=Dec).
-            - `<'str'>` Month name (case-insensitive), e.g., 'Jan', 'februar', '三月'.
-            - `<'None'>` Retains the original months.
+        :param month `<'int/str/None'>`: Month value. Defaults to `None`.
 
-        :param day `<'int'>`: Day value (1-31), defaults to `-1`.
-            If `-1`, retains the original days. The final day
-            values are clamped to the maximum days in the month.
+            - `<'int'>`  Month number (1=Jan...12=Dec).
+            - `<'str'>`  Month name in lowercase, uppercase or titlecase (e.g., 'Jan', 'februar', '三月').
+            - `<'None'>` Retains the original month.
 
-        ### Example:
-        >>> pt.to_prev_year("Feb", 31)  # The last day of February in the previous year
-        >>> pt.to_prev_year(11)         # The same day of November in the previous year
-        >>> pt.to_prev_year(day=1)      # The first day of the current month in the previous year
+        :param day `<'int'>`: Day value (1-31). Defaults to `SENTINEL` (no change).
+            The final day value is automatically clamped to the maximum days in the month.
+
+        :returns `<'Pddt'>`: The adjusted datetime index in the previous year.
+
+        ## Example
+        >>> pt.to_prev_year(month="Feb", day=31)    # The last day of February in the previous year
+        >>> pt.to_prev_year(month=11)               # The same day of November in the previous year
+        >>> pt.to_prev_year(day=1)                  # The 1st day of the previous month
         """
         return self.to_year(-1, month, day)
 
@@ -1752,19 +2271,21 @@ class Pddt(DatetimeIndex):
     ) -> Self:
         """Adjust the date to the specified month and day in the next year `<'Pddt'>`.
 
-        :param month `<'int/str/None'>`: Month value, defaults to `None`.
-            - `<'int'>` Month number (1=Jan...12=Dec).
-            - `<'str'>` Month name (case-insensitive), e.g., 'Jan', 'februar', '三月'.
-            - `<'None'>` Retains the original months.
+        :param month `<'int/str/None'>`: Month value. Defaults to `None`.
 
-        :param day `<'int'>`: Day value (1-31), defaults to `-1`.
-            If `-1`, retains the original days. The final day
-            values are clamped to the maximum days in the month.
+            - `<'int'>`  Month number (1=Jan...12=Dec).
+            - `<'str'>`  Month name in lowercase, uppercase or titlecase (e.g., 'Jan', 'februar', '三月').
+            - `<'None'>` Retains the original month.
 
-        ### Example:
-        >>> pt.to_next_year("Feb", 31)  # The last day of February in the next year
-        >>> pt.to_next_year(11)         # The same day of November in the next year
-        >>> pt.to_next_year(day=1)      # The first day of the current month in the next year
+        :param day `<'int'>`: Day value (1-31). Defaults to `SENTINEL` (no change).
+            The final day value is automatically clamped to the maximum days in the month.
+
+        :returns `<'Pddt'>`: The adjusted datetime index in the next year.
+
+        ## Example
+        >>> pt.to_next_year(month="Feb", day=31)    # The last day of February in the next year
+        >>> pt.to_next_year(month=11)               # The same day of November in the next year
+        >>> pt.to_next_year(day=1)                  # The 1st day of the next month
         """
         return self.to_year(1, month, day)
 
@@ -1778,174 +2299,194 @@ class Pddt(DatetimeIndex):
 
         :param offset `<'int'>`: The year offset (+/-).
 
-        :param month `<'int/str/None'>`: Month value, defaults to `None`.
+        :param month `<'int/str/None'>`: Month value. Defaults to `None`.
+
             - `<'int'>` Month number (1=Jan...12=Dec).
             - `<'str'>` Month name (case-insensitive), e.g., 'Jan', 'februar', '三月'.
-            - `<'None'>` Retains the original months.
+            - `<'None'>` Retains the original month.
 
-        :param day `<'int'>`: Day value (1-31), defaults to `-1`.
-            If `-1`, retains the original days. The final day
-            values are clamped to the maximum days in the month.
+        :param day `<'int'>`: Day value (1-31). Defaults to `SENTINEL` (no change).
+            The final day value is automatically clamped to the maximum days in the month.
 
-        ### Example:
+        :returns `<'Pddt'>`: The adjusted datetime index.
+
+        ## Example
         >>> pt.to_year(-2, "Feb", 31)  # The last day of February, two years ago
         >>> pt.to_year(2, 11)          # The same day of November, two years later
-        >>> pt.to_year(2, day=1)       # The first day of the current month, two years later
+        >>> pt.to_year(2, day=1)       # The 1st day of the current month, two years later
         """
-        # No offset
+        # Fast-path: no offset
         if offset == 0:
             return self.to_curr_year(month, day)
-        mm: cython.int = _parse_month(month, True)
 
         # Access datetime array & info
+        mm: cython.int = _parse_month(month, None, True)
         arr: np.ndarray = self.values_naive
         my_unit: str = self.unit
-        delta: np.ndarray
+        my_reso: cython.int = utils.nptime_unit_str2int(my_unit)
 
-        # Seperate times
-        times = utils.dt64arr_times(arr, my_unit)  # int64[my_unit]
+        # Seperate times -> int64[my_unit]
+        times = utils.dt64arr_times(arr, my_reso, 0, True)
 
-        # Adjust dates
-        datesY = utils.dt64arr_as_int64_Y(arr, my_unit, offset)  # int64[Y]+off
-        datesM = utils.dt64arr_as_int64_M(datesY, "Y")  # int64[M]
+        # Adjust dates -> int64[Y] + offset -> int64[M]
+        dateY = utils.dt64arr_as_int64_Y(arr, my_reso, offset, True)
+        dateM = utils.dt64arr_as_int64_M(dateY, utils.DT_NPY_UNIT_YY, 0, False)
+        # . retain original month -> int64[M]
         if mm == -1:
-            delta = utils.dt64arr_month(arr, my_unit)
-            datesM = utils.arr_add_arr(datesM, delta, -1)  # int64[M]
+            delta = utils.dt64arr_month(arr, my_reso, 0, True)
+            dateM = utils.arr_add_arr(dateM, delta, -1, False)
+        # . replace with new month -> int64[M]
         else:
-            datesM = utils.arr_add(datesM, mm - 1)  # int64[M]
-        # . add back original day
+            dateM = utils.arr_add(dateM, mm - 1, False)
+        # . retain original days -> int64[D]
         if day < 1:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            delta = utils.arr_min_arr(delta, utils.dt64arr_day(arr, my_unit))
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
-        # . first day
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            delta = utils.arr_min_arr(delta, utils.dt64arr_day(arr, my_reso), 0, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
+        # . 1st day -> int64[D]
         elif day == 1:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, False)
         # . days before 29
         elif day < 29:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M", day - 1)  # int64[D]
-        # . days before 31
+            dateD = utils.dt64arr_as_int64_D(
+                dateM, utils.DT_NPY_UNIT_MM, day - 1, False
+            )
+        # . days before 31 -> int64[D]
         elif day < 31:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            delta = utils.arr_min(delta, day)
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
-        # . last day
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            delta = utils.arr_min(delta, day, 0, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
+        # . last day -> int64[D]
         else:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
 
         # Combine dates & times
-        my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
-        if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
-            dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
+        # . my_unit[ns] & out of ns range -> int64[us]
+        if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+            dateD, utils.DT_NPY_UNIT_DD
+        ):
+            dates = utils.arr_mul(dateD, utils.US_DAY, 0, False)
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND, 0, False)
             dtype = utils.DT64_DTYPE_US
+        # . my_unit safe -> int64[my_unit]
         else:
-            dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
-            dtype = utils.map_nptime_unit_str2dt64(my_unit)
-        arr = utils.arr_add_arr(dates, times).astype(dtype)  # dt64[my_unit]
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+            dates = utils.dt64arr_as_int64(
+                dateD, my_unit, utils.DT_NPY_UNIT_DD, 0, False
+            )
+            dtype = utils.nptime_unit_str2dt64(my_unit)
+        arr = utils.arr_add_arr(dates, times, 0, False)  # int64
+
+        # New instance
+        return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
 
     # . quarter
     def to_curr_quarter(self, month: cython.int = -1, day: cython.int = -1) -> Self:
-        """Adjust the date to the specified month and day in the current quarter. `<'Pddt'>`.
+        """Adjust the date to the specified month-of-quarter and day in the current quarter. `<'Pddt'>`.
 
-        :param month `<'int'>`: Month (1-3) of the quarter, defaults to `-1`.
-            If `-1`, retains the original months of the quarter.
+        :param month `<'int'>`: Month of the quarter, automatically clamped to `[1..3]`.
+            Defaults to `SENTINEL` (retains the original month-of-quarter).
+        :param day `<'int'>`: Day value (1-31). Defaults to `SENTINEL` (no change).
+            The final day value is automatically clamped to the maximum days in the month.
+        :returns `<'Pddt'>`: The adjusted datetime index in the current quarter.
 
-        :param day `<'int'>`: Day value (1-31), defaults to `-1`.
-            If `-1`, retains the original days. The final day
-            values are clamped to the maximum days in the month.
-
-        ### Example:
-        >>> pt.to_curr_quarter(1, 31)  # The last day of the first quarter month in the current quarter
-        >>> pt.to_curr_quarter(2)      # The same day of the second quarter month in the current quarter
-        >>> pt.to_curr_quarter(day=1)  # The first day of the current quarter month in the current quarter
+        ## Example
+        >>> pt.to_curr_quarter(month=1, day=31) # The last day of the 1st quarter month in the current quarter
+        >>> pt.to_curr_quarter(month=2)         # The same day of the 2nd quarter month in the current quarter
+        >>> pt.to_curr_quarter(day=1)           # The 1st day of the current month-of-quarter in the current quarter
         """
-        # No month adjustment
+        # Fast-path: no month adjustment
         if month < 1:
             return self.to_curr_month(day)
 
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
         my_unit: str = self.unit
+        my_reso: cython.int = utils.nptime_unit_str2int(my_unit)
 
-        # Seperate times
-        times = utils.dt64arr_times(arr, my_unit)  # int64[my_unit]
+        # Seperate times -> int64[my_unit]
+        times = utils.dt64arr_times(arr, my_reso, 0, True)
 
-        # Adjust dates
-        datesQ = utils.dt64arr_as_int64_Q(arr, my_unit)  # int64[Q]
-        datesM = utils.arr_mul(datesQ, 3, min(month, 3) - 1)  # int64[M]+Moff
-        # . add back original day
+        # Adjust dates -> int64[Q] -> int64[M] + offset
+        dateQ = utils.dt64arr_as_int64_Q(arr, my_reso, 0, True)
+        dateM = utils.arr_mul(dateQ, 3, min(month, 3) - 1, False)
+        # . retain original days -> int64[D]
         if day < 1:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            delta = utils.arr_min_arr(delta, utils.dt64arr_day(arr, my_unit))
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
-        # . first day
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            delta = utils.arr_min_arr(delta, utils.dt64arr_day(arr, my_reso), 0, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
+        # . 1st day -> int64[D]
         elif day == 1:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, False)
         # . days before 29
         elif day < 29:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M", day - 1)  # int64[D]
-        # . days before 31
+            dateD = utils.dt64arr_as_int64_D(
+                dateM, utils.DT_NPY_UNIT_MM, day - 1, False
+            )
+        # . days before 31 -> int64[D]
         elif day < 31:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            delta = utils.arr_min(delta, day)
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
-        # . last day
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            delta = utils.arr_min(delta, day, 0, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
+        # . last day -> int64[D]
         else:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
 
         # Combine dates & times
-        my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
-        if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
-            dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
+        # . my_unit[ns] & out of ns range -> int64[us]
+        if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+            dateD, utils.DT_NPY_UNIT_DD
+        ):
+            dates = utils.arr_mul(dateD, utils.US_DAY, 0, False)
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND, 0, False)
             dtype = utils.DT64_DTYPE_US
+        # . my_unit safe -> int64[my_unit]
         else:
-            dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
-            dtype = utils.map_nptime_unit_str2dt64(my_unit)
-        arr = utils.arr_add_arr(dates, times).astype(dtype)  # dt64[my_unit]
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+            dates = utils.dt64arr_as_int64(
+                dateD, my_unit, utils.DT_NPY_UNIT_DD, 0, False
+            )
+            dtype = utils.nptime_unit_str2dt64(my_unit)
+        arr = utils.arr_add_arr(dates, times, 0, False)  # int64
+
+        # New instance
+        return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
 
     def to_prev_quarter(self, month: cython.int = -1, day: cython.int = -1) -> Self:
-        """Adjust the date to the specified month and day in the previous quarter. `<'Pddt'>`.
+        """Adjust the date to the specified month-of-quarter and day in the previous quarter. `<'Pddt'>`.
 
-        :param month `<'int'>`: Month (1-3) of the quarter, defaults to `-1`.
-            If `-1`, retains the original months of the quarter.
+        :param month `<'int'>`: Month of the quarter, automatically clamped to `[1..3]`.
+            Defaults to `SENTINEL` (retains the original month-of-quarter).
+        :param day `<'int'>`: Day value (1-31). Defaults to `SENTINEL` (no change).
+            The final day value is automatically clamped to the maximum days in the month.
+        :returns `<'Pddt'>`: The adjusted datetime index in the previous quarter.
 
-        :param day `<'int'>`: Day value (1-31), defaults to `-1`.
-            If `-1`, retains the original days. The final day
-            values are clamped to the maximum days in the month.
-
-        ### Example:
-        >>> pt.to_prev_quarter(1, 31)  # The last day of the first quarter month in the previous quarter
-        >>> pt.to_prev_quarter(2)      # The same day of the second quarter month in the previous quarter
-        >>> pt.to_prev_quarter(day=1)  # The first day of the current quarter month in the previous quarter
+        ## Example
+        >>> pt.to_prev_quarter(month=1, day=31) # The last day of the 1st quarter month in the previous quarter
+        >>> pt.to_prev_quarter(month=2)         # The same day of the 2nd quarter month in the previous quarter
+        >>> pt.to_prev_quarter(day=1)           # The 1st day of the current month-of-quarter in the previous quarter
         """
         return self.to_quarter(-1, month, day)
 
     def to_next_quarter(self, month: cython.int = -1, day: cython.int = -1) -> Self:
-        """Adjust the date to the specified month and day in the next quarter. `<'Pddt'>`.
+        """Adjust the date to the specified month-of-quarter and day in the next quarter. `<'Pddt'>`.
 
-        :param month `<'int'>`: Month (1-3) of the quarter, defaults to `-1`.
-            If `-1`, retains the original months of the quarter.
+        :param month `<'int'>`: Month of the quarter, automatically clamped to `[1..3]`.
+            Defaults to `SENTINEL` (retains the original month-of-quarter).
+        :param day `<'int'>`: Day value (1-31). Defaults to `SENTINEL` (no change).
+            The final day value is automatically clamped to the maximum days in the month.
+        :returns `<'Pddt'>`: The adjusted datetime index in the next quarter.
 
-        :param day `<'int'>`: Day value (1-31), defaults to `-1`.
-            If `-1`, retains the original days. The final day
-            values are clamped to the maximum days in the month.
-
-        ### Example:
-        >>> pt.to_next_quarter(1, 31)  # The last day of the first quarter month in the next quarter
-        >>> pt.to_next_quarter(2)      # The same day of the second quarter month in the next quarter
-        >>> pt.to_next_quarter(day=1)  # The first day of the current quarter month in the next quarter
+        ## Example
+        >>> pt.to_next_quarter(month=1, day=31) # The last day of the 1st quarter month in the next quarter
+        >>> pt.to_next_quarter(month=2)         # The same day of the 2nd quarter month in the next quarter
+        >>> pt.to_next_quarter(day=1)           # The 1st day of the current month-of-quarter in the next quarter
         """
         return self.to_quarter(1, month, day)
 
@@ -1955,271 +2496,308 @@ class Pddt(DatetimeIndex):
         month: cython.int = -1,
         day: cython.int = -1,
     ) -> Self:
-        """Adjust the date to the specified month and day in the quarter (+/-) 'offset'. `<'Pddt'>`.
+        """Adjust the date to the specified month-of-quarter and day in the quarter (+/-) offset `<'Pddt'>`.
 
         :param offset `<'int'>`: The quarter offset (+/-).
+        :param month `<'int'>`: Month of the quarter, automatically clamped to `[1..3]`.
+            Defaults to `SENTINEL` (retains the original month-of-quarter).
+        :param day `<'int'>`: Day value (1-31). Defaults to `SENTINEL` (no change).
+            The final day value is automatically clamped to the maximum days in the month.
+        :returns `<'Pddt'>`: The adjusted datetime index.
 
-        :param month `<'int'>`: Month (1-3) of the quarter, defaults to `-1`.
-            If `-1`, retains the original months of the quarter.
-
-        :param day `<'int'>`: Day value (1-31), defaults to `-1`.
-            If `-1`, retains the original days. The final day
-            values are clamped to the maximum days in the month.
-
-        ### Example:
-        >>> pt.to_quarter(-2, 1, 31)  # The last day of the first quarter month, two quarters ago
-        >>> pt.to_quarter(2, 2)       # The same day of the second quarter month, two quarters later
-        >>> pt.to_quarter(2, day=1)   # The first day of the current quarter month, two quarters later
+        ## Example
+        >>> pt.to_quarter(-2, 1, 31)  # The last day of the 1st quarter month, two quarters ago
+        >>> pt.to_quarter(2, 2)       # The same day of the 2nd quarter month, two quarters later
+        >>> pt.to_quarter(2, day=1)   # The 1st day of the current month-of-quarter, two quarters later
         """
-        # No offset
+        # Fast-path: no offset
         if offset == 0:
             return self.to_curr_quarter(month, day)
 
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
         my_unit: str = self.unit
+        my_reso: cython.int = utils.nptime_unit_str2int(my_unit)
 
-        # Seperate times
-        times = utils.dt64arr_times(arr, my_unit)  # int64[my_unit]
+        # Seperate times -> int64[my_unit]
+        times = utils.dt64arr_times(arr, my_reso, 0, True)
 
-        # Adjust dates
+        # Adjust dates -> int64[M]
+        # . retain original month-of-quarter
         if month < 1:
-            datesM = utils.dt64arr_as_int64_M(arr, my_unit, offset * 3)
+            dateM = utils.dt64arr_as_int64_M(arr, my_reso, offset * 3, True)
+        # . replace with new month-of-quarter
         else:
-            datesQ = utils.dt64arr_as_int64_Q(arr, my_unit)
-            datesM = utils.arr_mul(datesQ, 3, offset * 3 + min(month, 3) - 1)
-        # . add back original day
+            dateQ = utils.dt64arr_as_int64_Q(arr, my_reso, 0, True)
+            dateM = utils.arr_mul(dateQ, 3, offset * 3 + min(month, 3) - 1, False)
+        # . retain original days -> int64[D]
         if day < 1:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            delta = utils.arr_min_arr(delta, utils.dt64arr_day(arr, my_unit))
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
-        # . first day
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            delta = utils.arr_min_arr(delta, utils.dt64arr_day(arr, my_reso), 0, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
+        # . 1st day -> int64[D]
         elif day == 1:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, False)
         # . days before 29
         elif day < 29:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M", day - 1)  # int64[D]
-        # . days before 31
+            dateD = utils.dt64arr_as_int64_D(
+                dateM, utils.DT_NPY_UNIT_MM, day - 1, False
+            )
+        # . days before 31 -> int64[D]
         elif day < 31:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            delta = utils.arr_min(delta, day)
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
-        # . last day
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            delta = utils.arr_min(delta, day, 0, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
+        # . last day -> int64[D]
         else:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
 
         # Combine dates & times
-        my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
-        if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
-            dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
+        # . my_unit[ns] & out of ns range -> int64[us]
+        if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+            dateD, utils.DT_NPY_UNIT_DD
+        ):
+            dates = utils.arr_mul(dateD, utils.US_DAY, 0, False)
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND, 0, False)
             dtype = utils.DT64_DTYPE_US
+        # . my_unit safe -> int64[my_unit]
         else:
-            dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
-            dtype = utils.map_nptime_unit_str2dt64(my_unit)
-        arr = utils.arr_add_arr(dates, times).astype(dtype)  # dt64[my_unit]
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+            dates = utils.dt64arr_as_int64(
+                dateD, my_unit, utils.DT_NPY_UNIT_DD, 0, False
+            )
+            dtype = utils.nptime_unit_str2dt64(my_unit)
+        arr = utils.arr_add_arr(dates, times, 0, False)  # int64
+
+        # New instance
+        return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
 
     # . month
     def to_curr_month(self, day: cython.int = -1) -> Self:
         """Adjust the date to the specified day of the current month `<'Pddt'>`.
 
-        :param day `<'int'>`: The day value (1-31), defaults to `-1`.
-            If `-1`, retains the original days. The final day
-            values are clamped to the maximum days in the month.
+        :param day `<'int'>`: Day value (1-31). Defaults to `SENTINEL` (no change).
+            The final day value is automatically clamped to the maximum days in the month.
 
-        ### Example:
+        :returns `<'Pddt'>`: The adjusted datetime index in the current month.
+
+        ## Example
         >>> pt.to_curr_month(31)  # The last day of the current month
-        >>> pt.to_curr_month(1)   # The first day of the current month
+        >>> pt.to_curr_month(1)   # The 1st day of the current month
         """
-        # No adjustment
+        # Fast-path: no adjustment
         if day < 1:
             return self  # exit
 
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
         my_unit: str = self.unit
-        delta: np.ndarray
+        my_reso: cython.int = utils.nptime_unit_str2int(my_unit)
 
-        # Seperate times
-        times = utils.dt64arr_times(arr, my_unit)  # int64[my_unit]
+        # Seperate times -> int64[my_unit]
+        times = utils.dt64arr_times(arr, my_reso, 0, True)
 
-        # Adjust dates
-        datesM = utils.dt64arr_as_int64_M(arr, my_unit)  # int64[M]
-        # . first day
+        # Adjust dates -> int64[M]
+        dateM = utils.dt64arr_as_int64_M(arr, my_reso, 0, True)
+        # . 1st day -> int64[D]
         if day == 1:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-        # . days before 29
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, False)
+        # . days before 29 -> int64[D]
         elif day < 29:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M", day - 1)  # int64[D]
-        # . days before 31
+            dateD = utils.dt64arr_as_int64_D(
+                dateM, utils.DT_NPY_UNIT_MM, day - 1, False
+            )
+        # . days before 31 -> int64[D]
         elif day < 31:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            delta = utils.arr_min(delta, day)
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
-        # . last day
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            delta = utils.arr_min(delta, day, 0, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
+        # . last day -> int64[D]
         else:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
 
         # Combine dates & times
-        my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
-        if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
-            dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
+        # . my_unit[ns] & out of ns range -> int64[us]
+        if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+            dateD, utils.DT_NPY_UNIT_DD
+        ):
+            dates = utils.arr_mul(dateD, utils.US_DAY, 0, False)
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND, 0, False)
             dtype = utils.DT64_DTYPE_US
+        # . my_unit safe -> int64[my_unit]
         else:
-            dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
-            dtype = utils.map_nptime_unit_str2dt64(my_unit)
-        arr = utils.arr_add_arr(dates, times).astype(dtype)  # dt64[my_unit]
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+            dates = utils.dt64arr_as_int64(
+                dateD, my_unit, utils.DT_NPY_UNIT_DD, 0, False
+            )
+            dtype = utils.nptime_unit_str2dt64(my_unit)
+        arr = utils.arr_add_arr(dates, times, 0, False)  # int64
+
+        # New instance
+        return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
 
     def to_prev_month(self, day: cython.int = -1) -> Self:
         """Adjust the date to the specified day of the previous month `<'Pddt'>`.
 
-        :param day `<'int'>`: The day value (1-31), defaults to `-1`.
-            If `-1`, retains the original days. The final day
-            values are clamped to the maximum days in the month.
+        :param day `<'int'>`: Day value (1-31). Defaults to `SENTINEL` (no change).
+            The final day value is automatically clamped to the maximum days in the month.
 
-        ### Example:
+        :returns `<'Pddt'>`: The adjusted datetime index in the previous month.
+
+        ## Example
         >>> pt.to_prev_month(31)  # The last day of the previous month
-        >>> pt.to_prev_month(1)   # The first day of the previous month
+        >>> pt.to_prev_month(1)   # The 1st day of the previous month
         """
         return self.to_month(-1, day)
 
     def to_next_month(self, day: cython.int = -1) -> Self:
         """Adjust the date to the specified day of the next month `<'Pddt'>`.
 
-        :param day `<'int'>`: The day value (1-31), defaults to `-1`.
-            If `-1`, retains the original days. The final day
-            values are clamped to the maximum days in the month.
+        :param day `<'int'>`: Day value (1-31). Defaults to `SENTINEL` (no change).
+            The final day value is automatically clamped to the maximum days in the month.
 
-        ### Example:
+        :returns `<'Pddt'>`: The adjusted datetime index in the next month.
+
+        ## Example
         >>> pt.to_next_month(31)  # The last day of the next month
-        >>> pt.to_next_month(1)   # The first day of the next month
+        >>> pt.to_next_month(1)   # The 1st day of the next month
         """
         return self.to_month(1, day)
 
     def to_month(self, offset: cython.int, day: cython.int = -1) -> Self:
-        """Adjust the date to the specified day of the month (+/-) offest `<'Pddt'>`.
+        """Adjust the date to the specified day of the month (+/-) offset `<'Pddt'>`.
 
         :param offset `<'int'>`: The month offset (+/-).
-        :param day `<'int'>`: The day value (1-31), defaults to `-1`.
-            If `-1`, retains the original days. The final day
-            values are clamped to the maximum days in the month.
+        :param day `<'int'>`: Day value (1-31). Defaults to `SENTINEL` (no change).
+            The final day value is automatically clamped to the maximum days in the month.
+        :returns `<'Pddt'>`: The adjusted datetime index.
 
-        ### Example:
+        ## Example
         >>> pt.to_month(-2, 31)  # The last day of the month, two months ago
-        >>> pt.to_month(2, 1)    # The first day of the month, two months later
+        >>> pt.to_month(2, 1)    # The 1st day of the month, two months later
         """
-        # No offset
+        # Fast-path: no offset
         if offset == 0:
             return self.to_curr_month(day)
 
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
         my_unit: str = self.unit
-        delta: np.ndarray
+        my_reso: cython.int = utils.nptime_unit_str2int(my_unit)
 
-        # Seperate times
-        times = utils.dt64arr_times(arr, my_unit)  # int64[my_unit]
+        # Seperate times -> int64[my_unit]
+        times = utils.dt64arr_times(arr, my_reso, 0, True)
 
-        # Adjust dates
-        datesM = utils.dt64arr_as_int64_M(arr, my_unit, offset)  # int64[M]+off
-        # . add back original day
+        # Adjust dates -> int64[M] + offset
+        dateM = utils.dt64arr_as_int64_M(arr, my_reso, offset, True)
+        # . retain original days -> int64[D]
         if day < 1:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            delta = utils.arr_min_arr(delta, utils.dt64arr_day(arr, my_unit))
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
-        # . first day
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            delta = utils.arr_min_arr(delta, utils.dt64arr_day(arr, my_reso), 0, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
+        # . 1st day -> int64[D]
         elif day == 1:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-        # . days before 29
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, False)
+        # . days before 29 -> int64[D]
         elif day < 29:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M", day - 1)  # int64[D]
-        # . days before 31
+            dateD = utils.dt64arr_as_int64_D(
+                dateM, utils.DT_NPY_UNIT_MM, day - 1, False
+            )
+        # . days before 31 -> int64[D]
         elif day < 31:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            delta = utils.arr_min(delta, day)
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
-        # . last day
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            delta = utils.arr_min(delta, day, 0, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
+        # . last day -> int64[D]
         else:
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_days_in_month(datesM, "M")
-            datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, True)
+            delta = utils.dt64arr_days_in_month(dateM, utils.DT_NPY_UNIT_MM, False)
+            dateD = utils.arr_add_arr(dateD, delta, -1, False)
 
         # Combine dates & times
-        my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
-        if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
-            dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
+        # . my_unit[ns] & out of ns range -> int64[us]
+        if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+            dateD, utils.DT_NPY_UNIT_DD
+        ):
+            dates = utils.arr_mul(dateD, utils.US_DAY, 0, False)
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND, 0, False)
             dtype = utils.DT64_DTYPE_US
+        # . my_unit safe -> int64[my_unit]
         else:
-            dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
-            dtype = utils.map_nptime_unit_str2dt64(my_unit)
-        arr = utils.arr_add_arr(dates, times).astype(dtype)  # dt64[my_unit]
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+            dates = utils.dt64arr_as_int64(
+                dateD, my_unit, utils.DT_NPY_UNIT_DD, 0, False
+            )
+            dtype = utils.nptime_unit_str2dt64(my_unit)
+        arr = utils.arr_add_arr(dates, times, 0, False)  # int64
+
+        # New instance
+        return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
 
     # . weekday
     def to_monday(self) -> Self:
-        """Adjust the date to the Monday of the current week `<'Pddt'>`."""
+        """Adjust the date to the `Monday` of the current week `<'Pddt'>`."""
         return self._to_curr_weekday(0)
 
     def to_tuesday(self) -> Self:
-        """Adjust the date to the Tuesday of the current week `<'Pddt'>`."""
+        """Adjust the date to the `Tuesday` of the current week `<'Pddt'>`."""
         return self._to_curr_weekday(1)
 
     def to_wednesday(self) -> Self:
-        """Adjust the date to the Wednesday of the current week `<'Pddt'>`."""
+        """Adjust the date to the `Wednesday` of the current week `<'Pddt'>`."""
         return self._to_curr_weekday(2)
 
     def to_thursday(self) -> Self:
-        """Adjust the date to the Thursday of the current week `<'Pddt'>`."""
+        """Adjust the date to the `Thursday` of the current week `<'Pddt'>`."""
         return self._to_curr_weekday(3)
 
     def to_friday(self) -> Self:
-        """Adjust the date to the Friday of the current week `<'Pddt'>`."""
+        """Adjust the date to the `Friday` of the current week `<'Pddt'>`."""
         return self._to_curr_weekday(4)
 
     def to_saturday(self) -> Self:
-        """Adjust the date to the Saturday of the current week `<'Pddt'>`."""
+        """Adjust the date to the `Saturday` of the current week `<'Pddt'>`."""
         return self._to_curr_weekday(5)
 
     def to_sunday(self) -> Self:
-        """Adjust the date to the Sunday of the current week `<'Pddt'>`."""
+        """Adjust the date to the `Sunday` of the current week `<'Pddt'>`."""
         return self._to_curr_weekday(6)
 
     def to_curr_weekday(self, weekday: int | str | None = None) -> Self:
         """Adjust the date to the specific weekday of the current week `<'Pddt'>`.
 
-        :param weekday `<'int/str/None'>`: Weekday value, defaults to `None`.
-            - `<'int'>` Weekday number (0=Mon...6=Sun).
-            - `<'str'>` Weekday name (case-insensitive), e.g., 'Mon', 'dienstag', '星期三'.
-            - `<'None'>` Retains the original weekdays.
+        :param weekday `<'int/str/None'>`: Weekday value. Defaults to `None`.
 
-        ### Example:
+            - `<'int'>`  Weekday number (0=Mon...6=Sun).
+            - `<'str'>`  Weekday name in lowercase, uppercase or titlecase (e.g., 'Mon', 'dienstag', '星期三').
+            - `<'None'>` Retains the original weekday.
+
+        :returns `<'Pddt'>`: The adjusted datetime index in the current week.
+
+        ## Example
         >>> pt.to_curr_weekday(0)      # The Monday of the current week
         >>> pt.to_curr_weekday("Tue")  # The Tuesday of the current week
         """
-        return self._to_curr_weekday(_parse_weekday(weekday, True))
+        return self._to_curr_weekday(_parse_weekday(weekday, None, True))
 
     def to_prev_weekday(self, weekday: int | str | None = None) -> Self:
         """Adjust the date to the specific weekday of the previous week `<'Pddt'>`.
 
-        :param weekday `<'int/str/None'>`: Weekday value, defaults to `None`.
-            - `<'int'>` Weekday number (0=Mon...6=Sun).
-            - `<'str'>` Weekday name (case-insensitive), e.g., 'Mon', 'dienstag', '星期三'.
-            - `<'None'>` Retains the original weekdays.
+        :param weekday `<'int/str/None'>`: Weekday value. Defaults to `None`.
 
-        ### Example:
+            - `<'int'>`  Weekday number (0=Mon...6=Sun).
+            - `<'str'>`  Weekday name in lowercase, uppercase or titlecase (e.g., 'Mon', 'dienstag', '星期三').
+            - `<'None'>` Retains the original weekday.
+
+        :returns `<'Pddt'>`: The adjusted datetime index in the previous week.
+
+        ## Example
         >>> pt.to_prev_weekday(0)      # The Monday of the previous week
         >>> pt.to_prev_weekday("Tue")  # The Tuesday of the previous week
         """
@@ -2228,12 +2806,15 @@ class Pddt(DatetimeIndex):
     def to_next_weekday(self, weekday: int | str | None = None) -> Self:
         """Adjust the date to the specific weekday of the next week `<'Pddt'>`.
 
-        :param weekday `<'int/str/None'>`: Weekday value, defaults to `None`.
-            - `<'int'>` Weekday number (0=Mon...6=Sun).
-            - `<'str'>` Weekday name (case-insensitive), e.g., 'Mon', 'dienstag', '星期三'.
-            - `<'None'>` Retains the original weekdays.
+        :param weekday `<'int/str/None'>`: Weekday value. Defaults to `None`.
 
-        ### Example:
+            - `<'int'>`  Weekday number (0=Mon...6=Sun).
+            - `<'str'>`  Weekday name in lowercase, uppercase or titlecase (e.g., 'Mon', 'dienstag', '星期三').
+            - `<'None'>` Retains the original weekday.
+
+        :returns `<'Pddt'>`: The adjusted datetime index in the next week.
+
+        ## Example
         >>> pt.to_next_weekday(0)      # The Monday of the next week
         >>> pt.to_next_weekday("Tue")  # The Tuesday of the next week
         """
@@ -2243,142 +2824,186 @@ class Pddt(DatetimeIndex):
         """Adjust the date to the specific weekday of the week (+/-) offset `<'Pddt'>`.
 
         :param offset `<'int'>`: The week offset (+/-).
-        :param weekday `<'int/str/None'>`: Weekday value, defaults to `None`.
-            - `<'int'>` Weekday number (0=Mon...6=Sun).
-            - `<'str'>` Weekday name (case-insensitive), e.g., 'Mon', 'dienstag', '星期三'.
-            - `<'None'>` Retains the original weekdays.
 
-        ### Example:
+        :param weekday `<'int/str/None'>`: Weekday value. Defaults to `None`.
+
+            - `<'int'>`  Weekday number (0=Mon...6=Sun).
+            - `<'str'>`  Weekday name in lowercase, uppercase or titlecase (e.g., 'Mon', 'dienstag', '星期三').
+            - `<'None'>` Retains the original weekday.
+
+        :returns `<'Pddt'>`: The adjusted datetime index.
+
+        ## Example
         >>> pt.to_weekday(-2, 0)     # The Monday of the week, two weeks ago
         >>> pt.to_weekday(2, "Tue")  # The Tuesday of the week, two weeks later
         >>> pt.to_weekday(2)         # The same weekday of the week, two weeks later
         """
-        # No offset
-        wkd: cython.int = _parse_weekday(weekday, True)
+        # Fast-path: no offset
+        wkd: cython.int = _parse_weekday(weekday, None, True)
         if offset == 0:
             return self._to_curr_weekday(wkd)
 
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
         my_unit: str = self.unit
-        delta: np.ndarray
+        my_reso: cython.int = utils.nptime_unit_str2int(my_unit)
 
-        # Seperate times
-        times = utils.dt64arr_times(arr, my_unit)  # int64[my_unit]
+        # Seperate times -> int64[my_unit]
+        times = utils.dt64arr_times(arr, my_reso, 0, True)
 
-        # Adjust dates
-        datesD = utils.dt64arr_as_int64_D(arr, my_unit)  # int64[D]
+        # Adjust dates -> int64[D]
+        dateD = utils.dt64arr_as_int64_D(arr, my_reso, 0, True)
+        # . retain original weekday
         if wkd == -1:
-            datesD = utils.arr_add(datesD, offset * 7)  # int64[D]
+            dateD = utils.arr_add(dateD, offset * 7, False)
+        # . replace with new weekday
         else:
-            delta = utils.dt64arr_weekday(datesD, "D", -(offset * 7 + wkd))
-            datesD = utils.arr_sub_arr(datesD, delta)  # int64[D]
+            delta = utils.dt64arr_weekday(dateD, utils.DT_NPY_UNIT_DD, 0, True)
+            dateD = utils.arr_sub_arr(dateD, delta, offset * 7 + wkd, False)
+            #: days - weekday + target_weekday + (offset * 7)
 
         # Combine dates & times
-        my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
-        if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
-            dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
+        # . my_unit[ns] & out of ns range -> int64[us]
+        if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+            dateD, utils.DT_NPY_UNIT_DD
+        ):
+            dates = utils.arr_mul(dateD, utils.US_DAY, 0, False)
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND, 0, False)
             dtype = utils.DT64_DTYPE_US
+        # . my_unit safe -> int64[my_unit]
         else:
-            dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
-            dtype = utils.map_nptime_unit_str2dt64(my_unit)
-        arr = utils.arr_add_arr(dates, times).astype(dtype)  # dt64[my_unit]
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+            dates = utils.dt64arr_as_int64(
+                dateD, my_unit, utils.DT_NPY_UNIT_DD, 0, False
+            )
+            dtype = utils.nptime_unit_str2dt64(my_unit)
+        arr = utils.arr_add_arr(dates, times, 0, False)  # int64
+
+        # New instance
+        return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
 
     def _to_curr_weekday(self, weekday: cython.int) -> Self:
         """(internal) Adjust the date to the specific weekday of the current week `<'Pddt'>`.
 
         :param weekday `<'int'>`: Weekday number (0=Mon...6=Sun).
+            Automatically clamped to [0..6]. If negative, no adjustment is made.
+        :returns `<'Pddt'>`: The adjusted datetime index in the current week.
         """
-        # No adjustment
+        # Fast-path: no adjustment
         if weekday < 0:
             return self
 
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
         my_unit: str = self.unit
-        delta: np.ndarray
+        my_reso: cython.int = utils.nptime_unit_str2int(my_unit)
 
-        # Seperate times
-        times = utils.dt64arr_times(arr, my_unit)  # int64[my_unit]
+        # Seperate times -> int64[my_unit]
+        times = utils.dt64arr_times(arr, my_reso, 0, True)
 
-        # Adjust dates
-        datesD = utils.dt64arr_as_int64_D(arr, my_unit)  # int64[D]
-        if weekday == 0:
-            delta = utils.dt64arr_weekday(datesD, "D")  # weekday
-        else:
-            delta = utils.dt64arr_weekday(datesD, "D", -min(weekday, 6))  # weekday-off
-        datesD = utils.arr_sub_arr(datesD, delta)  # int64[D]
+        # Adjust dates -> int64[D]
+        dateD = utils.dt64arr_as_int64_D(arr, my_reso, 0, True)
+        delta = utils.dt64arr_weekday(dateD, utils.DT_NPY_UNIT_DD, 0, True)
+        dateD = utils.arr_sub_arr(dateD, delta, min(weekday, 6), False)
+        #: days - weekday + target_weekday
 
         # Combine dates & times
-        my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
-        if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
-            dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
+        # . my_unit[ns] & out of ns range -> int64[us]
+        if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+            dateD, utils.DT_NPY_UNIT_DD
+        ):
+            dates = utils.arr_mul(dateD, utils.US_DAY, 0, False)
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND, 0, False)
             dtype = utils.DT64_DTYPE_US
+        # . my_unit safe -> int64[my_unit]
         else:
-            dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
-            dtype = utils.map_nptime_unit_str2dt64(my_unit)
-        arr = utils.arr_add_arr(dates, times).astype(dtype)  # dt64[my_unit]
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+            dates = utils.dt64arr_as_int64(
+                dateD, my_unit, utils.DT_NPY_UNIT_DD, 0, False
+            )
+            dtype = utils.nptime_unit_str2dt64(my_unit)
+        arr = utils.arr_add_arr(dates, times, 0, False)  # int64
+
+        # New instance
+        return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
 
     # . day
     def to_yesterday(self) -> Self:
-        """Adjust the date to Yesterday `<'Pddt'>`."""
+        """Adjust the date to `Yesterday` `<'Pddt'>`."""
         return self.to_day(-1)
 
     def to_tomorrow(self) -> Self:
-        """Adjust the date to Tomorrow `<'Pddt'>`."""
+        """Adjust the date to `Tomorrow` `<'Pddt'>`."""
         return self.to_day(1)
 
     def to_day(self, offset: cython.int) -> Self:
         """Adjust the date to day (+/-) offset `<'Pddt'>`.
 
         :param offset `<'int'>`: The day offset (+/-).
+        :returns `<'Pddt'>`: The adjusted datetime index.
+
+        ## Example
+        >>> pt.to_day(-10)  # 10 days ago
+        >>> pt.to_day(10)   # 10 days later
         """
-        # No offset
+        # Fast-path: no offset
         if offset == 0:
             return self
 
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
         my_unit: str = self.unit
+        my_reso: cython.int = utils.nptime_unit_str2int(my_unit)
 
-        # Seperate times
-        times: np.ndarray = utils.dt64arr_times(arr, my_unit)  # int64[my_unit]
+        # Seperate times -> int64[my_unit]
+        times = utils.dt64arr_times(arr, my_reso, 0, True)
 
-        # Adjust dates
-        datesD: np.ndarray = utils.dt64arr_as_int64_D(arr, my_unit, offset)  # int64[D]
+        # Adjust dates -> int64[D]
+        dateD = utils.dt64arr_as_int64_D(arr, my_reso, offset, True)
 
         # Combine dates & times
-        my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
-        if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
-            dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
+        # . my_unit[ns] & out of ns range -> int64[us]
+        if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+            dateD, utils.DT_NPY_UNIT_DD
+        ):
+            dates = utils.arr_mul(dateD, utils.US_DAY, 0, False)
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND, 0, False)
             dtype = utils.DT64_DTYPE_US
+        # . my_unit safe -> int64[my_unit]
         else:
-            dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
-            dtype = utils.map_nptime_unit_str2dt64(my_unit)
-        arr = utils.arr_add_arr(dates, times).astype(dtype)  # dt64[my_unit]
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+            dates = utils.dt64arr_as_int64(
+                dateD, my_unit, utils.DT_NPY_UNIT_DD, 0, False
+            )
+            dtype = utils.nptime_unit_str2dt64(my_unit)
+        arr = utils.arr_add_arr(dates, times, 0, False)  # int64
+
+        # New instance
+        return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
 
     # . date&time
-    def snap(self, freq: object = "S") -> Self:
+    def normalize(self):
+        """Set the time fields to midnight (00:00:00) `<'Pddt'>`.
+
+        - This method is useful in cases, when the time does not matter.
+        - The timezone is unaffected.
+        """
+        return self.to_time(0, 0, 0, 0, 0)
+
+    def snap(self, freq: object) -> Self:
         """Snap to nearest occurring frequency `<'Pddt'>`.
 
         Examples
         --------
-        >>> idx = pd.DatetimeIndex(['2023-01-01', '2023-01-02',
-        ...                        '2023-02-01', '2023-02-02'])
+        >>> idx = Pddt(['2023-01-01', '2023-01-02', '2023-02-01', '2023-02-02'])
         >>> idx
-        DatetimeIndex(['2023-01-01', '2023-01-02', '2023-02-01', '2023-02-02'],
+        Pddt(['2023-01-01', '2023-01-02', '2023-02-01', '2023-02-02'],
         dtype='datetime64[ns]', freq=None)
         >>> idx.snap('MS')
-        DatetimeIndex(['2023-01-01', '2023-01-01', '2023-02-01', '2023-02-01'],
+        Pddt(['2023-01-01', '2023-01-01', '2023-02-01', '2023-02-01'],
         dtype='datetime64[ns]', freq=None)
         """
-        return pddt_new_simple(DatetimeIndex.snap(self, freq))
+        try:
+            return self._new(DatetimeIndex.snap(self, freq))
+        except Exception as err:
+            errors.raise_argument_error(self.__class__, "snap(freq)", None, err)
 
     def to_datetime(
         self,
@@ -2391,20 +3016,37 @@ class Pddt(DatetimeIndex):
         microsecond: cython.int = -1,
         nanosecond: cython.int = -1,
     ) -> Self:
-        """Adjust the date and time fields with new values `<'Pddt'>`.
+        """Adjust the date and time fields with new values,
+        without affecting the timezone `<'Pddt'>`.
 
-        #### Fields set to `-1` means retaining the original values.
+        :param year `<'int'>`: Absolute year. Defaults to `SENTINEL` (no change).
+        :param month `<'int'>`: Absolute month. Defaults to `SENTINEL` (no change).
+            If specified (greater than `0`), clamps to [1..12].
+        :param day `<'int'>`: Absolute day. Defaults to `SENTINEL` (no change).
+            If specified (greater than `0`), clamps to [1..maximum days the resulting month].
+        :param hour `<'int'>`: Absolute hour. Defaults to `SENTINEL` (no change).
+            If specified (greater than or equal to `0`), clamps to [0..23].
+        :param minute `<'int'>`: Absolute minute. Defaults to `SENTINEL` (no change).
+            If specified (greater than or equal to `0`), clamps to [0..59].
+        :param second `<'int'>`: Absolute second. Defaults to `SENTINEL` (no change).
+            If specified (greater than or equal to `0`), clamps to [0..59].
+        :param microsecond `<'int'>`: Absolute microsecond. Defaults to `SENTINEL` (no change).
+            If specified (greater than or equal to `0`), clamps to [0..999999].
+        :param nanosecond `<'int'>`: Absolute nanosecond. Defaults to `SENTINEL` (no change).
+            If specified (greater than or equal to `0`), clamps to [0..999].
+        :returns `<'Pddt'>`: The resulting datetime with new specified field values.
 
-        :param year `<'int'>`: Year value, defaults to `-1`.
-        :param month `<'int'>`: Yonth value (1-12), defaults to `-1`.
-        :param day `<'int'>`: Day value (1-31), automacially clamped to the maximum days in the month, defaults to `-1`.
-        :param hour `<'int'>`: Hour value (0-23), defaults to `-1`.
-        :param minute `<'int'>`: Minute value (0-59), defaults to `-1`.
-        :param second `<'int'>`: Second value (0-59), defaults to `-1`.
-        :param microsecond `<'int'>`: Microsecond value (0-999999), defaults to `-1`.
+        ## Behavior
+        - Replacements are `component-wise`:
+            * Any of the date fields may be left as `<= 0` to keep original values.
+            * Any of the time fields may be left as `< 0` to keep original values.
+        - Day values are `clamped` to the maximum valid day in the resulting month.
+        - Only time components within the index resolution are modified;
+          e.g., when index is in `'s'` resolution, `microsecond` and `nanosecond`
+          replacements are ignored.
 
-        ### Equivalent to:
-        >>> pt.replace(
+        ## Equivalent
+        >>> dt.replace(
                 year=year,
                 month=month,
                 day=day,
@@ -2425,104 +3067,57 @@ class Pddt(DatetimeIndex):
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
         my_unit: str = self.unit
-        my_unit_ch: cython.Py_UCS4 = str_read(my_unit, 0)
-        delta: np.ndarray
-        hh_fac: cython.longlong
-        mi_fac: cython.longlong
-        ss_fac: cython.longlong
-        us_fac: cython.longlong
+        my_reso: cython.int = utils.nptime_unit_str2int(my_unit)
 
-        # Construct dates
-        # . year
-        if year > 0:
-            months = (year - utils.EPOCH_YEAR) * 12  # year+off
-            datesM = utils.arr_fill_int64(months, arr.shape[0])  # int64[M]
-        else:
-            datesY = utils.dt64arr_as_int64_Y(arr, my_unit)  # int64[Y]
-            datesM = utils.dt64arr_as_int64_M(datesY, "Y")  # int64[M]
-        # . month
-        if month > 0:
-            datesM = utils.arr_add(datesM, min(month, 12) - 1)  # int64[M]
-        else:
-            delta = utils.dt64arr_month(arr, my_unit)
-            datesM = utils.arr_add_arr(datesM, delta, -1)  # int64[M]
-        # . day
-        datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-        delta = utils.dt64arr_days_in_month(datesM, "M")
-        if day > 0:
-            delta = utils.arr_min(delta, day)
-        else:
-            delta = utils.arr_min_arr(delta, utils.dt64arr_day(arr, my_unit))
-        datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
+        # Replace dates -> int64[D]
+        dateD = utils.dt64arr_replace_dates(arr, year, month, day, my_reso)
 
-        # Construct times
-        times: np.ndarray = utils.arr_zero_int64(arr.shape[0])  # int64[my_unit]
-        # . get conversion factors
-        my_unit_adj: str = my_unit
-        if my_unit_ch == "n" and utils.is_dt64arr_ns_safe(datesD, "D"):
-            hh_fac = utils.NS_HOUR
-            mi_fac = utils.NS_MINUTE
-            ss_fac = utils.NS_SECOND
-            us_fac = utils.NS_MICROSECOND
-        elif my_unit_ch in ("n", "u"):
-            hh_fac = utils.US_HOUR
-            mi_fac = utils.US_MINUTE
-            ss_fac = utils.US_SECOND
-            us_fac = 1
-            if my_unit_ch == "n":
-                my_unit_ch, my_unit_adj = "u", "us"
-        elif my_unit_ch == "m":
-            hh_fac = utils.MS_HOUR
-            mi_fac = utils.MS_MINUTE
-            ss_fac = utils.MS_SECOND
-            us_fac = 1
-            if microsecond != 0:
-                microsecond = min(microsecond, 999_999) // 1_000
-        else:
-            hh_fac = utils.SS_HOUR
-            mi_fac = utils.SS_MINUTE
-            ss_fac = 1
-        # . hour
-        if hour >= 0:
-            times = utils.arr_add(times, min(hour, 23) * hh_fac)
-        else:
-            delta = utils.arr_mul(utils.dt64arr_hour(arr, my_unit), hh_fac)
-            times = utils.arr_add_arr(times, delta)
-        # . minute
-        if minute >= 0:
-            times = utils.arr_add(times, min(minute, 59) * mi_fac)
-        else:
-            delta = utils.arr_mul(utils.dt64arr_minute(arr, my_unit), mi_fac)
-            times = utils.arr_add_arr(times, delta)
-        # . second
-        if second >= 0:
-            times = utils.arr_add(times, min(second, 59) * ss_fac)
-        else:
-            delta = utils.arr_mul(utils.dt64arr_second(arr, my_unit), ss_fac)
-            times = utils.arr_add_arr(times, delta)
-        # . microsecond
-        if my_unit_ch != "s":
-            if microsecond >= 0:
-                times = utils.arr_add(times, min(microsecond, 999_999) * us_fac)
-            elif my_unit_ch == "m":
-                delta = utils.dt64arr_millisecond(arr, my_unit)
-                times = utils.arr_add_arr(times, delta)
+        # Set time to zero
+        if (
+            hour == 0
+            and minute == 0
+            and second == 0
+            and microsecond == 0
+            and nanosecond == 0
+        ):
+            # Combine dates & times
+            # . my_unit[ns] & out of ns range -> int64[us]
+            if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+                dateD, utils.DT_NPY_UNIT_DD
+            ):
+                arr = utils.arr_mul(dateD, utils.US_DAY, 0, False)
+                dtype = utils.DT64_DTYPE_US
+            # . my_unit safe -> int64[my_unit]
             else:
-                delta = utils.arr_mul(utils.dt64arr_microsecond(arr, my_unit), us_fac)
-                times = utils.arr_add_arr(times, delta)
-        # . nanosecond
-        if my_unit_ch == "n":
-            if nanosecond >= 0:
-                times = utils.arr_add(times, min(nanosecond, 999))
-            else:
-                delta = utils.dt64arr_nanosecond(arr, my_unit)
-                times = utils.arr_add_arr(times, delta)
+                arr = utils.dt64arr_as_int64(
+                    dateD, my_unit, utils.DT_NPY_UNIT_DD, 0, False
+                )
+                dtype = utils.nptime_unit_str2dt64(my_unit)
 
-        # Combine dates & times
-        dtype = utils.map_nptime_unit_str2dt64(my_unit_adj)
-        dates = utils.dt64arr_as_int64(datesD, my_unit_adj, "D")  # int64[my_unit]
-        arr = utils.arr_add_arr(dates, times).astype(dtype)  # dt64[my_unit]
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+        # Replace times -> int64[my_unit]
+        else:
+            times = utils.dt64arr_replace_times(
+                arr, hour, minute, second, microsecond, nanosecond, my_reso
+            )
+
+            # Combine dates & times
+            # . my_unit[ns] & out of ns range -> int64[us]
+            if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+                dateD, utils.DT_NPY_UNIT_DD
+            ):
+                dates = utils.arr_mul(dateD, utils.US_DAY, 0, False)
+                times = utils.arr_div_floor(times, utils.NS_MICROSECOND, 0, False)
+                dtype = utils.DT64_DTYPE_US
+            # . my_unit safe -> int64[my_unit]
+            else:
+                dates = utils.dt64arr_as_int64(
+                    dateD, my_unit, utils.DT_NPY_UNIT_DD, 0, False
+                )
+                dtype = utils.nptime_unit_str2dt64(my_unit)
+            arr = utils.arr_add_arr(dates, times, 0, False)  # int64
+
+        # New instance
+        return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
 
     def to_date(
         self,
@@ -2530,60 +3125,60 @@ class Pddt(DatetimeIndex):
         month: cython.int = -1,
         day: cython.int = -1,
     ) -> Self:
-        """Adjust the date with new values `<'Pddt'>`.
+        """Adjust the date with new values, without affecting other fields `<'Pddt'>`.
 
-        #### Fields set to `-1` means retaining the original values.
+        :param year `<'int'>`: Absolute year. Defaults to `SENTINEL` (no change).
+        :param month `<'int'>`: Absolute month. Defaults to `SENTINEL` (no change).
+            If specified (greater than `0`), clamps to [1..12].
+        :param day `<'int'>`: Absolute day. Defaults to `SENTINEL` (no change).
+            If specified (greater than `0`), clamps to [1..maximum days the resulting month].
+        :returns `<'Pddt'>`: The resulting datetime index with new specified date field values.
 
-        :param year `<'int'>`: Year value, defaults to `-1`.
-        :param month `<'int'>`: Yonth value (1-12), defaults to `-1`.
-        :param day `<'int'>`: Day value (1-31), automacially clamped to the maximum days in the month, defaults to `-1`.
+        ## Behavior
+        - Replacements are `component-wise`: any of the date fields may be left
+          as `<= 0` to keep original values.
+        - Day values are `clamped` to the maximum valid day in the resulting month.
 
-        ### Equivalent to:
+        ## Equivalent
         >>> pt.replace(year=year, month=month, day=day)
         """
         # Fast-path
         if year <= 0:
+            # Repalce day
             if month <= 0:
-                # . D replacements
                 return self.to_curr_month(day)
-            # . M/D replacements
+            # Replace month & day
             return self.to_curr_year(month, day)
 
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
         my_unit: str = self.unit
-        delta: np.ndarray
+        my_reso: cython.int = utils.nptime_unit_str2int(my_unit)
 
-        # Seperate times
-        times = utils.dt64arr_times(arr, my_unit)  # int64[my_unit]
+        # Seperate times -> int64[my_unit]
+        times = utils.dt64arr_times(arr, my_reso)  # int64[my_unit]
 
-        # Construct dates
-        months = (year - utils.EPOCH_YEAR) * 12  # year+off
-        datesM = utils.arr_fill_int64(months, arr.shape[0])  # int64[M]
-        if month > 0:
-            datesM = utils.arr_add(datesM, min(month, 12) - 1)  # int64[M]
-        else:
-            delta = utils.dt64arr_month(arr, my_unit)
-            datesM = utils.arr_add_arr(datesM, delta, -1)  # int64[M]
-        datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-        delta = utils.dt64arr_days_in_month(datesM, "M")
-        if day > 0:
-            delta = utils.arr_min(delta, day)
-        else:
-            delta = utils.arr_min_arr(delta, utils.dt64arr_day(arr, my_unit))
-        datesD = utils.arr_add_arr(datesD, delta, -1)  # int64[D]
+        # Replace date -> int64[D]
+        dateD = utils.dt64arr_replace_dates(arr, year, month, day, my_reso)
 
         # Combine dates & times
-        my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
-        if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
-            dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
+        # . my_unit[ns] & out of ns range -> int64[us]
+        if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+            dateD, utils.DT_NPY_UNIT_DD
+        ):
+            dates = utils.arr_mul(dateD, utils.US_DAY, 0, False)
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND, 0, False)
             dtype = utils.DT64_DTYPE_US
+        # . my_unit safe -> int64[my_unit]
         else:
-            dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
-            dtype = utils.map_nptime_unit_str2dt64(my_unit)
-        arr = utils.arr_add_arr(dates, times).astype(dtype)  # dt64[my_unit]
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+            dates = utils.dt64arr_as_int64(
+                dateD, my_unit, utils.DT_NPY_UNIT_DD, 0, False
+            )
+            dtype = utils.nptime_unit_str2dt64(my_unit)
+        arr = utils.arr_add_arr(dates, times, 0, False)  # int64
+
+        # New instance
+        return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
 
     def to_time(
         self,
@@ -2593,21 +3188,34 @@ class Pddt(DatetimeIndex):
         microsecond: cython.int = -1,
         nanosecond: cython.int = -1,
     ) -> Self:
-        """Adjust the time fields with new values `<'Pddt'>`.
+        """Adjust the time fields with new values, without affecting other fields `<'Pddt'>`.
 
-        #### Fields set to `-1` means retaining the original values.
+        :param hour `<'int'>`: Absolute hour. Defaults to `SENTINEL` (no change).
+            If specified (greater than or equal to `0`), clamps to [0..23].
+        :param minute `<'int'>`: Absolute minute. Defaults to `SENTINEL` (no change).
+            If specified (greater than or equal to `0`), clamps to [0..59].
+        :param second `<'int'>`: Absolute second. Defaults to `SENTINEL` (no change).
+            If specified (greater than or equal to `0`), clamps to [0..59].
+        :param microsecond `<'int'>`: Absolute microsecond. Defaults to `SENTINEL` (no change).
+            If specified (greater than or equal to `0`), clamps to [0..999999].
+        :param nanosecond `<'int'>`: Absolute nanosecond. Defaults to `SENTINEL` (no change).
+            If specified (greater than or equal to `0`), clamps to [0..999].
+        :returns `<'Pddt'>`: The resulting datetime index with new specified time field values.
 
-        :param hour `<'int'>`: Hour value (0-23), defaults to `-1`.
-        :param minute `<'int'>`: Minute value (0-59), defaults to `-1`.
-        :param second `<'int'>`: Second value (0-59), defaults to `-1`.
-        :param microsecond `<'int'>`: Microsecond value (0-999999), defaults to `-1`.
+        ## Behavior
+        - Replacements are `component-wise`: any of time fields may be left as `< 0`
+          to keep original values.
+        - Only time components within the index resolution are modified;
+          e.g., when index is in `'s'` resolution, `microsecond` and `nanosecond`
+          replacements are ignored.
 
-        ### Equivalent to:
+        ## Equivalent
         >>> pt.replace(
                 hour=hour,
                 minute=minute,
                 second=second,
                 microsecond=microsecond,
+                nanosecond=nanosecond,
             )
         """
         # Fast-path: no changes
@@ -2623,984 +3231,1085 @@ class Pddt(DatetimeIndex):
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
         my_unit: str = self.unit
-        my_unit_ch: cython.Py_UCS4 = str_read(my_unit, 0)
-        delta: np.ndarray
-        hh_fac: cython.longlong
-        mi_fac: cython.longlong
-        ss_fac: cython.longlong
-        us_fac: cython.longlong
+        my_reso: cython.int = utils.nptime_unit_str2int(my_unit)
 
-        # Seperate dates
-        datesD: np.ndarray = utils.dt64arr_as_int64_D(arr, my_unit)  # int64[D]
+        # Seperate dates -> int64[D]
+        dateD = utils.dt64arr_as_int64_D(arr, my_reso, 0, True)
 
-        # Get conversion factors
-        my_unit_adj: str = my_unit
-        if my_unit_ch == "n" and utils.is_dt64arr_ns_safe(datesD, "D"):
-            hh_fac = utils.NS_HOUR
-            mi_fac = utils.NS_MINUTE
-            ss_fac = utils.NS_SECOND
-            us_fac = utils.NS_MICROSECOND
-        elif my_unit_ch in ("n", "u"):
-            hh_fac = utils.US_HOUR
-            mi_fac = utils.US_MINUTE
-            ss_fac = utils.US_SECOND
-            us_fac = 1
-            if my_unit_ch == "n":
-                my_unit_ch, my_unit_adj = "u", "us"
-        elif my_unit_ch == "m":
-            hh_fac = utils.MS_HOUR
-            mi_fac = utils.MS_MINUTE
-            ss_fac = utils.MS_SECOND
-            us_fac = 1
-            if microsecond != 0:
-                microsecond = min(microsecond, 999_999) // 1_000
-        else:
-            hh_fac = utils.SS_HOUR
-            mi_fac = utils.SS_MINUTE
-            ss_fac = 1
-
-        # Construct times
-        times: np.ndarray = utils.arr_zero_int64(arr.shape[0])  # int64[my_unit]
-        # . hour
-        if hour >= 0:
-            times = utils.arr_add(times, min(hour, 23) * hh_fac)
-        else:
-            delta = utils.arr_mul(utils.dt64arr_hour(arr, my_unit), hh_fac)
-            times = utils.arr_add_arr(times, delta)
-        # . minute
-        if minute >= 0:
-            times = utils.arr_add(times, min(minute, 59) * mi_fac)
-        else:
-            delta = utils.arr_mul(utils.dt64arr_minute(arr, my_unit), mi_fac)
-            times = utils.arr_add_arr(times, delta)
-        # . second
-        if second >= 0:
-            times = utils.arr_add(times, min(second, 59) * ss_fac)
-        else:
-            delta = utils.arr_mul(utils.dt64arr_second(arr, my_unit), ss_fac)
-            times = utils.arr_add_arr(times, delta)
-        # . microsecond
-        if my_unit_ch != "s":
-            if microsecond >= 0:
-                times = utils.arr_add(times, min(microsecond, 999_999) * us_fac)
-            elif my_unit_ch == "m":
-                delta = utils.dt64arr_millisecond(arr, my_unit)
-                times = utils.arr_add_arr(times, delta)
+        # Set time to zero
+        if (
+            hour == 0
+            and minute == 0
+            and second == 0
+            and microsecond == 0
+            and nanosecond == 0
+        ):
+            # Combine dates & times
+            # . my_unit[ns] & out of ns range -> int64[us]
+            if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+                dateD, utils.DT_NPY_UNIT_DD
+            ):
+                arr = utils.arr_mul(dateD, utils.US_DAY, 0, False)
+                dtype = utils.DT64_DTYPE_US
+            # . my_unit safe -> int64[my_unit]
             else:
-                delta = utils.arr_mul(utils.dt64arr_microsecond(arr, my_unit), us_fac)
-                times = utils.arr_add_arr(times, delta)
-        # . nanosecond
-        if my_unit_ch == "n":
-            if nanosecond >= 0:
-                times = utils.arr_add(times, min(nanosecond, 999))
-            else:
-                delta = utils.dt64arr_nanosecond(arr, my_unit)
-                times = utils.arr_add_arr(times, delta)
+                arr = utils.dt64arr_as_int64(
+                    dateD, my_unit, utils.DT_NPY_UNIT_DD, 0, False
+                )
+                dtype = utils.nptime_unit_str2dt64(my_unit)
 
-        # Combine dates & times
-        dtype = utils.map_nptime_unit_str2dt64(my_unit_adj)
-        dates = utils.dt64arr_as_int64(datesD, my_unit_adj, "D")  # int64[my_unit]
-        arr = utils.arr_add_arr(dates, times).astype(dtype)  # dt64[my_unit]
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+        # Replace times -> int64[my_unit]
+        else:
+            times = utils.dt64arr_replace_times(
+                arr, hour, minute, second, microsecond, nanosecond, my_reso
+            )
+
+            # Combine dates & times
+            # . my_unit[ns] & out of ns range -> int64[us]
+            if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+                dateD, utils.DT_NPY_UNIT_DD
+            ):
+                dates = utils.arr_mul(dateD, utils.US_DAY, 0, False)
+                times = utils.arr_div_floor(times, utils.NS_MICROSECOND, 0, False)
+                dtype = utils.DT64_DTYPE_US
+            # . my_unit safe -> int64[my_unit]
+            else:
+                dates = utils.dt64arr_as_int64(
+                    dateD, my_unit, utils.DT_NPY_UNIT_DD, 0, False
+                )
+                dtype = utils.nptime_unit_str2dt64(my_unit)
+            arr = utils.arr_add_arr(dates, times, 0, False)  # int64
+
+        # New instance
+        return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
+
+    def is_first_of(self, unit: str) -> pd.Index[bool]:
+        """Element-wise check whether the date fields are on the first day
+        of the specified datetime unit `<'Index[bool]'>`.
+
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'` → First day of the year: `YYYY-01-01`
+            - `'Q'` → First day of the quarter: `YYYY-MM-01`
+            - `'M'` → First day of the month: `YYYY-MM-01`
+            - `'W'` → First day (Monday) of the week: `YYYY-MM-DD`
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                    → First day of the specifed month: `YYYY-MM-01`
+
+        :return `<'Index[bool]'>`: True if the element is on the first day
+            of the specified datetime unit; Otherwise False.
+        """
+        # To first of
+        pt = self.to_first_of(unit)
+
+        # Compare dates
+        pt_dateD = utils.dt64arr_as_int64_D(pt.values, -1, True)
+        my_dateD = utils.dt64arr_as_int64_D(self.values, -1, True)
+        return pd.Index(utils.arr_eq_arr(my_dateD, pt_dateD), name="is_first_of")
 
     def to_first_of(self, unit: str) -> Self:
-        """Adjust the date to the first day of the specified datetime unit `<'Pddt'>`.
+        """Adjust the date fields to the first day of the specified datetime unit,
+        without affecting the time fields `<'Pddt'>`.
 
-        :param unit `<'str'>`: The datetime unit.
-        - `'Y'`: Sets to the first day of the current year.
-        - `'Q'`: Sets to the first day of the current quarter.
-        - `'M'`: Sets to the first day of the current month.
-        - `'W'`: Sets to the first day (Monday) of the current week.
-        - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Sets to the first day of that month.
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'` → First day of the year: `YYYY-01-01`
+            - `'Q'` → First day of the quarter: `YYYY-MM-01`
+            - `'M'` → First day of the month: `YYYY-MM-01`
+            - `'W'` → First day (Monday) of the week: `YYYY-MM-DD`
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                    → First day of the specifed month: `YYYY-MM-01`
+
+        :returns `<'Pddt'>`: The adjusted datetime index.
         """
+        # Guard
+        if unit is None:
+            errors.raise_argument_error(
+                self.__class__,
+                "to_first_of(unit)",
+                "Supports: 'Y', 'Q', 'M', 'W' or Month name; got None.",
+            )
+        unit_len: cython.Py_ssize_t = str_len(unit)
+        if unit_len == 0:
+            errors.raise_argument_error(
+                self.__class__,
+                "to_first_of(unit)",
+                "Supports: 'Y', 'Q', 'M', 'W' or Month name; got empty string.",
+            )
+
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
         my_unit: str = self.unit
+        my_reso: cython.int = utils.nptime_unit_str2int(my_unit)
 
-        # Seperate times
-        times: np.ndarray = utils.dt64arr_times(arr, my_unit)  # int64[my_unit]
+        # Seperate times -> int64[my_unit]
+        times = utils.dt64arr_times(arr, my_reso, 0, True)
 
-        # To weekday
-        if unit == "W":
-            datesD = utils.dt64arr_as_int64_D(arr, my_unit)  # int64[D]
-            delta = utils.dt64arr_weekday(datesD, "D")  # weekday
-            datesD = utils.arr_sub_arr(datesD, delta)  # int64[D]
+        # To weekday -> int64[D]
+        ch0: cython.Py_UCS4 = str_read(unit, 0)
+        if ch0 == "W" and unit_len == 1:
+            dateD = utils.dt64arr_as_int64_D(arr, my_reso, 0, True)
+            delta = utils.dt64arr_weekday(dateD, utils.DT_NPY_UNIT_DD, 0, True)
+            dateD = utils.arr_sub_arr(dateD, delta, 0, False)
 
-        # To month
-        elif unit == "M":
-            datesM = utils.dt64arr_as_int64_M(arr, my_unit)  # int64[M]
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
+        # To month -> int64[M] -> int64[D]
+        elif ch0 == "M" and unit_len == 1:
+            dateM = utils.dt64arr_as_int64_M(arr, my_reso, 0, True)
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, False)
 
-        # To quarter
-        elif unit == "Q":
-            datesQ = utils.dt64arr_as_int64_Q(arr, my_unit)  # int64[Q]
-            datesM = utils.arr_mul(datesQ, 3)  # int64[M]
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
+        # To quarter -> int64[Q] -> int64[M] -> int64[D]
+        elif ch0 == "Q" and unit_len == 1:
+            dateQ = utils.dt64arr_as_int64_Q(arr, my_reso, 0, True)
+            dateM = utils.arr_mul(dateQ, 3, 0, False)
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, False)
 
-        # To year
-        elif unit == "Y":
-            datesY = utils.dt64arr_as_int64_Y(arr, my_unit)  # int64[Y]
-            datesD = utils.dt64arr_as_int64_D(datesY, "Y")  # int64[D]
+        # To year -> int64[Y] -> int64[D]
+        elif ch0 == "Y" and unit_len == 1:
+            dateY = utils.dt64arr_as_int64_Y(arr, my_reso, 0, True)
+            dateD = utils.dt64arr_as_int64_D(dateY, utils.DT_NPY_UNIT_YY, 0, False)
 
-        # Custom
+        # Special
         else:
-            # Month name
-            val: cython.int
-            if (val := _parse_month(unit, False)) != -1:
-                datesY = utils.dt64arr_as_int64_Y(arr, my_unit)  # int64[Y]
-                datesM = utils.dt64arr_as_int64_M(datesY, "Y", val - 1)  # int64[M]
-                datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
+            # Month name -> int64[Y] -> int64[M] -> int64[D]
+            val: cython.int = _parse_month(unit, None, False)
+            if val != -1:
+                dateY = utils.dt64arr_as_int64_Y(arr, my_reso, 0, True)
+                dateM = utils.arr_mul(dateY, 12, val - 1, False)
+                dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, 0, False)
 
-            # Invalid
+            # Unsupported unit
             else:
-                raise errors.InvalidTimeUnitError(
-                    "invalid 'first of' datetime unit '%s'.\nSupports: "
-                    "['Y', 'Q', 'M', 'W'] or Month name." % unit
+                errors.raise_argument_error(
+                    self.__class__,
+                    "to_first_of(unit)",
+                    "Supports: 'Y', 'Q', 'M', 'W' or Month name; got '%s'." % unit,
                 )
+                return  # unreachable: suppress compiler warning
 
         # Combine dates & times
-        my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
-        if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
-            dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
+        # . my_unit[ns] & out of ns range -> int64[us]
+        if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+            dateD, utils.DT_NPY_UNIT_DD
+        ):
+            dates = utils.arr_mul(dateD, utils.US_DAY, 0, False)
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND, 0, False)
             dtype = utils.DT64_DTYPE_US
+        # . my_unit safe -> int64[my_unit]
         else:
-            dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
-            dtype = utils.map_nptime_unit_str2dt64(my_unit)
-        arr = utils.arr_add_arr(dates, times).astype(dtype)  # dt64[my_unit]
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+            dates = utils.dt64arr_as_int64(
+                dateD, my_unit, utils.DT_NPY_UNIT_DD, 0, False
+            )
+            dtype = utils.nptime_unit_str2dt64(my_unit)
+        arr = utils.arr_add_arr(dates, times, 0, False)  # int64
+
+        # New instance
+        return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
+
+    def is_last_of(self, unit: str) -> pd.Index[bool]:
+        """Element-wise check whether the date fields are on the last day
+        of the specified datetime unit `<'Index[bool]'>`.
+
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'` → Last day of the year: `YYYY-12-31`
+            - `'Q'` → Last day of the quarter: `YYYY-MM-(30..31)`
+            - `'M'` → Last day of the month: `YYYY-MM-(28..31)`
+            - `'W'` → Last day (Sunday) of the week: `YYYY-MM-DD`
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                    → Last day of the specifed month: `YYYY-MM-(28..31)`
+
+        :return `<'Index[bool]'>`: True if the element is on the last day
+            of the specified datetime unit; Otherwise False.
+        """
+        # To last of
+        pt = self.to_last_of(unit)
+
+        # Compare dates
+        pt_dateD = utils.dt64arr_as_int64_D(pt.values, -1, True)
+        my_dateD = utils.dt64arr_as_int64_D(self.values, -1, True)
+        return pd.Index(utils.arr_eq_arr(my_dateD, pt_dateD), name="is_last_of")
 
     def to_last_of(self, unit: str) -> Self:
-        """Adjust the date to the last day of the specified datetime unit `<'Pddt'>`.
+        """Adjust the date fields to the last day of the specified datetime unit,
+        without affecting the time fields `<'Pddt'>`.
 
-        :param unit `<'str'>`: The datetime unit.
-        - `'Y'`: Sets to the last day of the current year.
-        - `'Q'`: Sets to the last day of the current quarter.
-        - `'M'`: Sets to the last day of the current month.
-        - `'W'`: Sets to the last day (Sunday) of the current week.
-        - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Sets to the last day of that month.
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'` → Last day of the year: `YYYY-12-31`
+            - `'Q'` → Last day of the quarter: `YYYY-MM-(30..31)`
+            - `'M'` → Last day of the month: `YYYY-MM-(28..31)`
+            - `'W'` → Last day (Sunday) of the week: `YYYY-MM-DD`
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                    → Last day of the specifed month: `YYYY-MM-(28..31)`
+
+        :returns `<'Pddt'>`: The adjusted datetime index.
         """
+        # Guard
+        if unit is None:
+            errors.raise_argument_error(
+                self.__class__,
+                "to_last_of(unit)",
+                "Supports: 'Y', 'Q', 'M', 'W' or Month name; got None.",
+            )
+        unit_len: cython.Py_ssize_t = str_len(unit)
+        if unit_len == 0:
+            errors.raise_argument_error(
+                self.__class__,
+                "to_last_of(unit)",
+                "Supports: 'Y', 'Q', 'M', 'W' or Month name; got empty string.",
+            )
+
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
         my_unit: str = self.unit
+        my_reso: cython.int = utils.nptime_unit_str2int(my_unit)
 
-        # Seperate times
-        times: np.ndarray = utils.dt64arr_times(arr, my_unit)  # int64[my_unit]
+        # Seperate times -> int64[my_unit]
+        times = utils.dt64arr_times(arr, my_reso)  # int64[my_unit]
 
-        # To weekday
-        if unit == "W":
-            datesD = utils.dt64arr_as_int64_D(arr, my_unit)  # int64[D]
-            delta = utils.dt64arr_weekday(datesD, "D", -6)  # weekday-6
-            datesD = utils.arr_sub_arr(datesD, delta)  # int64[D]
+        # To weekday -> int64[D]
+        ch0: cython.Py_UCS4 = str_read(unit, 0)
+        if ch0 == "W" and unit_len == 1:
+            dateD = utils.dt64arr_as_int64_D(arr, my_reso, 0, True)
+            delta = utils.dt64arr_weekday(dateD, utils.DT_NPY_UNIT_DD, 0, True)
+            dateD = utils.arr_sub_arr(dateD, delta, 6, False)
+            #: days - weekday + 6
 
-        # To month
-        elif unit == "M":
-            datesM = utils.dt64arr_as_int64_M(arr, my_unit, 1)  # int64[M]+1
-            datesD = utils.dt64arr_as_int64_D(datesM, "M", -1)  # int64[D]-1
+        # To month -> int64[M]+1 -> int64[D]-1
+        elif ch0 == "M" and unit_len == 1:
+            dateM = utils.dt64arr_as_int64_M(arr, my_reso, 1, True)
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, -1, False)
 
-        # To quarter
-        elif unit == "Q":
-            datesQ = utils.dt64arr_as_int64_Q(arr, my_unit, 1)  # int64[Q]+1
-            datesM = utils.arr_mul(datesQ, 3)  # int64[M]
-            datesD = utils.dt64arr_as_int64_D(datesM, "M", -1)  # int64[D]-1
+        # To quarter -> int64[Q]+1 -> int64[M] -> int64[D]-1
+        elif ch0 == "Q" and unit_len == 1:
+            dateQ = utils.dt64arr_as_int64_Q(arr, my_reso, 1, True)
+            dateM = utils.arr_mul(dateQ, 3, 0, False)
+            dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, -1, False)
 
-        # To year
-        elif unit == "Y":
-            datesY = utils.dt64arr_as_int64_Y(arr, my_unit, 1)  # int64[Y]+1
-            datesD = utils.dt64arr_as_int64_D(datesY, "Y", -1)  # int64[D]-1
+        # To year -> int64[Y]+1 -> int64[D]-1
+        elif ch0 == "Y" and unit_len == 1:
+            dateY = utils.dt64arr_as_int64_Y(arr, my_reso, 1, True)
+            dateD = utils.dt64arr_as_int64_D(dateY, utils.DT_NPY_UNIT_YY, -1, False)
 
-        # Custom
+        # Special
         else:
-            # Month name
-            val: cython.int
-            if (val := _parse_month(unit, False)) != -1:
-                datesY = utils.dt64arr_as_int64_Y(arr, my_unit)  # int64[Y]
-                datesM = utils.dt64arr_as_int64_M(datesY, "Y", val)  # int64[M]+val
-                datesD = utils.dt64arr_as_int64_D(datesM, "M", -1)  # int64[D]-1
+            # Month name -> int64[Y] -> int64[M]+1 -> int64[D]-1
+            val: cython.int = _parse_month(unit, None, False)
+            if val != -1:
+                dateY = utils.dt64arr_as_int64_Y(arr, my_reso, 0, True)
+                dateM = utils.arr_mul(dateY, 12, val, False)
+                dateD = utils.dt64arr_as_int64_D(dateM, utils.DT_NPY_UNIT_MM, -1, False)
 
-            # Invalid
+            # Unsupported unit
             else:
-                raise errors.InvalidTimeUnitError(
-                    "invalid 'last of' datetime unit '%s'.\nSupports: "
-                    "['Y', 'Q', 'M', 'W'] or Month name." % unit
+                errors.raise_argument_error(
+                    self.__class__,
+                    "to_last_of(unit)",
+                    "Supports: 'Y', 'Q', 'M', 'W' or Month name; got '%s'." % unit,
                 )
+                return  # unreachable: suppress compiler warning
 
         # Combine dates & times
-        my_unit_ns: cython.bint = str_read(my_unit, 0) == "n"
-        if my_unit_ns and not utils.is_dt64arr_ns_safe(datesD, "D"):
-            dates = utils.arr_mul(datesD, utils.US_DAY)  # int64[us]
-            times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
+        # . my_unit[ns] & out of ns range -> int64[us]
+        if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+            dateD, utils.DT_NPY_UNIT_DD
+        ):
+            dates = utils.arr_mul(dateD, utils.US_DAY, 0, False)
+            times = utils.arr_div_floor(times, utils.NS_MICROSECOND, 0, False)
             dtype = utils.DT64_DTYPE_US
+        # . my_unit safe -> int64[my_unit]
         else:
-            dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
-            dtype = utils.map_nptime_unit_str2dt64(my_unit)
-        arr = utils.arr_add_arr(dates, times).astype(dtype)  # dt64[my_unit]
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+            dates = utils.dt64arr_as_int64(
+                dateD, my_unit, utils.DT_NPY_UNIT_DD, 0, False
+            )
+            dtype = utils.nptime_unit_str2dt64(my_unit)
+        arr = utils.arr_add_arr(dates, times, 0, False)  # int64
+
+        # New instance
+        return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
+
+    def is_start_of(self, unit: str) -> pd.Index[bool]:
+        """Element-wise check whether date & time fileds are the
+        start of the specified datetime unit `<'Index[bool]'>`.
+
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'`  → Start of year: `YYYY-01-01 00:00:00`
+            - `'Q'`  → Start of quarter: `YYYY-MM-01 00:00:00`
+            - `'M'`  → Start of month: `YYYY-MM-01 00:00:00`
+            - `'W'`  → Start of week (Monday): `YYYY-MM-DD 00:00:00`
+            - `'D'`  → Start of day: `YYYY-MM-DD 00:00:00`
+            - `'h'`  → Start of hour: `YYYY-MM-DD hh:00:00`
+            - `'m'`  → Start of minute: `YYYY-MM-DD hh:mm:00`
+            - `'s'`  → Start of second: `YYYY-MM-DD hh:mm:ss.000000`
+            - `'ms'` → Start of millisecond: `YYYY-MM-DD hh:mm:ss.uuu000`
+            - `'us'` → Return the instance `as-is`.
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                     → Start of the specifed month: `YYYY-MM-01 00:00:00`
+            - `Weekday` (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`)
+                     → Start of the specifed weekday: `YYYY-MM-DD 00:00:00`
+
+        :return `<'Index[bool]'>`: True if the element is at the start
+            of the specified datetime unit; Otherwise False.
+        """
+        # To start of
+        pt = self.to_start_of(unit)
+
+        # Compare values
+        pt_unit: str = pt.unit
+        pt_reso: cython.int = utils.nptime_unit_str2int(pt_unit)
+        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
+        if pt_reso == my_reso:
+            arr = utils.arr_eq_arr(self.values, pt.values)
+        else:
+            arr = utils.arr_eq_arr(
+                utils.dt64arr_as_unit(self.values, pt_unit, my_reso, True, True),
+                pt.values,
+            )
+        return pd.Index(arr, name="is_start_of")
 
     def to_start_of(self, unit: str) -> Self:
-        """Adjust the datetime to the start of the specified datetime unit `<'Pddt'>`.
+        """Adjust the date & time fields to the start of the specified datetime unit `<'Pddt'>`.
 
-        :param unit `<'str'>`: The datetime unit.
-        - `'Y'`: Sets date to the first day of the current year & time to '00:00:00.000000'.
-        - `'Q'`: Sets date to the first day of the current quarter & time to '00:00:00.000000'.
-        - `'M'`: Sets date to the first day of the current month & time to '00:00:00.000000'.
-        - `'W'`: Sets date to the first day (Monday) of the current week & time to '00:00:00.000000'.
-        - `'D'`: Retains the original date & sets time to '00:00:00.000000'.
-        - `'h'`: Retains the original date & sets time to 'XX:00:00.000000'.
-        - `'m'`: Retains the original date & sets time to 'XX:XX:00.000000'.
-        - `'s'`: Retains the original date & sets time to 'XX:XX:XX.000000'.
-        - `'ms'`: Retains the original date & sets time to 'XX:XX:XX.XXX000'.
-        - `'us'`: Return the instance itself.
-        - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Sets date to first day of that month & time to '00:00:00.000000'.
-        - Weekday name (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`): Sets date to that weekday & time to '00:00:00.000000'.
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'`  → Start of year: `YYYY-01-01 00:00:00`
+            - `'Q'`  → Start of quarter: `YYYY-MM-01 00:00:00`
+            - `'M'`  → Start of month: `YYYY-MM-01 00:00:00`
+            - `'W'`  → Start of week (Monday): `YYYY-MM-DD 00:00:00`
+            - `'D'`  → Start of day: `YYYY-MM-DD 00:00:00`
+            - `'h'`  → Start of hour: `YYYY-MM-DD hh:00:00`
+            - `'m'`  → Start of minute: `YYYY-MM-DD hh:mm:00`
+            - `'s'`  → Start of second: `YYYY-MM-DD hh:mm:ss.000000`
+            - `'ms'` → Start of millisecond: `YYYY-MM-DD hh:mm:ss.uuu000`
+            - `'us'` → Start of microsecond: `YYYY-MM-DD hh:mm:ss.uuuuuu`
+            - `'ns'` → Return the instance `as-is`.
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                     → Start of the specifed month: `YYYY-MM-01 00:00:00`
+            - `Weekday` (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`)
+                     → Start of the specifed weekday: `YYYY-MM-DD 00:00:00`
+
+        :returns `<'Pddt'>`: The adjusted datetime index.
         """
-        # Fast-path
+        # Guard
         if unit is None:
-            return self  # exit: invalid
-        if unit == "ns":
-            return self  # exit: to nanosecond
-        if unit in ("D", "h", "m", "min", "s", "ms", "us"):
-            return self.floor(unit)  # exit: floor to unit
+            errors.raise_argument_error(
+                self.__class__,
+                "to_start_of(unit)",
+                "Supports: 'Y', 'Q', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us', 'ns' "
+                "or Month/Weekday name; got None.",
+            )
+        unit_len: cython.Py_ssize_t = str_len(unit)
+        if unit_len == 0:
+            errors.raise_argument_error(
+                self.__class__,
+                "to_start_of(unit)",
+                "Supports: 'Y', 'Q', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us', 'ns' "
+                "or Month/Weekday name; got empty string.",
+            )
 
-        # Access datetime array & info
-        arr: np.ndarray = self.values_naive
+        # Fast-path: 'ns' as-is
+        ch0: cython.Py_UCS4 = str_read(unit, 0)
+        if ch0 == "n" and unit_len == 2 and str_read(unit, 1) == "s":
+            return self  # exit
+
+        # General approach: 'Y', 'M', 'D', 'h', 'm', 's', 'ms', 'us'
         my_unit: str = self.unit
+        my_reso: cython.int = utils.nptime_unit_str2int(my_unit)
+        to_reso: cython.int
+        if (
+            #: 'Y', 'M', 'D', 'h', 'm', 's'
+            (unit_len == 1 and ch0 in ("Y", "M", "D", "h", "m", "s"))
+            #: 'ms', 'us'
+            or (unit_len == 2 and ch0 in ("m", "u") and str_read(unit, 1) == "s")
+            #: 'min'
+            or (
+                unit_len == 3
+                and ch0 == "m"
+                and str_read(unit, 1) == "i"
+                and str_read(unit, 2) == "n"
+            )
+        ):
+            to_reso = utils.nptime_unit_str2int(unit)
+            if my_reso <= to_reso:
+                return self  # exit: already at or finer than target resolution
+            arr: np.ndarray = self.values_naive
+            arr = utils.dt64arr_as_int64(arr, unit, my_reso, 0, True)
+            arr = utils.dt64arr_as_unit(arr, my_unit, to_reso, False, False)
+            return self._new(arr, tz=self.tz, name=self.name)
 
-        # To weekday
-        if unit == "W":
-            datesD = utils.dt64arr_as_int64_D(arr, my_unit)  # int64[D]
-            delta = utils.dt64arr_weekday(datesD, "D")  # weekday
-            datesD = utils.arr_sub_arr(datesD, delta)  # int64[D]
-            arr = utils.dt64arr_as_unit(datesD, my_unit, "D")  # dt64[my_unit]
+        # To weekday -> int64[D]-weekday
+        arr: np.ndarray = self.values_naive
+        if ch0 == "W" and unit_len == 1:
+            dateD = utils.dt64arr_as_int64_D(arr, my_reso, 0, True)
+            delta = utils.dt64arr_weekday(dateD, utils.DT_NPY_UNIT_DD, 0, True)
+            dates = utils.arr_sub_arr(dateD, delta, 0, False)
+            to_reso = utils.DT_NPY_UNIT_DD
 
-        # To month
-        elif unit == "M":
-            datesM = utils.dt64arr_as_int64_M(arr, my_unit)  # int64[M]
-            arr = utils.dt64arr_as_unit(datesM, my_unit, "M")  # dt64[my_unit]
+        # To quarter -> int64[Q] -> int64[M]
+        elif ch0 == "Q" and unit_len == 1:
+            dateQ = utils.dt64arr_as_int64_Q(arr, my_reso, 0, True)
+            dates = utils.arr_mul(dateQ, 3, 0, False)
+            to_reso = utils.DT_NPY_UNIT_MM
 
-        # To quarter
-        elif unit == "Q":
-            datesQ = utils.dt64arr_as_int64_Q(arr, my_unit)  # int64[Q]
-            datesM = utils.arr_mul(datesQ, 3)  # int64[M]
-            arr = utils.dt64arr_as_unit(datesM, my_unit, "M")  # dt64[my_unit]
-
-        # To year
-        elif unit == "Y":
-            datesY = utils.dt64arr_as_int64_Y(arr, my_unit)  # int64[Y]
-            arr = utils.dt64arr_as_unit(datesY, my_unit, "Y")  # dt64[my_unit]
-
-        # Custom
+        # Special
         else:
             val: cython.int
-            # Month name
-            if (val := _parse_month(unit, False)) != -1:
-                datesY = utils.dt64arr_as_int64_Y(arr, my_unit)  # int64[Y]
-                datesM = utils.dt64arr_as_int64_M(datesY, "Y", val - 1)  # int64[M]
-                arr = utils.dt64arr_as_unit(datesM, my_unit, "M")  # dt64[my_unit]
-
-            # Weekday name
-            elif (val := _parse_weekday(unit, False)) != -1:
-                datesD = utils.dt64arr_as_int64_D(arr, my_unit)  # int64[D]
-                delta = utils.dt64arr_weekday(datesD, "D", -val)  # weekday-val
-                datesD = utils.arr_sub_arr(datesD, delta)  # int64[D]
-                arr = utils.dt64arr_as_unit(datesD, my_unit, "D")  # dt64[my_unit]
-
-            # Invalid
-            else:
-                raise errors.InvalidTimeUnitError(
-                    "invalid 'start of' time unit '%s'.\nSupports: "
-                    "['Y', 'Q', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us', 'ns'] "
-                    "or Month/Weekday name." % unit
+            # Month name -> int64[Y] -> int64[M]
+            if (val := _parse_month(unit, None, False)) != -1:
+                dateY = utils.dt64arr_as_int64_Y(arr, my_reso, 0, True)
+                dates = utils.dt64arr_as_int64_M(
+                    dateY, utils.DT_NPY_UNIT_YY, val - 1, False
                 )
+                to_reso = utils.DT_NPY_UNIT_MM
+
+            # Weekday name -> int64[D]
+            elif (val := _parse_weekday(unit, None, False)) != -1:
+                dateD = utils.dt64arr_as_int64_D(arr, my_reso, 0, True)
+                delta = utils.dt64arr_weekday(dateD, utils.DT_NPY_UNIT_DD, 0, True)
+                dates = utils.arr_sub_arr(dateD, delta, val, False)
+                to_reso = utils.DT_NPY_UNIT_DD
+                #: days - weekday + val
+
+            # Unsupported unit
+            else:
+                errors.raise_argument_error(
+                    self.__class__,
+                    "to_start_of(unit)",
+                    "Supports: 'Y', 'Q', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us', 'ns' "
+                    "or Month/Weekday name; got '%s'." % unit,
+                )
+                return  # unreachable: suppress compiler warning
 
         # New instance
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+        arr = utils.dt64arr_as_unit(dates, my_unit, to_reso, False, False)
+        return self._new(arr, tz=self.tz, name=self.name)
+
+    def is_end_of(self, unit: str) -> pd.Index[bool]:
+        """Element-wise check whether date & time fileds are the
+        end of the specified datetime unit `<'Index[bool]'>`.
+
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'`  → End of year: `YYYY-12-31 23:59:59.999999`
+            - `'Q'`  → End of quarter: `YYYY-MM-(30..31) 23:59:59.999999`
+            - `'M'`  → End of month: `YYYY-MM-(28..31) 23:59:59.999999`
+            - `'W'`  → End of week (Sunday): `YYYY-MM-DD 23:59:59.999999`
+            - `'D'`  → End of day: `YYYY-MM-DD 23:59:59.999999`
+            - `'h'`  → End of hour: `YYYY-MM-DD hh:59:59.999999`
+            - `'m'`  → End of minute: `YYYY-MM-DD hh:mm:59.999999`
+            - `'s'`  → End of second: `YYYY-MM-DD hh:mm:ss.999999`
+            - `'ms'` → End of millisecond: `YYYY-MM-DD hh:mm:ss.uuu999`
+            - `'us'` → Return the instance `as-is`.
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                     → End of the specifed month: `YYYY-MM-(28..31) 23:59:59.999999`
+            - `Weekday` (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`)
+                     → End of the specifed weekday: `YYYY-MM-DD 23:59:59.999999`
+
+        :return `<'Index[bool]'>`: True if the element is at the end
+            of the specified datetime unit; Otherwise False.
+        """
+        # To end of
+        pt = self.to_end_of(unit)
+
+        # Compare values
+        pt_unit: str = pt.unit
+        pt_reso: cython.int = utils.nptime_unit_str2int(pt_unit)
+        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
+        if pt_reso == my_reso:
+            arr = utils.arr_eq_arr(self.values, pt.values)
+        else:
+            arr = utils.arr_eq_arr(
+                utils.dt64arr_as_unit(self.values, pt_unit, my_reso, True, True),
+                pt.values,
+            )
+        return pd.Index(arr, name="is_end_of")
 
     def to_end_of(self, unit: str) -> Self:
-        """Adjust the datetime to the end of the specified datetime unit `<'Pddt'>`.
+        """Adjust the date & time fields to the end of the specified datetime unit `<'Pddt'>`.
 
-        :param unit `<'str'>`: The datetime unit.
-        - `'Y'`: Sets date to the last day of the current year & time to '23:59:59.999999'.
-        - `'Q'`: Sets date to the last day of the current quarter & time to '23:59:59.999999'.
-        - `'M'`: Sets date to the last day of the current month & time to '23:59:59.999999'.
-        - `'W'`: Sets date to the last day (Sunday) of the current week & time to '23:59:59.999999'.
-        - `'D'`: Retains the original date & sets time to '23:59:59.999999'.
-        - `'h'`: Retains the original date & sets time to 'XX:59:59.999999'.
-        - `'m'`: Retains the original date & sets time to 'XX:XX:59.999999'.
-        - `'s'`: Retains the original date & sets time to 'XX:XX:XX.999999'.
-        - `'ms'`: Retains the original date & sets time to 'XX:XX:XX.XXX999'.
-        - `'us'`: Return the instance itself.
-        - `'Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Sets date to last day of that month & time to '23:59:59.999999'.
-        - `'Weekday name (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`): Sets date to that weekday & time to '23:59:59.999999'.
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'`  → End of year: `YYYY-12-31 23:59:59.999999999`
+            - `'Q'`  → End of quarter: `YYYY-MM-(30..31) 23:59:59.999999999`
+            - `'M'`  → End of month: `YYYY-MM-(28..31) 23:59:59.999999999`
+            - `'W'`  → End of week (Sunday): `YYYY-MM-DD 23:59:59.999999999`
+            - `'D'`  → End of day: `YYYY-MM-DD 23:59:59.999999999`
+            - `'h'`  → End of hour: `YYYY-MM-DD hh:59:59.999999999`
+            - `'m'`  → End of minute: `YYYY-MM-DD hh:mm:59.999999999`
+            - `'s'`  → End of second: `YYYY-MM-DD hh:mm:ss.999999999`
+            - `'ms'` → End of millisecond: `YYYY-MM-DD hh:mm:ss.uuu999999`
+            - `'us'` → End of millisecond: `YYYY-MM-DD hh:mm:ss.uuuuuu999`
+            - `'ns'` → Return the instance `as-is`.
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                     → End of the specifed month: `YYYY-MM-(28..31) 23:59:59.999999`
+            - `Weekday` (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`)
+                     → End of the specifed weekday: `YYYY-MM-DD 23:59:59.999999`
+
+        :returns `<'Pddt'>`: The adjusted datetime index.
         """
-        # Fast-path
+        # Guard
         if unit is None:
-            return self  # exit: invalid
-        if unit == "ns":
-            return self  # exit: to nanosecond
-        my_unit: str = self.unit
-        if unit == my_unit:
-            return self  # exit: same unit
+            errors.raise_argument_error(
+                self.__class__,
+                "to_end_of(unit)",
+                "Supports: 'Y', 'Q', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us', 'ns' "
+                "or Month/Weekday name; got None.",
+            )
+        unit_len: cython.Py_ssize_t = str_len(unit)
+        if unit_len == 0:
+            errors.raise_argument_error(
+                self.__class__,
+                "to_end_of(unit)",
+                "Supports: 'Y', 'Q', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us', 'ns' "
+                "or Month/Weekday name; got empty string.",
+            )
+
+        # Fast-path: 'ns' as-is
+        ch0: cython.Py_UCS4 = str_read(unit, 0)
+        if ch0 == "n" and unit_len == 2 and str_read(unit, 1) == "s":
+            return self  # exit
 
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
-        my_unit_ch: cython.Py_UCS4 = str_read(my_unit, 0)
-        fac: cython.longlong  # floor divisor factor
-        mul: cython.longlong  # multiple after floor
-        off: cython.longlong  # offset to floor value
 
-        # To microsecond
-        if unit == "us":
-            # my_unit: [ms, s] -> to_unit [us]
-            if my_unit_ch != "n":
-                return self  # exit: lower unit
-            # my_unit [ns] -> to_unit [us]
-            fac = utils.NS_MICROSECOND
-            if utils.is_dt64arr_ns_safe(arr, "ns"):
-                arr = utils.arr_div_floor_mul(arr, fac, fac, fac - 1)
-                dtype = utils.DT64_DTYPE_NS
-            else:
-                arr = utils.arr_div_floor(arr, fac)
-                dtype = utils.DT64_DTYPE_US
-            # back to dt64[my_unit]
-            arr = arr.astype(dtype)
+        # General approach: 'Y', 'M', 'D', 'h', 'm', 's', 'ms', 'us'
+        my_unit: str = self.unit
+        my_reso: cython.int = utils.nptime_unit_str2int(my_unit)
+        to_reso: cython.int
+        if (
+            #: 'Y', 'M', 'D', 'h', 'm', 's'
+            (unit_len == 1 and ch0 in ("Y", "M", "D", "h", "m", "s"))
+            #: 'ms', 'us'
+            or (unit_len == 2 and ch0 in ("m", "u") and str_read(unit, 1) == "s")
+            #: 'min'
+            or (
+                unit_len == 3
+                and ch0 == "m"
+                and str_read(unit, 1) == "i"
+                and str_read(unit, 2) == "n"
+            )
+        ):
+            to_reso = utils.nptime_unit_str2int(unit)
+            if my_reso <= to_reso:
+                return self  # exit: already at or finer than target resolution
+            arr: np.ndarray = self.values_naive
+            arr = utils.dt64arr_as_int64(arr, unit, my_reso, 1, True)  # +1
+            arr = utils.dt64arr_as_unit(arr, my_unit, to_reso, False, False)
+            arr = utils.arr_add(arr, -1, False)  # -1 -> jump to the end
+            return self._new(arr, tz=self.tz, name=self.name)
 
-        # To millisecond
-        elif unit == "ms":
-            # my_unit [s] -> to_unit [ms]
-            if my_unit_ch == "s":
-                return self  # exit: lower unit
-            # my_unit [ns] -> to_unit [ms]
-            if my_unit_ch == "n":
-                fac = utils.NS_MILLISECOND
-                if utils.is_dt64arr_ns_safe(arr, "ns"):
-                    mul, off = fac, fac - 1
-                    dtype = utils.DT64_DTYPE_NS
-                else:
-                    mul, off = utils.US_MILLISECOND, utils.US_MILLISECOND - 1
-                    dtype = utils.DT64_DTYPE_US
-            # my_unit [us] -> to_unit [ms]
-            else:
-                fac = utils.US_MILLISECOND
-                mul, off = fac, fac - 1
-                dtype = utils.DT64_DTYPE_US
-            # back to dt64[my_unit]
-            arr = utils.arr_div_floor_mul(arr, fac, mul, off).astype(dtype)
+        # To weekday -> int64[D]-weekday+1week
+        arr: np.ndarray = self.values_naive
+        if ch0 == "W" and unit_len == 1:
+            dateD = utils.dt64arr_as_int64_D(arr, my_reso, 0, True)
+            delta = utils.dt64arr_weekday(dateD, utils.DT_NPY_UNIT_DD, 0, True)
+            dates = utils.arr_sub_arr(dateD, delta, 7, False)
+            to_reso = utils.DT_NPY_UNIT_DD
 
-        # To second
-        elif unit == "s":
-            # my_unit [ns] -> to_unit [s]
-            if my_unit_ch == "n":  # ns
-                fac = utils.NS_SECOND
-                if utils.is_dt64arr_ns_safe(arr, "ns"):
-                    mul, off = fac, fac - 1
-                    dtype = utils.DT64_DTYPE_NS
-                else:
-                    mul, off = utils.US_SECOND, utils.US_SECOND - 1
-                    dtype = utils.DT64_DTYPE_US
-            # my_unit [us, ms] -> to_unit [s]
-            else:
-                if my_unit_ch == "u":
-                    fac, dtype = utils.US_SECOND, utils.DT64_DTYPE_US
-                else:
-                    fac, dtype = utils.MS_SECOND, utils.DT64_DTYPE_MS
-                mul, off = fac, fac - 1
-            # back to dt64[my_unit]
-            arr = utils.arr_div_floor_mul(arr, fac, mul, off).astype(dtype)
+        # To quarter -> int64[Q]+1 -> int64[M]
+        elif ch0 == "Q" and unit_len == 1:
+            dateQ = utils.dt64arr_as_int64_Q(arr, my_reso, 1, True)
+            dates = utils.arr_mul(dateQ, 3, 0, False)
+            to_reso = utils.DT_NPY_UNIT_MM
 
-        # To minute
-        elif unit == "m" or unit == "min":
-            # my_unit [ns] -> to_unit [s]
-            if my_unit_ch == "n":
-                fac = utils.NS_MINUTE
-                if utils.is_dt64arr_ns_safe(arr, "ns"):
-                    mul, off = fac, fac - 1
-                    dtype = utils.DT64_DTYPE_NS
-                else:
-                    mul, off = utils.US_MINUTE, utils.US_MINUTE - 1
-                    dtype = utils.DT64_DTYPE_US
-            # my_unit [us, ms, s] -> to_unit [m]
-            else:
-                if my_unit_ch == "u":
-                    fac, dtype = utils.US_MINUTE, utils.DT64_DTYPE_US
-                elif my_unit_ch == "m":
-                    fac, dtype = utils.MS_MINUTE, utils.DT64_DTYPE_MS
-                else:  # s
-                    fac, dtype = utils.SS_MINUTE, utils.DT64_DTYPE_SS
-                mul, off = fac, fac - 1
-            # back to dt64[my_unit]
-            arr = utils.arr_div_floor_mul(arr, fac, mul, off).astype(dtype)
-
-        # To hour
-        elif unit == "h":
-            # my_unit [ns] -> to_unit [h]
-            if my_unit_ch == "n":
-                fac = utils.NS_HOUR
-                if utils.is_dt64arr_ns_safe(arr, "ns"):
-                    mul, off = fac, fac - 1
-                    dtype = utils.DT64_DTYPE_NS
-                else:
-                    mul, off = utils.US_HOUR, utils.US_HOUR - 1
-                    dtype = utils.DT64_DTYPE_US
-            # my_unit [us, ms, s] -> to_unit [h]
-            else:
-                if my_unit_ch == "u":  # us
-                    fac, dtype = utils.US_HOUR, utils.DT64_DTYPE_US
-                elif my_unit_ch == "m":  # ms
-                    fac, dtype = utils.MS_HOUR, utils.DT64_DTYPE_MS
-                else:  # s
-                    fac, dtype = utils.SS_HOUR, utils.DT64_DTYPE_SS
-                mul, off = fac, fac - 1
-            # back to dt64[my_unit]
-            arr = utils.arr_div_floor_mul(arr, fac, mul, off).astype(dtype)
-
-        # To day
-        elif unit == "D":
-            # my_unit [ns] -> to_unit [D]
-            if my_unit_ch == "n":
-                fac = utils.NS_DAY
-                if utils.is_dt64arr_ns_safe(arr, "ns"):
-                    mul, off = fac, fac - 1
-                    dtype = utils.DT64_DTYPE_NS
-                else:
-                    mul, off = utils.US_DAY, utils.US_DAY - 1
-                    dtype = utils.DT64_DTYPE_US
-            # my_unit [us, ms, s] -> to_unit [D]
-            else:
-                if my_unit_ch == "u":  # us
-                    fac, dtype = utils.US_DAY, utils.DT64_DTYPE_US
-                elif my_unit_ch == "m":  # ms
-                    fac, dtype = utils.MS_DAY, utils.DT64_DTYPE_MS
-                else:  # s
-                    fac, dtype = utils.SS_DAY, utils.DT64_DTYPE_SS
-                mul, off = fac, fac - 1
-            # back to dt64[my_unit]
-            arr = utils.arr_div_floor_mul(arr, fac, mul, off).astype(dtype)
-
-        # To weekday
-        elif unit == "W":
-            datesD = utils.dt64arr_as_int64_D(arr, my_unit)  # int64[D]
-            delta = utils.dt64arr_weekday(datesD, "D", -7)  # weekday-7
-            datesD = utils.arr_sub_arr(datesD, delta)  # int64[D]
-            arr = utils.dt64arr_as_unit(datesD, my_unit, "D") - 1  # dt64[my_unit]-1
-
-        # To Month
-        elif unit == "M":
-            datesM = utils.dt64arr_as_int64_M(arr, my_unit, 1)  # int64[M]+1
-            arr = utils.dt64arr_as_unit(datesM, my_unit, "M") - 1  # dt64[my_unit]-1
-
-        # To Quarter
-        elif unit == "Q":
-            datesQ = utils.dt64arr_as_int64_Q(arr, my_unit, 1)  # int64[Q]+1
-            datesM = utils.arr_mul(datesQ, 3)  # int64[M]
-            arr = utils.dt64arr_as_unit(datesM, my_unit, "M") - 1  # dt64[my_unit]-1
-
-        # To Year
-        elif unit == "Y":
-            datesY = utils.dt64arr_as_int64_Y(arr, my_unit, 1)  # int64[Y]
-            arr = utils.dt64arr_as_unit(datesY, my_unit, "Y") - 1  # dt64[my_unit]-1
-
-        # Custom
+        # Special
         else:
             val: cython.int
-            # Month name
-            if (val := _parse_month(unit, False)) != -1:
-                datesY = utils.dt64arr_as_int64_Y(arr, my_unit)  # int64[Y]
-                datesM = utils.dt64arr_as_int64_M(datesY, "Y", val)  # int64[M]+val
-                arr = utils.dt64arr_as_unit(datesM, my_unit, "M") - 1  # dt64[my_unit]-1
+            # Month name -> int64[Y] -> int64[M]+MM (MM is 0-based; so no +1)
+            if (val := _parse_month(unit, None, False)) != -1:
+                dateY = utils.dt64arr_as_int64_Y(arr, my_reso, 0, True)
+                dates = utils.dt64arr_as_int64_M(
+                    dateY, utils.DT_NPY_UNIT_YY, val, False
+                )
+                to_reso = utils.DT_NPY_UNIT_MM
 
-            # Weekday name
-            elif (val := _parse_weekday(unit, False)) != -1:
-                datesD = utils.dt64arr_as_int64_D(arr, my_unit)  # int64[D]
-                delta = utils.dt64arr_weekday(datesD, "D", -val - 1)  # weekday-val-1
-                datesD = utils.arr_sub_arr(datesD, delta)  # int64[D]
-                arr = utils.dt64arr_as_unit(datesD, my_unit, "D") - 1  # dt64[my_unit]-1
+            # Weekday name -> int64[D]-weekday+DD+1
+            elif (val := _parse_weekday(unit, None, False)) != -1:
+                dateD = utils.dt64arr_as_int64_D(arr, my_reso, 0, True)
+                delta = utils.dt64arr_weekday(dateD, utils.DT_NPY_UNIT_DD, 0, True)
+                dates = utils.arr_sub_arr(dateD, delta, val + 1, False)
+                to_reso = utils.DT_NPY_UNIT_DD
 
             # Invalid
             else:
-                raise errors.InvalidTimeUnitError(
-                    "invalid 'end of' datetime unit '%s'.\nSupports: "
-                    "['Y', 'Q', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us', 'ns'] "
-                    "or Month/Weekday name." % unit
+                errors.raise_argument_error(
+                    self.__class__,
+                    "to_end_of(unit)",
+                    "Supports: 'Y', 'Q', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us', 'ns' "
+                    "or Month/Weekday name; got '%s'." % unit,
                 )
+                return  # unreachable: suppress compiler warning
 
         # New instance
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+        arr = utils.dt64arr_as_unit(dates, my_unit, to_reso, False, False)
+        arr = utils.arr_add(arr, -1, False)  # -1 -> jump to the end
+        return self._new(arr, tz=self.tz, name=self.name)
 
     # . round / ceil / floor
     def round(self, unit: str) -> Self:
         """Perform round operation to the specified datetime unit `<'Pddt'>`.
 
-        :param unit `<'str'>`: The datetime unit to round to.
-            Supported datetime units: 'D', 'h', 'm', 's', 'ms', 'us', 'ns'.
+        :param unit `<'str'>`: The datetime unit to round to, supports:
+            `'D', 'h', 'm', 's', 'ms', 'us', 'ns'`.
+        :returns `<'Pddt'>`: The resulting datetime index.
         """
-        # No change / Same unit
-        if unit is None:
-            return self  # exit
-        my_unit: str = self.unit
-        if unit == my_unit:
-            return self  # exit
-
-        # Access datetime array & info
-        arr: np.ndarray = self.values_naive
-
-        # Perform operation
+        # Validate unit
         try:
-            res: np.ndarray = utils.dt64arr_round(arr, unit, my_unit)
+            to_reso: cython.int = utils.nptime_unit_str2int(unit)
         except Exception as err:
-            raise errors.InvalidTimeUnitError(err) from err
-        if arr is res:
-            return self
-        return pddt_new_simple(res, self.tzinfo, None, self.name)
+            raise errors.InvalidArgumentError(
+                "<'%s'> Invalid 'round(unit)' input.\n"
+                "Supports: 'D', 'h', 'm', 's', 'ms', 'us', 'ns'; got %r."
+                % (self.__class__.__name__, unit)
+            ) from err
+        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
+
+        # Fast-path: source is coarser or equal to target
+        if my_reso <= to_reso:
+            return self  # exit
+
+        # Round operation
+        arr: np.ndarray = self.values_naive
+        try:
+            out: np.ndarray = utils.dt64arr_round(arr, unit, my_reso, True)
+        except Exception as err:
+            errors.raise_argument_error(self.__class__, "round(unit)", None, err)
+            return  # unreachable: suppress compiler warning
+        if arr is out:
+            return self  # exit
+
+        # New instance
+        return self._new(out, tz=self.tz, name=self.name)
 
     def ceil(self, unit: str) -> Self:
         """Perform ceil operation to the specified datetime unit `<'Pddt'>`.
 
-        :param unit `<'str'>`: The datetime unit to round to.
-            Supported datetime units: 'D', 'h', 'm', 's', 'ms', 'us', 'ns'.
+        :param unit `<'str'>`: The datetime unit to ceil to, supports:
+            `'D', 'h', 'm', 's', 'ms', 'us', 'ns'`.
+        :returns `<'Pddt'>`: The resulting datetime index.
         """
-        # No change / Same unit
-        if unit is None:
-            return self  # exit
-        my_unit: str = self.unit
-        if unit == my_unit:
-            return self  # exit
-
-        # Access datetime array & info
-        arr: np.ndarray = self.values_naive
-
-        # Perform operation
+        # Validate unit
         try:
-            res: np.ndarray = utils.dt64arr_ceil(arr, unit, my_unit)
+            to_reso: cython.int = utils.nptime_unit_str2int(unit)
         except Exception as err:
-            raise errors.InvalidTimeUnitError(err) from err
-        if arr is res:
-            return self
-        return pddt_new_simple(res, self.tzinfo, None, self.name)
+            raise errors.InvalidArgumentError(
+                "<'%s'> Invalid 'ceil(unit)' input.\n"
+                "Supports: 'D', 'h', 'm', 's', 'ms', 'us', 'ns'; got %r."
+                % (self.__class__.__name__, unit)
+            ) from err
+        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
+
+        # Fast-path: source is coarser or equal to target
+        if my_reso <= to_reso:
+            return self  # exit
+
+        # Ceil operation
+        arr: np.ndarray = self.values_naive
+        try:
+            out: np.ndarray = utils.dt64arr_ceil(arr, unit, my_reso, True)
+        except Exception as err:
+            errors.raise_argument_error(self.__class__, "ceil(unit)", None, err)
+            return  # unreachable: suppress compiler warning
+        if arr is out:
+            return self  # exit
+
+        # New instance
+        return self._new(out, tz=self.tz, name=self.name)
 
     def floor(self, unit: str) -> Self:
         """Perform floor operation to the specified datetime unit `<'Pddt'>`.
 
-        :param unit `<'str'>`: The datetime unit to round to.
-            Supported datetime units: 'D', 'h', 'm', 's', 'ms', 'us', 'ns'.
+        :param unit `<'str'>`: The datetime unit to floor to, supports:
+            `'D', 'h', 'm', 's', 'ms', 'us', 'ns'`.
+        :returns `<'Pddt'>`: The resulting datetime index.
         """
-        # No change / Same unit
-        if unit is None:
-            return self  # exit
-        my_unit: str = self.unit
-        if unit == my_unit:
-            return self  # exit
-
-        # Access datetime array & info
-        arr: np.ndarray = self.values_naive
-
-        # Perform operation
+        # Validate unit
         try:
-            res: np.ndarray = utils.dt64arr_floor(arr, unit, my_unit)
+            to_reso: cython.int = utils.nptime_unit_str2int(unit)
         except Exception as err:
-            raise errors.InvalidTimeUnitError(err) from err
-        if arr is res:
-            return self
-        return pddt_new_simple(res, self.tzinfo, None, self.name)
+            raise errors.InvalidArgumentError(
+                "<'%s'> Invalid 'floor(unit)' input.\n"
+                "Supports: 'D', 'h', 'm', 's', 'ms', 'us', 'ns'; got %r."
+                % (self.__class__.__name__, unit)
+            ) from err
+        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
+
+        # Fast-path: source is coarser or equal to target
+        if my_reso <= to_reso:
+            return self  # exit
+
+        # Floor operation
+        arr: np.ndarray = self.values_naive
+        try:
+            out: np.ndarray = utils.dt64arr_floor(arr, unit, my_reso, True)
+        except Exception as err:
+            errors.raise_argument_error(self.__class__, "floor(unit)", None, err)
+            return  # unreachable: suppress compiler warning
+        if arr is out:
+            return self  # exit
+
+        # New instance
+        return self._new(out, tz=self.tz, name=self.name)
 
     # . fsp (fractional seconds precision)
     def fsp(self, precision: cython.int) -> Self:
         """Adjust to the specified fractional seconds precision `<'Pddt'>`.
 
-        :param precision `<'int'>`: The fractional seconds precision (0-9).
+        :param precision `<'int'>`: The target fractional seconds precision (0-9).
+        :returns `<'Pddt'>`: The datetime index with adjusted fractional seconds precision.
+            If the instance's resolution is coarser than the specified
+            precision, return `as-is`.
         """
-        # No change
-        if precision >= 9:
-            return self  # exit: same value
+        # Validate
         if precision < 0:
-            raise errors.InvalidFspError(
-                "invalid fractional seconds precision '%d'.\n"
-                "Must be between 0 and 6." % precision
+            errors.raise_argument_error(
+                self.__class__,
+                "fsp(precision)",
+                "Fractional seconds precision must be "
+                "between 0...9, instead got %d." % precision,
             )
+        # Fast-path
+        if precision >= 9:
+            return self  # exit
 
         # Calcualte factor
-        my_unit: str = self.unit
-        my_unit_ch: cython.Py_UCS4 = str_read(my_unit, 0)
+        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
         f: cython.longlong  # fsp factor
         # . nanosecond
-        if my_unit_ch == "n":
+        if my_reso == utils.DT_NPY_UNIT_NS:
             f = int(10 ** (9 - precision))
         # . microsecond
-        elif my_unit_ch == "u":
+        elif my_reso == utils.DT_NPY_UNIT_US:
             if precision >= 6:
-                return self  # exit: same value
+                return self  # exit
             f = int(10 ** (6 - precision))
         # . millisecond
-        elif my_unit_ch == "m":
+        elif my_reso == utils.DT_NPY_UNIT_MS:
             if precision >= 3:
-                return self  # exit: same value
+                return self  # exit
             f = int(10 ** (3 - precision))
         # . second
         else:
-            return self  # exit: same value
+            return self  # exit
 
-        # Perform operation
+        # Adjust precision
         arr: np.ndarray = self.values_naive
-        res = utils.arr_div_floor_mul(arr, f, f, 0)
-        res = res.astype(utils.map_nptime_unit_str2dt64(my_unit))
-        return pddt_new_simple(res, self.tzinfo, None, self.name)
+        if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+            arr, utils.DT_NPY_UNIT_NS
+        ):
+            arr = utils.dt64arr_as_int64_us(arr, my_reso, 0, True)
+            arr = arr.astype(utils.DT64_DTYPE_US)
+            if precision < 6:
+                f //= 1_000
+                arr = utils.arr_div_floor_mul(arr, f, f, 0, False)
+        else:
+            arr = utils.arr_div_floor_mul(arr, f, f, 0, True)
+        #: 'arr' is dt64 dtype
+
+        # New instance
+        return self._new(arr, tz=self.tz, name=self.name)
 
     # Calendar -----------------------------------------------------------------------------
     # . iso
-    def isocalendar(self) -> DataFrame:
-        """Return the ISO calendar `<'DateFrame'>`."""
-        _iso = utils.dt64arr_isocalendar(self.values_naive)
-        return DataFrame(_iso, columns=["year", "week", "weekday"], index=self)
+    def isocalendar(self) -> pd.DataFrame:
+        """Return the ISO calendar `<'DateFrame'>`.
 
-    def isoyear(self) -> Index[np.int64]:
+        ## Example:
+        >>> pt.isocalendar()
+        ```
+        _                              year  week  weekday
+        1677-09-21 00:12:43.145224193  1677    38        2
+        2262-04-11 23:47:16.854775807  2262    15        5
+        ```
+        """
+        arr = utils.dt64arr_isocalendar(self.values_naive)
+        return pd.DataFrame(arr, columns=["year", "week", "weekday"], index=self)
+
+    def isoyear(self) -> pd.Index[np.int64]:
         """Return the ISO calendar years `<'Index[int64]'>`."""
-        _iso = utils.dt64arr_isocalendar(self.values_naive)
-        return Index(_iso[:, 0], name="isoyear")
+        arr = utils.dt64arr_isoyear(self.values_naive)
+        return pd.Index(arr, name="isoyear")
 
-    def isoweek(self) -> Index[np.int64]:
+    def isoweek(self) -> pd.Index[np.int64]:
         """Return the ISO calendar week numbers (1-53) `<'Index[int64]'>`."""
-        _iso = utils.dt64arr_isocalendar(self.values_naive)
-        return Index(_iso[:, 1], name="isoweek")
+        arr = utils.dt64arr_isoweek(self.values_naive)
+        return pd.Index(arr, name="isoweek")
 
-    def isoweekday(self) -> Index[np.int64]:
+    def isoweekday(self) -> pd.Index[np.int64]:
         """Return the ISO calendar weekdays (1=Mon...7=Sun) `<'Index[int64]'>`."""
-        _iso = utils.dt64arr_isocalendar(self.values_naive)
-        return Index(_iso[:, 2], name="isoweekday")
+        arr = utils.dt64arr_isoweekday(self.values_naive)
+        return pd.Index(arr, name="isoweekday")
 
     # . year
     @property
-    def year(self) -> Index[np.int64]:
+    def year(self) -> pd.Index[np.int64]:
         """The years `<'Index[int64]'>`."""
-        return Index(utils.dt64arr_year(self.values_naive), name="year")
+        return pd.Index(utils.dt64arr_year(self.values_naive), name="year")
 
-    def is_leap_year(self) -> Index[bool]:
-        """Determine if the instance's years are in a leap year `<'Index[bool]'>`."""
-        return Index(utils.dt64arr_is_leap_year(self.values_naive), name="is_leap_year")
+    def is_year(self, year: cython.int) -> pd.Index[bool]:
+        """Element-wise check whether is the exact `year` `<'Index[bool]'>."""
+        return pd.Index(
+            utils.arr_eq(utils.dt64arr_year(self.values_naive), year), name="is_year"
+        )
 
-    def is_long_year(self) -> Index[bool]:
-        """Determine if the instance's years are in a long year `<'Index[bool]'>`.
+    def is_leap_year(self) -> pd.Index[bool]:
+        """Element-wise check whether is in leap year `<'Index[bool]'>."""
+        return pd.Index(
+            utils.dt64arr_is_leap_year(self.values_naive), name="is_leap_year"
+        )
+
+    def is_long_year(self) -> pd.Index[bool]:
+        """Element-wise check whether is in long year `<'Index[bool]'>`.
 
         - Long year: maximum ISO week number is 53.
         """
-        return Index(utils.dt64arr_is_long_year(self.values_naive), name="is_long_year")
+        return pd.Index(
+            utils.dt64arr_is_long_year(self.values_naive), name="is_long_year"
+        )
 
-    def leap_bt_year(self, year: cython.int) -> Index[np.int64]:
-        """Compute the number of leap years between the instance's
-        years and the passed-in 'year' `<'Index[int64]'>`.
-        """
-        return Index(
+    def leap_bt_year(self, year: cython.int) -> pd.Index[np.int64]:
+        """Compute the total number of leap years between `year` and each element `<'Index[int64]'>`."""
+        return pd.Index(
             utils.dt64arr_leap_bt_years(self.values_naive, year),
             name="leap_bt_year",
         )
 
-    def days_in_year(self) -> Index[np.int64]:
-        """Return the maximum number of days (365, 366)
-        in the instance's years `<'Index[int64]'>`.
-        """
-        return Index(utils.dt64arr_days_in_year(self.values_naive), name="days_in_year")
+    def days_in_year(self) -> pd.Index[np.int64]:
+        """Return the maximum number of days (365, 366) in the year `<'Index[int64]'>`."""
+        return pd.Index(
+            utils.dt64arr_days_in_year(self.values_naive), name="days_in_year"
+        )
 
-    def days_bf_year(self) -> Index[np.int64]:
-        """Return the number of days from January 1st, 1st AD,
-        to the start of the instance's years `<'Index[int64]'>`.
-        """
-        return Index(utils.dt64arr_days_bf_year(self.values_naive), name="days_bf_year")
+    def days_bf_year(self) -> pd.Index[np.int64]:
+        """Return the number of days strictly before January 1 of year `<'Index[int64]'>`."""
+        return pd.Index(
+            utils.dt64arr_days_bf_year(self.values_naive), name="days_bf_year"
+        )
 
-    def days_of_year(self) -> Index[np.int64]:
-        """Return the number of days since the start
-        of the instance's years `<'Index[int64]'>`.
-        """
-        return Index(utils.dt64arr_days_of_year(self.values_naive), name="days_of_year")
-
-    def is_year(self, year: cython.int) -> Index[bool]:
-        """Determine if the instance's years match
-        the passed-in 'year' `<'Index[bool]'>`.
-        """
-        return Index(
-            utils.arr_eq(utils.dt64arr_year(self.values_naive), year),
-            name="is_year",
+    def day_of_year(self) -> pd.Index[np.int64]:
+        """Return the number of days since the 1st day of the year `<'Index[int64]'>`."""
+        return pd.Index(
+            utils.dt64arr_day_of_year(self.values_naive), name="day_of_year"
         )
 
     # . quarter
     @property
-    def quarter(self) -> Index[np.int64]:
+    def quarter(self) -> pd.Index[np.int64]:
         """The quarters (1-4) `<'Index[int64]'>`."""
-        return Index(utils.dt64arr_quarter(self.values_naive), name="quarter")
+        return pd.Index(utils.dt64arr_quarter(self.values_naive), name="quarter")
 
-    def days_in_quarter(self) -> Index[np.int64]:
-        """Return the maximum number of days (90-92)
-        in the instance's quarters `<'Index[int64]'>`.
-        """
-        return Index(
-            utils.dt64arr_days_in_quarter(self.values_naive),
-            name="days_in_quarter",
-        )
-
-    def days_bf_quarter(self) -> Index[np.int64]:
-        """Return the number of days from the start of the instance's years
-        to the start of the instance's quarters `<'Index[int64]'>`.
-        """
-        return Index(
-            utils.dt64arr_days_bf_quarter(self.values_naive),
-            name="days_bf_quarter",
-        )
-
-    def days_of_quarter(self) -> Index[np.int64]:
-        """Return the number of days since the start
-        of the instance's quarters `<'Index[int64]'>`.
-        """
-        return Index(
-            utils.dt64arr_days_of_quarter(self.values_naive),
-            name="days_of_quarter",
-        )
-
-    def is_quarter(self, quarter: cython.int) -> Index[bool]:
-        """Determine if the instance's quarters match
-        the passed-in 'quarter' `<'Index[bool]'>`.
-        """
-        return Index(
+    def is_quarter(self, quarter: cython.int) -> pd.Index[bool]:
+        """Element-wise check whether is the exact `quarter` `<'Index[bool]'>`."""
+        return pd.Index(
             utils.arr_eq(utils.dt64arr_quarter(self.values_naive), quarter),
             name="is_quarter",
         )
 
+    def days_in_quarter(self) -> pd.Index[np.int64]:
+        """Return the maximum number of days (90-92) in the quarter `<'Index[int64]'>`."""
+        return pd.Index(
+            utils.dt64arr_days_in_quarter(self.values_naive), name="days_in_quarter"
+        )
+
+    def days_bf_quarter(self) -> pd.Index[np.int64]:
+        """Return the number of days strictly before the first day
+        of the calendar quarter `<'Index[int64]'>`.
+        """
+        return pd.Index(
+            utils.dt64arr_days_bf_quarter(self.values_naive), name="days_bf_quarter"
+        )
+
+    def day_of_quarter(self) -> pd.Index[np.int64]:
+        """Return the number of days since the 1st day of the quarter `<'Index[int64]'>`."""
+        return pd.Index(
+            utils.dt64arr_day_of_quarter(self.values_naive), name="day_of_quarter"
+        )
+
     # . month
     @property
-    def month(self) -> Index[np.int64]:
+    def month(self) -> pd.Index[np.int64]:
         """The months (1-12) `<'Index[int64]'>`."""
-        return Index(utils.dt64arr_month(self.values_naive), name="month")
+        return pd.Index(utils.dt64arr_month(self.values_naive), name="month")
 
-    def days_in_month(self) -> Index[np.int64]:
-        """Return the maximum number of days (28-31)
-        in the instance's months `<'Index[int64]'>`.
+    def is_month(self, month: str | int) -> pd.Index[bool]:
+        """Element-wise check whether is the exact `month` `<'Index[bool]'>`.
+
+        :param month `<'int/str'>`: Month value.
+
+            - `<'int'>`  Month number (1=Jan...12=Dec).
+            - `<'str'>`  Month name in lowercase, uppercase or titlecase (e.g., 'Jan', 'februar', '三月').
+
+        :return `<'Index[bool]'>`: True if `month` is recognized and matched
+            with index instances' month; Otherwise False.
         """
-        return Index(
-            utils.dt64arr_days_in_month(self.values_naive),
-            name="days_in_month",
+        mm: cython.int = _parse_month(month, None, True)
+        return pd.Index(
+            utils.arr_eq(utils.dt64arr_month(self.values_naive), mm), name="is_month"
         )
 
-    def days_bf_month(self) -> Index[np.int64]:
-        """Return the number of days from the start of the instance's
-        years to the start of the instance's months `<'Index[int64]'>`.
-        """
-        return Index(
-            utils.dt64arr_days_bf_month(self.values_naive),
-            name="days_bf_month",
+    def days_in_month(self) -> pd.Index[np.int64]:
+        """Return the maximum number of days (28-31) in the month `<'Index[int64]'>`."""
+        return pd.Index(
+            utils.dt64arr_days_in_month(self.values_naive), name="days_in_month"
         )
 
-    def days_of_month(self) -> Index[np.int64]:
-        """Return the number of days (1-31) since the start
-        of the instance's months `<'Index[int64]'>`.
+    def days_bf_month(self) -> pd.Index[np.int64]:
+        """Return the number of days strictly before the first day
+        of the calendar month `<'Index[int64]'>`.
+        """
+        return pd.Index(
+            utils.dt64arr_days_bf_month(self.values_naive), name="days_bf_month"
+        )
 
-        ### Equivalent to:
+    def day_of_month(self) -> pd.Index[np.int64]:
+        """Return the number of days since the 1st day of the month `<'Index[int64]'>`.
+
+        ## Equivalent
         >>> pt.day
         """
-        return Index(utils.dt64arr_day(self.values_naive), name="days_of_month")
+        return pd.Index(utils.dt64arr_day(self.values_naive), name="day_of_month")
 
-    def is_month(self, month: str | int) -> Index[bool]:
-        """Determine if the instance's months match
-        the passed-in 'month' `<'Index[bool]'>`.
+    def month_name(self, locale: str | None = None) -> pd.Index[str]:
+        """Return the month names with specified locale `<'Index[str]'>`.
+
+        :param locale `<'str/None'>`: The locale to use for month name. Defaults to `None`.
+
+            - Locale determining the language in which to return the month name.
+              If `None` uses English locale (`'en_US'`).
+            - Use the command `locale -a` on Unix systems terminal to
+              find locale language code.
+
+        :return `<'Index[str]'>`: The month names.
         """
-        mm: cython.int = _parse_month(month, True)
-        return Index(
-            utils.arr_eq(utils.dt64arr_month(self.values_naive), mm),
-            name="is_month",
-        )
+        try:
+            return DatetimeIndex.month_name(self, locale=locale)
+        except Exception as err:
+            errors.raise_argument_error(self.__class__, "month_name(locale)", None, err)
 
     # . weekday
     @property
-    def weekday(self) -> Index[np.int64]:
+    def weekday(self) -> pd.Index[np.int64]:
         """The weekdays (0=Mon...6=Sun) `<'Index[int64]'>`."""
-        return Index(utils.dt64arr_weekday(self.values_naive), name="weekday")
+        return pd.Index(utils.dt64arr_weekday(self.values_naive), name="weekday")
 
-    def is_weekday(self, weekday: int | str) -> Index[bool]:
-        """Determine if the instance's weekdays match
-        the passed-in 'weekday' `<'Index[bool]'>`.
+    def is_weekday(self, weekday: int | str) -> pd.Index[bool]:
+        """Element-wise check whether is the exact `weekday` `<'Index[bool]'>`.
+
+        :param weekday `<'int/str/None'>`: Weekday value.
+
+            - `<'int'>`  Weekday number (0=Mon...6=Sun).
+            - `<'str'>`  Weekday name in lowercase, uppercase or titlecase (e.g., 'Mon', 'dienstag', '星期三').
+
+        :return `<'Index[bool]'>`: True if `weekday` is recognized and matched
+            with index instances' weekday; Otherwise False.
         """
-        wd: cython.int = _parse_weekday(weekday, True)
-        return Index(
+        wd: cython.int = _parse_weekday(weekday, None, True)
+        return pd.Index(
             utils.arr_eq(utils.dt64arr_weekday(self.values_naive), wd),
             name="is_weekday",
         )
 
+    def weekday_name(self, locale: str | None = None) -> pd.Index[str]:
+        """Return the weekday names with specified locale `<'Index[str]'>`.
+
+        :param locale `<'str/None'>`: The locale to use for weekday name. Defaults to `None`.
+
+            - Locale determining the language in which to return the weekday name.
+              If `None` uses English locale (`'en_US'`).
+            - Use the command `locale -a` on Unix systems terminal to
+              find locale language code.
+
+        :return `<'Index[str]'>`: The weekday names.
+
+        ## Equivalent
+        >>> DatetimeIndex.day_name(locale)
+        """
+        try:
+            return DatetimeIndex.day_name(self, locale=locale)
+        except Exception as err:
+            errors.raise_argument_error(
+                self.__class__, "weekday_name(locale)", None, err
+            )
+
     # . day
     @property
-    def day(self) -> Index[np.int64]:
+    def day(self) -> pd.Index[np.int64]:
         """The days (1-31) `<'Index[int64]'>`."""
-        return Index(utils.dt64arr_day(self.values_naive), name="day")
+        return pd.Index(utils.dt64arr_day(self.values_naive), name="day")
 
-    def is_day(self, day: cython.int) -> Index[bool]:
-        """Determine if the instance's days match
-        the passed-in 'day' `<'Index[bool]'>`.
-        """
-        return Index(
-            utils.arr_eq(utils.dt64arr_day(self.values_naive), day),
-            name="is_day",
+    def is_day(self, day: cython.int) -> pd.Index[bool]:
+        """Element-wise check whether is the exact `day` `<'Index[bool]'>`."""
+        return pd.Index(
+            utils.arr_eq(utils.dt64arr_day(self.values_naive), day), name="is_day"
         )
 
     # . time
     @property
-    def hour(self) -> Index[np.int64]:
+    def hour(self) -> pd.Index[np.int64]:
         """The hours (0-23) `<'Index[int64]'>`."""
-        return Index(utils.dt64arr_hour(self.values_naive), name="hour")
+        return pd.Index(utils.dt64arr_hour(self.values_naive), name="hour")
 
     @property
-    def minute(self) -> Index[np.int64]:
+    def minute(self) -> pd.Index[np.int64]:
         """The minutes (0-59) `<'Index[int64]'>`."""
-        return Index(utils.dt64arr_minute(self.values_naive), name="minute")
+        return pd.Index(utils.dt64arr_minute(self.values_naive), name="minute")
 
     @property
-    def second(self) -> Index[np.int64]:
+    def second(self) -> pd.Index[np.int64]:
         """The seconds (0-59) `<'Index[int64]'>`."""
-        return Index(utils.dt64arr_second(self.values_naive), name="second")
+        return pd.Index(utils.dt64arr_second(self.values_naive), name="second")
 
     @property
-    def millisecond(self) -> Index[np.int64]:
+    def millisecond(self) -> pd.Index[np.int64]:
         """The milliseconds (0-999) `<'Index[int64]'>`."""
-        return Index(utils.dt64arr_millisecond(self.values_naive), name="millisecond")
+        return pd.Index(
+            utils.dt64arr_millisecond(self.values_naive), name="millisecond"
+        )
 
     @property
-    def microsecond(self) -> Index[np.int64]:
+    def microsecond(self) -> pd.Index[np.int64]:
         """The microseconds (0-999999) `<'Index[int64]'>`."""
-        return Index(utils.dt64arr_microsecond(self.values_naive), name="microsecond")
+        return pd.Index(
+            utils.dt64arr_microsecond(self.values_naive), name="microsecond"
+        )
 
     @property
-    def nanosecond(self) -> Index[np.int64]:
+    def nanosecond(self) -> pd.Index[np.int64]:
         """The nanoseconds (0-999) `<'Index[int64]'>`."""
-        return Index(utils.dt64arr_nanosecond(self.values_naive), name="nanosecond")
-
-    # . date&time
-    def is_first_of(self, unit: str) -> Index[bool]:
-        """Determine if the dates are on the first day of
-        the specified datetime unit `<'Index[bool]'>`.
-
-        :param unit `<'str'>`: The datetime unit.
-        - `'Y'`: Is on the first day of the current year.
-        - `'Q'`: Is on the first day of the current quarter.
-        - `'M'`: Is on the first day of the current month.
-        - `'W'`: Is on the first day (Monday) of the current week.
-        - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Is the first day of that month.
-        """
-        # To start of
-        pt_1st = self.to_first_of(unit)
-
-        # Compare dates
-        datesD_1st = utils.dt64arr_as_int64_D(pt_1st.values)  # int64[D]
-        datesD = utils.dt64arr_as_int64_D(self.values)  # int64[D]
-        arr = utils.arr_eq_arr(datesD, datesD_1st)
-        return Index(arr, name="is_first_of[%s]" % unit)
-
-    def is_last_of(self, unit: str) -> Index[bool]:
-        """Determine if the dates are on the last day of
-        the specified datetime unit `<'Index[bool]'>`.
-
-        :param unit `<'str'>`: The datetime unit.
-        - `'Y'`: Is on the last day of the current year.
-        - `'Q'`: Is on the last day of the current quarter.
-        - `'M'`: Is on the last day of the current month.
-        - `'W'`: Is on the last day (Sunday) of the current week.
-        - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Is the last day of that month.
-        """
-        # To last of
-        pt_lst = self.to_last_of(unit)
-
-        # Compare dates
-        datesD_lst = utils.dt64arr_as_int64_D(pt_lst.values)  # int64[D]
-        datesD = utils.dt64arr_as_int64_D(self.values)  # int64[D]
-        arr = utils.arr_eq_arr(datesD, datesD_lst)
-        return Index(arr, name="is_last_of[%s]" % unit)
-
-    def is_start_of(self, unit: str) -> Index[bool]:
-        """Determine if the datetimes are at the start of
-        the specified datetime unit `<'Index[bool]'>`.
-
-        :param unit `<'str'>`: The datetime unit.
-        - `'Y'`: Is on the first day of the current year at time '00:00:00.000000'.
-        - `'Q'`: Is on the first day of the current quarter at time '00:00:00.000000'.
-        - `'M'`: Is on the first day of the current month at time '00:00:00.000000'.
-        - `'W'`: Is on the first day (Monday) of the current week at time '00:00:00.000000'.
-        - `'D'`: Is at time '00:00:00.000000'.
-        - `'h'`: Is at time 'XX:00:00.000000'.
-        - `'m'`: Is at time 'XX:XX:00.000000'.
-        - `'s'`: Is at time 'XX:XX:XX.000000'.
-        - `'ms'`: Is at time 'XX:XX:XX.XXX000'.
-        - `'us'`: Always return `True`.
-        - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Is on the first day of that month at time '00:00:00.000000'.
-        - Weekday name (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`): Is on that weekday at time '00:00:00.000000'.
-        """
-        # To start of
-        pt_stt = self.to_start_of(unit)
-
-        # Compare datetimes
-        pt_stt_unit: str = pt_stt.unit
-        if pt_stt_unit == self.unit:
-            arr = utils.arr_eq_arr(self.values, pt_stt.values)
-        else:
-            arr = utils.arr_eq_arr(
-                utils.dt64arr_as_unit(self.values, pt_stt_unit), pt_stt.values
-            )
-        return Index(arr, name="is_start_of[%s]" % unit)
-
-    def is_end_of(self, unit: str) -> Index[bool]:
-        """Determine if the datetimes are at the end of
-        the specified datetime unit `<'Index[bool]'>`.
-
-        :param unit `<'str'>`: The datetime unit.
-        - `'Y'`: Is on the last day of the current year at time '23:59:59.999999'.
-        - `'Q'`: Is on the last day of the current quarter at time '23:59:59.999999'.
-        - `'M'`: Is on the last day of the current month at time '23:59:59.999999'.
-        - `'W'`: Is on the last day (Sunday) of the current week at time '23:59:59.999999'.
-        - `'D'`: Is at time '23:59:59.999999'.
-        - `'h'`: Is at time 'XX:59:59.999999'.
-        - `'m'`: Is at time 'XX:XX:59.999999'.
-        - `'s'`: Is at time 'XX:XX:XX.999999'.
-        - `'ms'`: Is at time 'XX:XX:XX.XXX999'.
-        - `'us'`: Always return `True`.
-        - Month name (e.g., `'Jan'`, `'February'`, `'三月'`): Is on the last day of that month at time '23:59:59.999999'.
-        - Weekday name (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`): Is on that weekday at time '23:59:59.999999'.
-        """
-        # To end of
-        pt_end = self.to_end_of(unit)
-
-        # Compare datetimes
-        pt_end_unit: str = pt_end.unit
-        if pt_end_unit == self.unit:
-            arr = utils.arr_eq_arr(self.values, pt_end.values)
-        else:
-            arr = utils.arr_eq_arr(
-                utils.dt64arr_as_unit(self.values, pt_end_unit), pt_end.values
-            )
-        return Index(arr, name="is_end_of[%s]" % unit)
+        return pd.Index(utils.dt64arr_nanosecond(self.values_naive), name="nanosecond")
 
     # Timezone -----------------------------------------------------------------------------
     @property
     def tz_available(self) -> set[str]:
         """The available timezone names `<'set[str]'>`.
 
-        ### Equivalent to:
+        ## Equivalent
         >>> zoneinfo.available_timezones()
         """
         return _available_timezones()
 
     def is_local(self) -> bool:
-        """Determine if the instance is in the local timezone `<'bool'>`.
+        """Check whether is in the local timezone `<'bool'>`.
 
-        #### Timezone-naive instance always returns `False`.
+        - Naive datetime index always return `False`.
         """
-        return self.tzinfo is utils.tz_local(None)
+        return self.tzinfo is utils.tz_local()
 
     def is_utc(self) -> bool:
-        """Determine if the instance is in the UTC timezone `<'bool'>`.
+        """Check whether is in the UTC timezone `<'bool'>`.
 
-        #### Timezone-naive instance always returns `False`.
+        - Naive datetime index always return `False`.
         """
         return self.tzinfo is utils.UTC
 
     def tzname(self) -> str:
-        """Return the timezone name of the instance `<'str/None'>`.
+        """Return the timezone name `<'str/None'>`.
 
-        #### Timezone-naive instance always returns `None`.
+        - Naive datetime index always return `None`.
         """
         my_tz = self.tzinfo
-        return None if my_tz is None else my_tz.tzname(self[0])
+        return None if my_tz is None else my_tz.tzname(utils.dt_now())
 
     def astimezone(
         self,
@@ -3608,52 +4317,51 @@ class Pddt(DatetimeIndex):
         ambiguous: object = "raise",
         nonexistent: object = "raise",
     ) -> Self:
-        """Convert the instance to the target timezone
-        (retaining the same point in UTC time). `<'Pddt'>`.
+        """Convert to another timezone `<'Pddt'>`.
 
-        #### Similar to `datetime.datetime.astimezone()`.
+        :param tz `<'tzinfo/str/None'>`: Target timezone. Defaults to `None`.
 
-        - If the instance is timezone-aware, converts to the target timezone directly.
-        - If the instance is timezone-naive, first localizes to the local timezone,
-          then converts to the targer timezone.
-
-        :param tz `<'str/tzinfo/None'>`: The target timezone to convert to, defaults to `None`.
+            - `<'None'>` the system `local` timezone is used.
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
             - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
-            - `<'None'>` Convert to local timezone.
 
-        :param ambiguous `<'str/ndarray'>`: How to handle ambiguous times, defaults to `'raise'`.
-            - `<'str'>` Accepts 'infer' or 'raise' for ambiguous times handling.
-            - `<'ndarray'>` A boolean array that specifies ambiguous times ('True' for DST time).
+        :param ambiguous `<'str/ndarray'>`: How to handle ambiguous times. Defaults to `'raise'`.
 
-        :param nonexistent `<'str/timedelta'>`: How to handle nonexistent times, defaults to `'raise'`.
-            - `<'str'>` Accepts 'shift_forward', 'shift_backward' or 'raise' for nonexistent times handling.
+            - `<'str'>` Accepts: `'infer'`, `'NaT'` or `'raise'` for ambiguous times handling.
+            - `<'ndarray'>` A boolean array that specifies ambiguous times (True for DST time).
+
+        :param nonexistent `<'str/timedelta'>`: How to handle nonexistent times. Defaults to `'raise'`.
+
+            - `<'str'>` Accepts `'shift_forward'`, `'shift_backward'`, `'NaT'` or `'raise'`
+                for nonexistent times handling.
             - `<'timedelta'>` An instance of timedelta to shift the nonexistent times.
-        """
-        # Adjust target timezone
-        tz = utils.tz_parse(tz)
-        my_tz = self.tzinfo
-        if tz is None:
-            tz = utils.tz_local(None)
-            if my_tz is None:
-                # Since instance is timezone-naive, we
-                # simply localize to local timezone.
-                return self.tz_localize(tz, ambiguous, nonexistent)
 
-        # Adjust my timezone
+        :returns `<'Pddt'>`: The resulting datetime index representing the `same` index
+            expressed in the target timezone. For naive datetime index and `tz is None`,
+            `localizes` the index to the system local zone.
+        """
+        # Resolve target timezone
+        to_tz = utils.tz_parse(tz)
+        my_tz = self.tzinfo
+        if to_tz is None:
+            to_tz = utils.tz_local()
+            # Fast-exit: naive + local -> localize
+            if my_tz is None:
+                return self.tz_localize(to_tz, ambiguous, nonexistent)
+
+        # Resolve my timezone
         if my_tz is None:
-            my_tz = utils.tz_local(None)
+            my_tz = utils.tz_local()
             pt = self.tz_localize(my_tz, ambiguous, nonexistent)
         else:
-            my_tz = utils.tz_parse(my_tz)
             pt = self
 
-        # Same timezone
-        if my_tz is tz:
-            return pt  # exit: same timezone
+        # Fast-exit: exact same timezone
+        if my_tz is to_tz:
+            return pt  # exit
 
-        # Convert timezone
-        return pt.tz_convert(tz)
+        # Convert to target timezone
+        return pt.tz_convert(to_tz)
 
     def tz_localize(
         self,
@@ -3661,78 +4369,112 @@ class Pddt(DatetimeIndex):
         ambiguous: object = "raise",
         nonexistent: object = "raise",
     ) -> Self:
-        """Localize timezone-naive instance to the specific timezone;
-        or timezone-aware instance to timezone naive (without moving
-        the time fields) `<'Pddt'>`.
+        """Localize timezone-naive datetime index to the target timezone;
+        or timezone-aware datetime index to timezone naive (without moving
+        the date & time fields) `<'Pddt'>`.
 
-        :param tz `<'tzinfo/str/None'>`: The timezone to localize to, defaults to `None`.
-            - `<'datetime.tzinfo'>` Subclass of datetime.tzinfo.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
+        :param tz `<'tzinfo/str/None'>`: Target timezone. Defaults to `None`.
+
             - `<'None'>` Localize to timezone-naive.
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
+            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
 
-        :param ambiguous `<'str/ndarray'>`: How to handle ambiguous times, defaults to `'raise'`.
-            - `<'str'>` Accepts 'infer' or 'raise' for ambiguous times handling.
-            - `<'ndarray'>` A boolean array that specifies ambiguous times ('True' for DST time).
+        :param ambiguous `<'str/ndarray'>`: How to handle ambiguous times. Defaults to `'raise'`.
 
-        :param nonexistent `<'str/timedelta'>`: How to handle nonexistent times, defaults to `'raise'`.
-            - `<'str'>` Accepts 'shift_forward', 'shift_backward' or 'raise' for nonexistent times handling.
+            - `<'str'>` Accepts: `'infer'`, `'NaT'` or `'raise'` for ambiguous times handling.
+            - `<'ndarray'>` A boolean array that specifies ambiguous times (True for DST time).
+
+        :param nonexistent `<'str/timedelta'>`: How to handle nonexistent times. Defaults to `'raise'`.
+
+            - `<'str'>` Accepts `'shift_forward'`, `'shift_backward'`, `'NaT'` or `'raise'`
+                for nonexistent times handling.
             - `<'timedelta'>` An instance of timedelta to shift the nonexistent times.
+
+        :returns `<'Pddt'>`: The resulting datetime index localized to the target timezone.
         """
         # Timezone-aware
         tz = utils.tz_parse(tz)
         my_tz = self.tzinfo
         if my_tz is not None:
             if tz is not None:
-                raise errors.InvalidTimezoneError(
-                    "instance is already timezone-aware.\n"
+                errors.raise_argument_error(
+                    self.__class__,
+                    "tz_localize(tz, ...)",
+                    "Datetime index is already timezone-aware.\n"
                     "Use 'tz_convert()' or 'tz_switch()' method "
-                    "to move to another timezone."
+                    "to convert to tge target timezone.",
                 )
-            # . localize: aware => naive
-            return super(Pddt, self).tz_localize(None)
+            # Localize: aware => naive
+            try:
+                return DatetimeIndex.tz_localize(self, None)
+            # fmt: off
+            except errors.PdOutOfBoundsDatetime as err:
+                errors.raise_error(errors.OutOfBoundsError, self.__class__, "tz_localize(...)", None, err)
+                return  # unreachable: suppress compiler warning
+            except (errors.PytzAmbiguousTimeError, errors.PytzNonExistentTimeError) as err:
+                errors.raise_error(errors.AmbiguousTimeError, self.__class__, "tz_localize(...)", None, err)
+                return  # unreachable: suppress compiler warning
+            except Exception as err:
+                errors.raise_argument_error(self.__class__, "tz_localize(...)", None, err)
+                return  # unreachable: suppress compiler warning
+            # fmt: on
 
         # Timezone-naive
         if tz is None:
-            return self  # exit: same timezone
-        else:
-            if ambiguous == "NaT":
-                raise errors.InvalidArgumentError("ambiguous='NaT' is not supported.")
-            if nonexistent == "NaT":
-                raise errors.InvalidArgumentError("nonexistent='NaT' is not supported.")
-        # . localize: naive => aware
+            return self  # exit
+
+        # Localize: naive => aware
         #: To prevent 'ns' overflow issue, we manually check if
         #: the values are in safe 'ns' range before localization.
-        if self.unit == "ns" and not utils.is_dt64arr_ns_safe(self.values, "ns"):
-            pt = self.as_unit("us")
-        else:
-            pt = self
+        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
         try:
-            return super(Pddt, pt).tz_localize(tz, ambiguous, nonexistent)
-        except pd_err.OutOfBoundsDatetime as err:
-            raise errors.OutOfBoundsDatetimeError(err) from err
+            if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+                self.values_naive, utils.DT_NPY_UNIT_NS
+            ):
+                # Cast to 'us' to prevent overflow
+                return DatetimeIndex.tz_localize(
+                    self.as_unit("us"), tz, ambiguous, nonexistent
+                )
+                # Localize in original resolution
+            else:
+                return DatetimeIndex.tz_localize(self, tz, ambiguous, nonexistent)
+        # fmt: off
+        except errors.PdOutOfBoundsDatetime as err:
+            errors.raise_error(errors.OutOfBoundsError, self.__class__, "tz_localize(...)", None, err)
+            return  # unreachable: suppress compiler warning
+        except (errors.PytzAmbiguousTimeError, errors.PytzNonExistentTimeError) as err:
+            errors.raise_error(errors.AmbiguousTimeError, self.__class__, "tz_localize(...)", None, err)
+            return  # unreachable: suppress compiler warning
         except Exception as err:
-            raise errors.InvalidArgumentError(err) from err
+            errors.raise_argument_error(self.__class__, "tz_localize(...)", None, err)
+            return  # unreachable: suppress compiler warning
+        # fmt: on
 
     def tz_convert(self, tz: datetime.tzinfo | str | None) -> Self:
-        """Convert timezone-aware instance to another timezone `<'Pddt'>`.
+        """Convert timezone-aware datetime index to another timezone `<'Pddt'>`.
 
-        :param tz `<'tzinfo/str/None'>`: The timezone to localize to, defaults to `None`.
-            - `<'datetime.tzinfo'>` Subclass of datetime.tzinfo.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
+        :param tz `<'tzinfo/str/None'>`: Target timezone. Defaults to `None`.
+
             - `<'None'>` Convert to UTC timezone and localize to timezone-naive.
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
+            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
+
+        :returns `<'Pddt'>`: The resulting datetime index representing the
+            `same` datetimes expressed in the target timezone.
         """
         # Validate
         my_tz = self.tzinfo
         if my_tz is None:
-            raise errors.InvalidTimezoneError(
-                "instance is timezone-naive.\n"
-                "Use 'tz_localize()' method instead to localize to a timezone.\n"
-                "Use 'tz_switch()' method to convert to the timezone by "
-                "providing a base timezone for the instance."
+            errors.raise_argument_error(
+                self._cls(),
+                "tz_convert(tz)",
+                "Datetime index is timezone-naive.\n"
+                "Use 'tz_localize()' method to localize timezone, or "
+                "use 'tz_switch()' method to convert to the target "
+                "timezone by providing a base timezone.",
             )
 
         # Same timezone
-        my_tz = utils.tz_parse(my_tz)
         tz = utils.tz_parse(tz)
         if my_tz is tz:
             return self
@@ -3740,16 +4482,27 @@ class Pddt(DatetimeIndex):
         # Convert: aware => aware
         #: To prevent 'ns' overflow issue, we manually check if
         #: the values are in safe 'ns' range before conversion.
-        if self.unit == "ns" and not utils.is_dt64arr_ns_safe(self.values_naive, "ns"):
-            pt = self.as_unit("us")  # cast to 'us' to prevent overflow
-        else:
-            pt = self
+        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
         try:
-            return super(Pddt, pt).tz_convert(tz)
-        except pd_err.OutOfBoundsDatetime as err:
-            raise errors.OutOfBoundsDatetimeError(err) from err
+            if my_reso == utils.DT_NPY_UNIT_NS and not utils.is_dt64arr_ns_safe(
+                self.values_naive, utils.DT_NPY_UNIT_NS
+            ):
+                # Cast to 'us' to prevent overflow
+                return DatetimeIndex.tz_convert(self.as_unit("us"), tz)
+            else:
+                # Convert in original resolution
+                return DatetimeIndex.tz_convert(self, tz)
+        # fmt: off
+        except errors.PdOutOfBoundsDatetime as err:
+            errors.raise_error(errors.OutOfBoundsError, self.__class__, "tz_convert(...)", None, err)
+            return  # unreachable: suppress compiler warning
+        except (errors.PytzAmbiguousTimeError, errors.PytzNonExistentTimeError) as err:
+            errors.raise_error(errors.AmbiguousTimeError, self.__class__, "tz_convert(...)", None, err)
+            return  # unreachable: suppress compiler warning
         except Exception as err:
-            raise errors.InvalidArgumentError(err) from err
+            errors.raise_argument_error(self.__class__, "tz_convert(...)", None, err)
+            return  # unreachable: suppress compiler warning
+        # fmt: on
 
     def tz_switch(
         self,
@@ -3759,103 +4512,126 @@ class Pddt(DatetimeIndex):
         ambiguous: object = "raise",
         nonexistent: object = "raise",
     ) -> Self:
-        """Switch (convert) the instance from base timezone to the target timezone `<'Pddt'>`.
+        """Switch (convert) the datetime index from base timezone to the target timezone `<'Pddt'>`.
 
         This method extends the functionality of `astimezone()` by allowing
-        user to specify a base timezone for timezone-naive instances before
+        user to specify a base timezone for timezone-naive index before
         converting to the target timezone.
 
-        - If the instance is timezone-aware, the 'base_tz' argument is `ignored`,
-          and this method behaves identically to `astimezone()`, converting the
-          instance to the target timezone.
-        - If the instance is timezone-naive, it first localizes the instance
-          to the `base_tz`, and then converts to the target timezone.
+        - If the datetime index is timezone-aware, the 'base_tz' argument is `ignored`,
+          and this method behaves identical to `astimezone()`: converting the index
+          to the target timezone.
+        - If the datetime index is timezone-naive, it first localizes the index
+          to the `base_tz` (required), and then converts to the target timezone.
 
-        :param targ_tz `<'tzinfo/str/None'>`: The target timezone to convert to.
-        :param base_tz `<'tzinfo/str/None'>`: The base timezone for timezone-naive instance, defaults to `None`.
-        :param naive `<'bool'>`: If 'True', returns timezone-naive instance after conversion, defaults to `False`.
-        :param ambiguous `<'str/ndarray'>`: How to handle ambiguous times, defaults to `'raise'`.
-            - `<'str'>` Accepts 'infer' or 'raise' for ambiguous times handling.
-            - `<'ndarray'>` A boolean array that specifies ambiguous times ('True' for DST time).
+        :param targ_tz `<'tzinfo/str/None'>`: The target timezone.
 
-        :param nonexistent `<'str/timedelta'>`: How to handle nonexistent times, defaults to `'raise'`.
-            - `<'str'>` Accepts 'shift_forward', 'shift_backward' or 'raise' for nonexistent times handling.
+        :param base_tz `<'tzinfo/str/None'>`: The base timezone for timezone-naive index. Defaults to `None`.
+
+        :param naive `<'bool'>`: If 'True', returns timezone-naive datetime index after conversion. Defaults to `False`.
+
+        :param ambiguous `<'str/ndarray'>`: How to handle ambiguous times. Defaults to `'raise'`.
+
+            - `<'str'>` Accepts: `'infer'`, `'NaT'` or `'raise'` for ambiguous times handling.
+            - `<'ndarray'>` A boolean array that specifies ambiguous times (True for DST time).
+
+        :param nonexistent `<'str/timedelta'>`: How to handle nonexistent times. Defaults to `'raise'`.
+
+            - `<'str'>` Accepts `'shift_forward'`, `'shift_backward'`, `'NaT'` or `'raise'`
+                for nonexistent times handling.
             - `<'timedelta'>` An instance of timedelta to shift the nonexistent times.
+
+        :returns `<'Pddt'>`: The resulting datetime index representing the
+            `same` datetimes expressed in the target timezone; optionally timezone-naive.
         """
         # Timezone-aware
-        targ_tz = utils.tz_parse(targ_tz)
+        to_tz = utils.tz_parse(targ_tz)
         my_tz = self.tzinfo
         if my_tz is not None:
             # . target timezone is None
-            if targ_tz is None:
+            if to_tz is None:
                 return self.tz_localize(None)
             # . target timezone is mytz
-            elif targ_tz is utils.tz_parse(my_tz):
+            elif to_tz is utils.tz_parse(my_tz):
                 return self.tz_localize(None) if naive else self
             # . mytz => target timezone
             else:
-                pt = self.tz_convert(targ_tz)
+                pt = self.tz_convert(to_tz)
                 return pt.tz_localize(None) if naive else pt
 
         # Timezone-naive
         # . target timezone is None
-        if targ_tz is None:
+        if to_tz is None:
             return self  # exit
-        # . base timezone is target timezone
+        # . base timezone is None
         base_tz = utils.tz_parse(base_tz)
         if base_tz is None:
-            raise errors.InvalidTimezoneError(
-                "instance is timezone-naive.\n"
-                "Cannot switch timezone-naive instance to the "
-                "target timezone without providing a 'base_tz'."
+            errors.raise_argument_error(
+                self.__class__,
+                "tz_switch(...)",
+                "Datetime index is timezone-naive.\n"
+                "Cannot convert timezone-naive datetime to the "
+                "target timezone without a base timezone (base_tz).",
             )
-        if base_tz is targ_tz:
-            return self if naive else self.tz_localize(targ_tz, ambiguous, nonexistent)
-        # . base timezone => target timezone
+        # . base timezone is target timezone
+        if base_tz is to_tz:
+            return self if naive else self.tz_localize(to_tz, ambiguous, nonexistent)
+        # . localize to base, then convert to target timezone
         else:
-            pt = self.tz_localize(base_tz, ambiguous, nonexistent)
-            pt = pt.tz_convert(targ_tz)
+            pt = self.tz_localize(base_tz, ambiguous, nonexistent).tz_convert(to_tz)
             return pt.tz_localize(None) if naive else pt
 
     # Values -------------------------------------------------------------------------------
     @property
     def values_naive(self) -> np.ndarray[np.datetime64]:
-        """Return an array of the timezone-naive datetime values `<'ndarray[datetime64]'>`.
+        """Returns an array of the `timezone-naive` datetimes
+        (underlying data) in the index `<'ndarray[datetime64]'>`.
 
-        - If the instance is timezone-aware, equivalent to 'pt.tz_localize(None).values'.
-        - If the instance is timezone-naive, equivalent to 'pt.values'.
+        ## Behavior
+        - If index is timezone-naive or `UTC`, equivalent to `pt.values`.
+        - If index is timezone-aware, equivalent to `pt.tz_localize(None).values`.
         """
-        my_tz = self.tzinfo
-        if my_tz is None or my_tz is utils.UTC:
+        tz: object = self.tzinfo
+        if tz is None or tz is utils.UTC:
             return self.values
-        return super(Pddt, self).tz_localize(None).values
+        else:
+            return DatetimeIndex.tz_localize(self, None).values
 
-    def as_unit(self, unit: str) -> Self:
-        """Set the datetime unit resolution of the instance `<'Pddt'>`.
+    def as_unit(self, as_unit: str) -> Self:
+        """Convert index to the given unit resolution `<'Pddt'>`.
 
-        #### Supports timezone-aware instance.
+        :param as_unit `<'str'>`: The target datetime unit resolution.
+            Supports: `'s', 'ms', 'us', 'ns'`.
 
-        :param unit `<'str/None'>`: Set the datetime unit.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
+        :returns `<'Pddt'>`: Index with the specified datetime unit.
         """
-        # No change / Same unit
-        if unit is None:
-            return self  # exit
-        my_unit: str = self.unit
-        if unit == my_unit:
-            return self  # exit
-
-        # Access datetime array & info
-        arr: np.ndarray = self.values_naive
-
-        # Perform operation
+        # Validate units
         try:
-            res: np.ndarray = utils.dt64arr_as_unit(arr, unit, my_unit, True)
+            as_reso: cython.int = utils.nptime_unit_str2int(as_unit)
         except Exception as err:
-            raise errors.InvalidTimeUnitError(err) from err
-        if arr is res:
-            return self
-        return pddt_new_simple(res, self.tzinfo, None, self.name)
+            raise errors.InvalidArgumentError(
+                "<'%s'> Invalid 'as_unit' input.\n"
+                "Supports: 's', 'ms', 'us' and 'ns'; got %r."
+                % (self.__class__.__name__, as_unit)
+            ) from err
+        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
+
+        # Fast-path: same unit
+        if my_reso == as_reso:
+            return self  # exit
+
+        # Convert unit
+        arr: np.ndarray = self.values_naive
+        try:
+            out: np.ndarray = utils.dt64arr_as_unit(arr, as_unit, my_reso, True, True)
+        except Exception as err:
+            errors.raise_argument_error(self.__class__, "as_unit", None, err)
+            return  # unreachable: suppress compiler warning
+        if arr is out:
+            return self  # exit
+
+        # New instance
+        return self._new(out, tz=self.tzinfo, name=self.name)
 
     # Arithmetic ---------------------------------------------------------------------------
     def add(
@@ -3872,21 +4648,22 @@ class Pddt(DatetimeIndex):
         microseconds: cython.int = 0,
         nanoseconds: cython.int = 0,
     ) -> Self:
-        """Add relative delta to the instance `<'Pddt'>`.
+        """Add relative delta to the datetime index `<'Pddt'>`.
 
-        :param years `<'int'>`: Relative delta of years, defaults to `0`.
-        :param quarters `<'int'>`: Relative delta of quarters (3 months), defaults to `0`.
-        :param months `<'int'>`: Relative delta of months, defaults to `0`.
-        :param weeks `<'int'>`: Relative delta of weeks (7 days), defaults to `0`.
-        :param days `<'int'>`: Relative delta of days, defaults to `0`.
-        :param hours `<'int'>`: Relative delta of hours, defaults to `0`.
-        :param minutes `<'int'>`: Relative delta of minutes, defaults to `0`.
-        :param seconds `<'int'>`: Relative delta of seconds, defaults to `0`.
-        :param milliseconds `<'int'>`: Relative delta of milliseconds, defaults to `0`.
-        :param microseconds `<'int'>`: Relative delta of microseconds, defaults to `0`.
-        :param nanoseconds `<'int'>`: Relative delta of nanoseconds, defaults to `0`.
+        :param years `<'int'>`: Relative years. Defaults to `0`.
+        :param quarters `<'int'>`: Relative quarters (3 months). Defaults to `0`.
+        :param months `<'int'>`: Relative months. Defaults to `0`.
+        :param weeks `<'int'>`: Relative weeks (7 days). Defaults to `0`.
+        :param days `<'int'>`: Relative days. Defaults to `0`.
+        :param hours `<'int'>`: Relative hours. Defaults to `0`.
+        :param minutes `<'int'>`: Relative minutes. Defaults to `0`.
+        :param seconds `<'int'>`: Relative seconds. Defaults to `0`.
+        :param milliseconds `<'int'>`: Relative milliseconds (`1000 us`). Defaults to `0`.
+        :param microseconds `<'int'>`: Relative microseconds. Defaults to `0`.
+        :param nanoseconds `<'int'>`: Relative nanoseconds. Defaults to `0`.
+        :returns `<'Pddt'>`: The resulting datetime index after adding the relative delta.
         """
-        # No change
+        # Fast-path: no change
         if (
             years == 0
             and quarters == 0
@@ -3904,81 +4681,19 @@ class Pddt(DatetimeIndex):
 
         # Access datetime array & info
         arr: np.ndarray = self.values_naive
-        my_unit: str = self.unit
-        my_unit_ch: cython.Py_UCS4 = str_read(my_unit, 0)
-        delta: np.ndarray
+        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
 
-        # Adjust dates
-        if years != 0 or quarters != 0 or months != 0:
-            datesM = utils.dt64arr_as_int64_M(arr, my_unit)  # int64[M]
-            datesM = utils.arr_add(datesM, years * 12 + quarters * 3 + months)
-            datesD = utils.dt64arr_as_int64_D(datesM, "M")  # int64[D]
-            delta = utils.dt64arr_day(arr, my_unit)  # original day
-            datesD = utils.arr_add_arr(datesD, delta, weeks * 7 + days - 1)  # int64[D]
-        else:
-            datesD = utils.dt64arr_as_int64_D(arr, my_unit)  # int64[D]
-            datesD = utils.arr_add(datesD, weeks * 7 + days)  # int64[D]
+        # Add delta
+        # fmt: off
+        out = utils.dt64arr_add_delta(arr,
+            years, quarters, months, weeks, days, hours, minutes, 
+            seconds, milliseconds, microseconds, nanoseconds,
+            my_reso
+        )
+        # fmt: on
 
-        # Adjust times
-        times: np.ndarray = utils.dt64arr_times(arr, my_unit)  # int64[my_unit]
-        # . nanosecond
-        if my_unit_ch == "n":
-            if (
-                hours != 0
-                or minutes != 0
-                or seconds != 0
-                or milliseconds != 0
-                or microseconds != 0
-                or nanoseconds != 0
-            ):
-                times = utils.arr_add(  # int64[ns]
-                    times,
-                    (hours * 3600 + minutes * 60 + seconds) * utils.NS_SECOND
-                    + milliseconds * utils.NS_MILLISECOND
-                    + microseconds * utils.NS_MICROSECOND
-                    + nanoseconds,
-                )
-                delta = utils.arr_div_floor(times, utils.NS_DAY)  # int64[D]
-                delta = utils.arr_add_arr(datesD, delta)  # int64[D]
-            else:
-                delta = datesD  # int64[D]
-            # Prevent 'ns' overflow: cast to 'us'
-            if not utils.is_dt64arr_ns_safe(delta, "D"):
-                times = utils.arr_div_floor(times, utils.NS_MICROSECOND)  # int64[us]
-                my_unit = "us"  # change to 'us' from 'ns'
-        # . microsecond
-        elif my_unit_ch == "u":
-            times = utils.arr_add(  # int64[us]
-                times,
-                (hours * 3600 + minutes * 60 + seconds) * utils.US_SECOND
-                + milliseconds * utils.US_MILLISECOND
-                + microseconds
-                + utils.math_div_even(nanoseconds, utils.NS_MICROSECOND),
-            )
-        # . millisecond
-        elif my_unit_ch == "m":
-            times = utils.arr_add(  # int64[ms]
-                times,
-                (hours * 3600 + minutes * 60 + seconds) * utils.MS_SECOND
-                + milliseconds
-                + utils.math_div_even(microseconds, utils.US_MILLISECOND)
-                + utils.math_div_even(nanoseconds, utils.NS_MILLISECOND),
-            )
-        # . second
-        elif my_unit_ch == "s":
-            times = utils.arr_add(  # int64[s]
-                times,
-                (hours * 3600 + minutes * 60 + seconds)
-                + utils.math_div_even(milliseconds, utils.MS_SECOND)
-                + utils.math_div_even(microseconds, utils.US_SECOND)
-                + utils.math_div_even(nanoseconds, utils.NS_SECOND),
-            )
-
-        # Combine dates & times
-        dtype = utils.map_nptime_unit_str2dt64(my_unit)
-        dates = utils.dt64arr_as_int64(datesD, my_unit, "D")  # int64[my_unit]
-        arr = utils.arr_add_arr(dates, times).astype(dtype)  # dt64[my_unit]
-        return pddt_new_simple(arr, self.tzinfo, None, self.name)
+        # New instance
+        return self._new(out, tz=self.tzinfo, name=self.name)
 
     def sub(
         self,
@@ -3994,101 +4709,131 @@ class Pddt(DatetimeIndex):
         microseconds: cython.int = 0,
         nanoseconds: cython.int = 0,
     ) -> Self:
-        """Substract relative delta from the instance `<'Pddt'>`.
+        """Subtract relative delta from the datetime index `<'Pddt'>`.
 
-        :param years `<'int'>`: Relative delta of years, defaults to `0`.
-        :param quarters `<'int'>`: Relative delta of quarters (3 months), defaults to `0`.
-        :param months `<'int'>`: Relative delta of months, defaults to `0`.
-        :param weeks `<'int'>`: Relative delta of weeks (7 days), defaults to `0`.
-        :param days `<'int'>`: Relative delta of days, defaults to `0`.
-        :param hours `<'int'>`: Relative delta of hours, defaults to `0`.
-        :param minutes `<'int'>`: Relative delta of minutes, defaults to `0`.
-        :param seconds `<'int'>`: Relative delta of seconds, defaults to `0`.
-        :param milliseconds `<'int'>`: Relative delta of milliseconds, defaults to `0`.
-        :param microseconds `<'int'>`: Relative delta of microseconds, defaults to `0`.
-        :param nanoseconds `<'int'>`: Relative delta of nanoseconds, defaults to `0`.
+        :param years `<'int'>`: Relative years. Defaults to `0`.
+        :param quarters `<'int'>`: Relative quarters (3 months). Defaults to `0`.
+        :param months `<'int'>`: Relative months. Defaults to `0`.
+        :param weeks `<'int'>`: Relative weeks (7 days). Defaults to `0`.
+        :param days `<'int'>`: Relative days. Defaults to `0`.
+        :param hours `<'int'>`: Relative hours. Defaults to `0`.
+        :param minutes `<'int'>`: Relative minutes. Defaults to `0`.
+        :param seconds `<'int'>`: Relative seconds. Defaults to `0`.
+        :param milliseconds `<'int'>`: Relative milliseconds (`1000 us`). Defaults to `0`.
+        :param microseconds `<'int'>`: Relative microseconds. Defaults to `0`.
+        :param nanoseconds `<'int'>`: Relative nanoseconds. Defaults to `0`.
+        :returns `<'Pddt'>`: The resulting datetime index after subtracting the relative delta.
         """
+        # Fast-path: no change
+        if (
+            years == 0
+            and quarters == 0
+            and months == 0
+            and weeks == 0
+            and days == 0
+            and hours == 0
+            and minutes == 0
+            and seconds == 0
+            and milliseconds == 0
+            and microseconds == 0
+            and nanoseconds == 0
+        ):
+            return self  # exit
+
+        # Access datetime array & info
+        arr: np.ndarray = self.values_naive
+        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
+
+        # Sub delta
         # fmt: off
-        return self.add(
-            -years, -quarters, -months, -weeks, -days,
-            -hours, -minutes, -seconds, -milliseconds,
-            -microseconds, -nanoseconds
+        out = utils.dt64arr_add_delta(arr,
+            -years, -quarters, -months, -weeks, -days, -hours, -minutes, 
+            -seconds, -milliseconds, -microseconds, -nanoseconds,
+            my_reso
         )
         # fmt: on
+
+        # New instance
+        return self._new(out, tz=self.tzinfo, name=self.name)
 
     def diff(
         self,
         data: object,
         unit: str,
         absolute: cython.bint = False,
-        inclusive: str = "both",
+        inclusive: str = "one",
     ) -> np.ndarray[np.int64]:
-        """Calculate the difference between the instance and
-        another datetime-like data `<'np.ndarray[int64]'>`.
+        """Compute the delta difference between the instance and another datetime-like data `<'int'>`.
 
-        The differences are computed in the specified datetime 'unit'
-        and adjusted based on the 'inclusive' argument to determine
-        the inclusivity of the start and end times.
+        The delta are computed in the specified datetime 'unit' and
+        adjusted based on the 'inclusive' argument to determine the
+        inclusivity of the start and end times.
 
         :param data `<'object'>`: Datetime-like data.
-            - `<'Array-Like'>` An array-like object containing datetime information.
-            - `<'str'>` A datetime string containing datetime information.
-            - `<'datetime.datetime'>` An instance of `datetime.datetime`.
-            - `<'datetime.date'>` An instance of `datetime.date` (time fields set to 0).
-            - `<'np.datetime64'>` An instance of `np.datetime64`.
-            - `<'None'>` Current datetime with the same timezone of the instance.
 
-        :param unit `<'str'>`: The datetime unit for calculating the difference.
-            Supports: 'Y', 'Q', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us', 'ns'
+            - `<'Array-Like'>`          → An array-like (1-dimensional) data containing datetime information.
+                                          such as: `list`, `np.ndarray`, `DatetimeIndex`, `Pddt`, etc.
+                                          Must contains the exact number of elements as the instance.
+            - `<'str'>`                 → A datetime string.
+            - `<'datetime.datetime'>`   → An instance or subclass of `datetime.datetime`.
+            - `<'datetime.date'>`       → An instance or subclass of `datetime.date` (time fields set to 0).
+            - `<'np.datetime64'>`       → An instance of `np.datetime64`.
 
-        :param absolute `<'bool'>`: If 'True', compute the absolute difference, defaults to `False`.
+        :param unit `<'str'>`: The unit to compute the delta difference.
+            Supports: `'Y', 'Q', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us', 'ns'`.
 
-        :param inclusive `<'str'>`: Specifies the inclusivity of the start and end times, defaults to `'both'`.
-            - `'one'`: Include either the start or end time.
-            - `'both'`: Include both the start and end times.
-            - `'neither'`: Exclude both the start and end times.
+        :param absolute `<'bool'>`: If 'True', compute the absolute difference. Defaults to `False`.
+
+        :param inclusive `<'str'>`: Specifies the inclusivity of the start and end times. Defaults to `'one'`.
+
+            - `'one'`     → Include either the start or end time → `(a - b)`
+            - `'both'`:   → Include both the start and end times → `(a - b) + 1 (offset)`
+            - `'neither'` → Exclude both the start and end times → `(a - b) - 1 (offset)`
+
+        :returns `<'np.ndarray[int64]'>`: The delta difference between the instance
+            and `data` in the specified `unit`, adjusted for inclusivity.
         """
-        # Access 'my' datetime array & info
+        # Parse 'data' into datetime index
         my_arr: np.ndarray = self.values
-        my_unit: str = self.unit
-        my_tz = self.tzinfo
-        arr_size: cython.Py_ssize_t = my_arr.shape[0]
-
-        # Parse dtobjs to Pddt
-        if data is None:
-            pt = self.now(my_tz, arr_size)
-        elif isinstance(data, (str, datetime.date, np.datetime64)):
-            pt = Pddt([data])
-        elif isinstance(data, Pddt):
+        my_size: cython.Py_ssize_t = my_arr.shape[0]
+        if isinstance(data, Pddt):
             pt = data
+        elif isinstance(data, (str, datetime.date, np.datetime64)):
+            pt = Pddt.fromdatetime(data, size=my_size)
+        elif isinstance(data, (int, float)):
+            pt = Pddt.fromseconds(data, size=my_size)
         else:
-            pt = Pddt(data)
+            try:
+                pt = Pddt(data)
+            except Exception as err:
+                errors.raise_argument_error(
+                    self.__class__,
+                    "diff(data, ...)",
+                    "Cannot parse 'data' into datetime index.",
+                    err,
+                )
+                return  # unreachable: suppress compiler warning
 
-        # Access 'pt' datetime array & info
+        # Check array size
         pt_arr: np.ndarray = pt.values
-        pt_unit: str = pt.unit
-        pt_tz = pt.tzinfo
-
-        # Validate two arrays
-        # . shape
-        if arr_size != pt_arr.shape[0]:
-            raise errors.IncomparableError(
-                "cannot compare between arrays with different shapes ['%d' vs '%d']."
-                % (arr_size, pt_arr.shape[0])
+        if my_size != pt_arr.shape[0]:
+            errors.raise_argument_error(
+                self.__class__,
+                "diff(data, ...)",
+                "Cannot compare datetime indexes with different length: '%d' vs '%d'."
+                % (my_size, pt_arr.shape[0]),
             )
-        # . tzinfo
-        if my_tz is not pt_tz and (my_tz is None or pt_tz is None):
-            _raise_incomparable_error(self, pt, "calcuate average")
-        # . unit
-        my_unit_int = utils.map_nptime_unit_str2int(my_unit)
-        pt_unit_int = utils.map_nptime_unit_str2int(pt_unit)
-        if my_unit_int != pt_unit_int:
-            # Cast to lower resolution
-            if my_unit_int < pt_unit_int:
-                pt_arr = utils.dt64arr_as_int64(pt_arr, my_unit, pt_unit)  # int64
-            else:
-                my_arr = utils.dt64arr_as_int64(my_arr, pt_unit, my_unit)  # int64
-                my_unit = pt_unit  # change my_unit to pt_unit
+
+        # Check timezone parity
+        my_tz = self.tzinfo
+        pt_tz = pt.tzinfo
+        if (my_tz is not None) != (pt_tz is not None):
+            errors.raise_error(
+                errors.MixedTimezoneError,
+                self.__class__,
+                "diff(data, ...)",
+                "Cannot compare naive and aware datetime indexes",
+            )
 
         # Handle inclusive
         if inclusive == "both":
@@ -4098,184 +4843,106 @@ class Pddt(DatetimeIndex):
         elif inclusive == "neither":
             incl_off: cython.int = -1
         else:
-            raise errors.InvalidArgumentError(
-                "invalid input '%s' for inclusive.\n"
-                "Supports: ['one', 'both', 'neither']." % inclusive
+            errors.raise_argument_error(
+                self.__class__,
+                "diff(..., inclusive)",
+                "Supports: 'one', 'both' or 'neither'; got '%s'." % inclusive,
+            )
+            return  # unreachable: suppress compiler warning
+
+        # Validate delta 'unit'
+        if unit is None:
+            errors.raise_argument_error(
+                self.__class__,
+                "diff(..., unit)",
+                "Delta 'unit' cannot be None.",
+            )
+        unit_len: cython.Py_ssize_t = str_len(unit)
+        if unit_len == 0:
+            errors.raise_argument_error(
+                self.__class__,
+                "diff(..., unit)",
+                "Delta 'unit' cannot be an empty string.",
             )
 
-        # Calculate difference
-        if unit == "W":
-            my_arr = utils.dt64arr_as_iso_W(my_arr, 1, my_unit)  # int64[W]
-            pt_arr = utils.dt64arr_as_iso_W(pt_arr, 1, my_unit)  # int64[W]
-        else:
-            my_arr = utils.dt64arr_as_int64(my_arr, unit, my_unit)  # int64[unit]
-            pt_arr = utils.dt64arr_as_int64(pt_arr, unit, my_unit)  # int64[unit]
-        arr = utils.arr_sub_arr(my_arr, pt_arr)
+        # Calculate delta -> int64
+        try:
+            # . convert to int64[W] on monday
+            if unit_len == 1 and str_read(unit, 0) == "W":
+                my_arr = utils.dt64arr_as_W_iso(my_arr, 1, -1, 0, True)
+                pt_arr = utils.dt64arr_as_W_iso(pt_arr, 1, -1, 0, True)
+            # . convert to int64[unit]
+            else:
+                my_arr = utils.dt64arr_as_int64(my_arr, unit, -1, 0, True)
+                pt_arr = utils.dt64arr_as_int64(pt_arr, unit, -1, 0, True)
+        except Exception as err:
+            errors.raise_argument_error(self.__class__, "diff(..., unit)", None, err)
+            return  # unreachable: suppress compiler warning
+        # . compute relative delta
+        delta = utils.arr_sub_arr(my_arr, pt_arr, 0, False)
+
+        # Adjust for inclusivity
         # . absolute = True
         if absolute:
-            arr = utils.arr_abs(arr, incl_off)
-        # . absolute = False | adj offset
+            delta = utils.arr_abs(delta, incl_off, False)
+        # . absolute = False & inclusive offset
         elif incl_off != 0:
-            i: np.npy_int64
-            arr_ptr = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(arr))
-            for i in range(arr_size):
-                val: np.npy_int64 = arr_ptr[i]
-                arr_ptr[i] = val - incl_off if val < 0 else val + incl_off
-        return Index(arr, name="diff")
+            delta_p = cython.cast(cython.pointer(np.npy_int64), np.PyArray_DATA(delta))
+            i: cython.Py_ssize_t
+            for i in range(my_size):
+                # Preserve NaT
+                v: np.npy_int64 = delta_p[i]
+                if v == utils.LLONG_MIN:
+                    continue
+                # Adjust offset
+                delta_p[i] = v - incl_off if v < 0 else v + incl_off
+
+        # Finished
+        return pd.Index(delta, name="diff")
 
     # Comparison ---------------------------------------------------------------------------
-    def is_past(self) -> Index[bool]:
-        """Determine if the datetimes are in the past `<'Index[bool]'>`."""
-        # Access datetime array & info
-        arr: np.ndarray = self.values
-        my_tz = self.tzinfo
-        my_unit: str = self.unit
-        my_unit_ch: cython.Py_UCS4 = str_read(my_unit, 0)
+    def is_past(self) -> pd.Index[bool]:
+        """Element-wise check whether datetimes are in the past `<'Index[bool]'>`.
 
-        # Generate current datetime
-        dt = utils.dt_now(my_tz)
-        dt_val: cython.longlong = utils.dt_to_us(dt, True)
-        if my_unit_ch == "n":
-            dt_val *= utils.NS_MICROSECOND
-        elif my_unit_ch == "m":
-            dt_val = utils.math_div_floor(dt_val, utils.US_MILLISECOND)
-        elif my_unit_ch == "s":
-            dt_val = utils.math_div_floor(dt_val, utils.US_SECOND)
+        ## Equivalent
+        >>> self < datetime.datetime.now(self.tzinfo)
+        """
+        # Get current datetime in the same timezone
+        dt: datetime.datetime = utils.dt_now(self.tzinfo, None)
+
+        # Convert to the same resolution
+        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
+        tic: cython.longlong = utils.dt_to_us(dt, True)
+        if my_reso == utils.DT_NPY_UNIT_NS:
+            tic *= utils.NS_MICROSECOND
+        elif my_reso == utils.DT_NPY_UNIT_MS:
+            tic = utils.math_div_even(tic, utils.US_MILLISECOND)
+        elif my_reso == utils.DT_NPY_UNIT_SS:
+            tic = utils.math_div_even(tic, utils.US_SECOND)
+        #: else 'us' -> as-is
 
         # Compare
-        arr = utils.arr_lt(arr, dt_val)
-        return Index(arr, name="is_past")
+        return pd.Index(utils.arr_lt(self.values, tic), name="is_past")
 
-    def is_future(self) -> Index[bool]:
-        """Determine if the datetimes are in the future `<'Index[bool]'>`."""
-        # Access datetime array & info
-        arr: np.ndarray = self.values
-        my_tz = self.tzinfo
-        my_unit: str = self.unit
-        my_unit_ch: cython.Py_UCS4 = str_read(my_unit, 0)
+    def is_future(self) -> pd.Index[bool]:
+        """Element-wise check whether datetimes are in the future `<'Index[bool]'>`.
 
-        # Generate current datetime
-        dt = utils.dt_now(my_tz)
-        dt_val: cython.longlong = utils.dt_to_us(dt, True)
-        if my_unit_ch == "n":
-            dt_val *= utils.NS_MICROSECOND
-        elif my_unit_ch == "m":
-            dt_val = utils.math_div_floor(dt_val, utils.US_MILLISECOND)
-        elif my_unit_ch == "s":
-            dt_val = utils.math_div_floor(dt_val, utils.US_SECOND)
+        ## Equivalent
+        >>> self > datetime.datetime.now(self.tzinfo)
+        """
+        # Get current datetime in the same timezone
+        dt: datetime.datetime = utils.dt_now(self.tzinfo, None)
+
+        # Convert to the same resolution
+        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
+        tic: cython.longlong = utils.dt_to_us(dt, True)
+        if my_reso == utils.DT_NPY_UNIT_NS:
+            tic *= utils.NS_MICROSECOND
+        elif my_reso == utils.DT_NPY_UNIT_MS:
+            tic = utils.math_div_even(tic, utils.US_MILLISECOND)
+        elif my_reso == utils.DT_NPY_UNIT_SS:
+            tic = utils.math_div_even(tic, utils.US_SECOND)
+        #: else 'us' -> as-is
 
         # Compare
-        arr = utils.arr_gt(arr, dt_val)
-        return Index(arr, name="is_future")
-
-    def closest(self, data: object) -> Self:
-        """Find the closest datetime to each of the instance values `<'Pddt'>`.
-
-        This method compares each elements of the instance with the
-        provided datetime-like data and returns the closest datetime
-        (from 'data') to each of the instance values.
-
-        :param data `<'object'>`: Datetime-like data.
-            - `<'Array-Like'>` An array-like object containing datetime information.
-            - `<'str'>` A datetime string containing datetime information.
-            - `<'datetime.datetime'>` An instance of `datetime.datetime`.
-            - `<'datetime.date'>` An instance of `datetime.date` (time fields set to 0).
-            - `<'np.datetime64'>` An instance of `np.datetime64`.
-            - `<'None'>` Current datetime with the same timezone of the instance.
-        """
-        # Access 'my' datetime array & info
-        my_arr: np.ndarray = self.values_naive
-        my_unit: str = self.unit
-        my_tz = self.tzinfo
-        arr_size: cython.Py_ssize_t = my_arr.shape[0]
-
-        # Parse dtobjs to Pddt
-        if data is None:
-            pt = self.now(my_tz, arr_size)
-        elif isinstance(data, (str, datetime.date, np.datetime64)):
-            pt = Pddt([data])
-        elif isinstance(data, Pddt):
-            pt = data
-        else:
-            pt = Pddt(data)
-
-        # Access 'pt' datetime array & info
-        pt_arr: np.ndarray = pt.values_naive
-        pt_unit: str = pt.unit
-        pt_tz = pt.tzinfo
-
-        # Validate arrays
-        # . tzinfo
-        if my_tz is not pt_tz and (my_tz is None or pt_tz is None):
-            _raise_incomparable_error(self, pt, "find closest")
-        # . unit
-        my_unit_int = utils.map_nptime_unit_str2int(my_unit)
-        pt_unit_int = utils.map_nptime_unit_str2int(pt_unit)
-        if my_unit_int != pt_unit_int:
-            # Cast to lower resolution
-            if my_unit_int < pt_unit_int:
-                pt_arr = utils.dt64arr_as_int64(pt_arr, my_unit, pt_unit)  # int64
-            else:
-                my_arr = utils.dt64arr_as_int64(my_arr, pt_unit, my_unit)  # int64
-                my_unit = pt_unit  # change my_unit to pt_unit
-
-        # Find closest
-        arr = utils.dt64arr_find_closest(my_arr, pt_arr)
-        arr = arr.astype(utils.map_nptime_unit_str2dt64(my_unit))
-        return pddt_new_simple(arr, pt_tz, None, "closest")
-
-    def farthest(self, dtobjs: object) -> Self:
-        """Find the farthest datetime to each of the instance values `<'Pddt'>`.
-
-        This method compares each elements of the instance with the
-        provided datetime-like data and returns the farthest datetime
-        (from 'data') to each of the instance values.
-
-        :param data `<'object'>`: Datetime-like data.
-            - `<'Array-Like'>` An array-like object containing datetime information.
-            - `<'str'>` A datetime string containing datetime information.
-            - `<'datetime.datetime'>` An instance of `datetime.datetime`.
-            - `<'datetime.date'>` An instance of `datetime.date` (time fields set to 0).
-            - `<'np.datetime64'>` An instance of `np.datetime64`.
-            - `<'None'>` Current datetime with the same timezone of the instance.
-        """
-        # Access 'my' datetime array & info
-        my_arr: np.ndarray = self.values_naive
-        my_unit: str = self.unit
-        my_tz = self.tzinfo
-        arr_size: cython.Py_ssize_t = my_arr.shape[0]
-
-        # Parse dtobjs to Pddt
-        if dtobjs is None:
-            pt = self.now(my_tz, arr_size)
-        elif isinstance(dtobjs, (str, datetime.date, np.datetime64)):
-            pt = Pddt([dtobjs])
-        elif isinstance(dtobjs, Pddt):
-            pt = dtobjs
-        else:
-            pt = Pddt(dtobjs)
-
-        # Access 'pt' datetime array & info
-        pt_arr: np.ndarray = pt.values_naive
-        pt_unit: str = pt.unit
-        pt_tz = pt.tzinfo
-
-        # Validate arrays
-        # . tzinfo
-        if my_tz is not pt_tz and (my_tz is None or pt_tz is None):
-            _raise_incomparable_error(self, pt, "find farthest")
-        # . unit
-        my_unit_int = utils.map_nptime_unit_str2int(my_unit)
-        pt_unit_int = utils.map_nptime_unit_str2int(pt_unit)
-        if my_unit_int != pt_unit_int:
-            # Cast to lower resolution
-            if my_unit_int < pt_unit_int:
-                pt_arr = utils.dt64arr_as_int64(pt_arr, my_unit, pt_unit)  # int64
-            else:
-                my_arr = utils.dt64arr_as_int64(my_arr, pt_unit, my_unit)  # int64
-                my_unit = pt_unit  # change my_unit to pt_unit
-
-        # Find farthest
-        arr = utils.dt64arr_find_farthest(my_arr, pt_arr)
-        arr = arr.astype(utils.map_nptime_unit_str2dt64(my_unit))
-        return pddt_new_simple(arr, pt_tz, None, "farthest")
+        return pd.Index(utils.arr_gt(self.values, tic), name="is_future")

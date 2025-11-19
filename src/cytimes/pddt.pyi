@@ -1,80 +1,39 @@
-from typing import Literal, Hashable
+from typing import Any, Literal, Hashable
+from typing_extensions import Self, TypeVar
+import datetime
+import numpy as np
+import pandas as pd
+from pandas._typing import Scalar
 from pandas._libs import lib
-import datetime, numpy as np, pandas as pd
-from typing_extensions import Self
+from cytimes.pydt import Pydt
 from cytimes.parser import Configs
+from cytimes.utils import SENTINEL
+
+# Types
+DatetimeLike = TypeVar("DatetimeLike", bound=str | datetime.date | np.datetime64)
+ArrayLike = TypeVar("ArrayLike", bound=list | tuple | np.ndarray | pd.Series | pd.Index)
 
 # Pddt
 class Pddt(pd.DatetimeIndex):
-    def __init__(
-        self,
-        data: object,
-        freq: str | datetime.timedelta | pd.offsets.BaseOffset | None = None,
-        tz: datetime.tzinfo | str | None = None,
-        ambiguous: np.ndarray | Literal["infer", "raise"] = "raise",
-        year1st: bool | None = None,
-        day1st: bool | None = None,
-        cfg: Configs | None = None,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
-        name: Hashable | None = None,
-        copy: bool = False,
-    ) -> Self:
-        """A drop-in replacement for Pandas `<'DatetimeIndex'>`
-        class, providing additional functionalities for more
-        convenient datetime operations.
-
-        :param data `<'object'>`: Datetime-like data to construct with.
-
-        :param freq `<'str/timedelta/BaseOffset/None'>`: The frequency of the 'data', defaults to `None`.
-            - `<'str'>` A frequency string (e.g. 'D', 'h', 's', 'ms'), or 'infer' for auto-detection.
-            - `<'timedelta'>` A datetime.timedelta instance representing the frequency.
-            - `<'BaseOffset'>` A pandas Offset instance representing the frequency.
-            - `<'None'>` No specified frequency.
-
-        :param tz `<'str/tzinfo/None'>`: Set the timezone of the index, defaults to `None`.
-            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
-            - `<'str'>` Timezone name supported by the 'Zoneinfo' module, or `'local'` for local timezone.
-            - `<'None'>` Timezone-naive.
-
-        :param ambiguous `<'str/ndarray'>`: How to handle ambiguous times, defaults to `'raise'`.
-            - `<'str'>` Accepts 'infer' or 'raise' for ambiguous times handling.
-            - `<'ndarray'>` A boolean array to specify ambiguous times ('True' for DST time).
-
-        :param year1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year, defaults to `None`.
-            If 'year1st=None', use `cfg.year1st` if 'cfg' is specified; otherwise, defaults to `False`.
-
-        :param day1st `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day, defaults to `None`.
-            If 'day1st=None', use `cfg.day1st` if 'cfg' is specified; otherwise, defaults to `False`.
-
-        :param cfg `<'Configs/None'>`: Custom parser configurations, defaults to `None`.
-
-        :param unit `<'str/None'>`: Set the datetime unit of the index, defaults to `None`.
-            Supported datetime units: 's', 'ms', 'us', 'ns'.
-
-        :param name `<'Hashable/None'>`: The name assigned to the index, defaults to `None`.
-
-        :param copy `<'bool'>`: Whether to make a copy of the 'data', defaults to `False`.
-        """
-
     def __new__(
         cls,
-        data: object,
+        data: ArrayLike,
         freq: str | datetime.timedelta | pd.offsets.BaseOffset | None = None,
         tz: datetime.tzinfo | str | None = None,
-        ambiguous: np.ndarray | Literal["infer", "raise"] = "raise",
-        year1st: bool | None = None,
-        day1st: bool | None = None,
-        cfg: Configs | None = None,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
-        name: Hashable | None = None,
+        ambiguous: np.ndarray[bool] | Literal["infer", "NaT", "raise"] = "raise",
+        yearfirst: bool = True,
+        dayfirst: bool = False,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
         copy: bool = False,
+        name: Hashable | None = None,
+        cfg: Configs | None = None,
     ) -> Self: ...
     # Constructor ------------------------------------------------------
     @classmethod
     def date_range(
         cls,
-        start: str | datetime.datetime | None = None,
-        end: str | datetime.datetime | None = None,
+        start: DatetimeLike | None = None,
+        end: DatetimeLike | None = None,
         periods: int | None = None,
         freq: str | datetime.timedelta | pd.offsets.BaseOffset | None = "D",
         tz: datetime.tzinfo | str | None = None,
@@ -86,98 +45,98 @@ class Pddt(pd.DatetimeIndex):
     @classmethod
     def parse(
         cls,
-        data: object,
+        data: ArrayLike,
         freq: str | datetime.timedelta | pd.offsets.BaseOffset | None = None,
         tz: datetime.tzinfo | str | None = None,
-        ambiguous: np.ndarray | Literal["infer", "raise"] = "raise",
-        year1st: bool | None = None,
-        day1st: bool | None = None,
-        cfg: Configs | None = None,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
-        name: Hashable | None = None,
+        ambiguous: np.ndarray[bool] | Literal["infer", "NaT", "raise"] = "raise",
+        yearfirst: bool = True,
+        dayfirst: bool = False,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
         copy: bool = False,
+        name: Hashable | None = None,
+        cfg: Configs | None = None,
     ) -> Self: ...
     @classmethod
     def now(
         cls,
+        size: int | Any,
         tz: datetime.tzinfo | str | None = None,
-        size: int | str | bytes | object = 1,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
         name: Hashable | None = None,
     ) -> Self: ...
     @classmethod
     def utcnow(
         cls,
-        size: int | str | bytes | object = 1,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
+        size: int | Any,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
         name: Hashable | None = None,
     ) -> Self: ...
     @classmethod
     def today(
         cls,
-        size: int | str | bytes | object = 1,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
+        size: int | Any,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
         name: Hashable | None = None,
     ) -> Self: ...
     @classmethod
     def combine(
         cls,
+        size: int | Any,
         date: datetime.date | str | None = None,
         time: datetime.time | str | None = None,
         tz: datetime.tzinfo | str | None = None,
-        size: int | str | bytes | object = 1,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
         name: Hashable | None = None,
     ) -> Self: ...
     @classmethod
     def fromordinal(
         cls,
-        ordinal: int | object,
+        ordinal: int | ArrayLike,
+        size: int | Any | None = None,
         tz: datetime.tzinfo | str | None = None,
-        size: int | str | bytes | object = 1,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
         name: Hashable | None = None,
     ) -> Self: ...
     @classmethod
     def fromseconds(
         cls,
-        seconds: int | float | object,
+        seconds: int | float | ArrayLike,
+        size: int | Any | None = None,
         tz: datetime.tzinfo | str | None = None,
-        size: int | str | bytes | object = 1,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
         name: Hashable | None = None,
     ) -> Self: ...
     @classmethod
-    def fromicroseconds(
+    def frommicroseconds(
         cls,
-        us: int | object,
+        us: int | ArrayLike,
+        size: int | Any | None = None,
         tz: datetime.tzinfo | str | None = None,
-        size: int | str | bytes | object = 1,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
         name: Hashable | None = None,
     ) -> Self: ...
     @classmethod
     def fromtimestamp(
         cls,
-        ts: int | float | object,
+        ts: int | float | ArrayLike,
+        size: int | Any | None = None,
         tz: datetime.tzinfo | str | None = None,
-        size: int | str | bytes | object = 1,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
         name: Hashable | None = None,
     ) -> Self: ...
     @classmethod
     def utcfromtimestamp(
         cls,
-        ts: int | float | object,
-        size: int | str | bytes | object = 1,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
+        ts: int | float | ArrayLike,
+        size: int | Any | None = None,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
         name: Hashable | None = None,
     ) -> Self: ...
     @classmethod
     def fromisoformat(
         cls,
-        dtstr: str | object,
-        size: int | str | bytes | object = 1,
+        dtstr: str | ArrayLike,
+        size: int | Any | None = None,
         unit: Literal["s", "ms", "us", "ns"] | None = None,
         name: Hashable | None = None,
     ) -> Self: ...
@@ -185,71 +144,78 @@ class Pddt(pd.DatetimeIndex):
     def fromisocalendar(
         cls,
         iso: dict | list | tuple | pd.DataFrame,
-        year: int | None = None,
-        week: int | None = None,
-        weekday: int | None = None,
+        size: int | Any | None = None,
         tz: datetime.tzinfo | str | None = None,
-        size: int | str | bytes | object = 1,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
+        name: Hashable | None = None,
+    ) -> Self: ...
+    @classmethod
+    def fromdayofyear(
+        cls,
+        iso: dict | list | tuple | pd.DataFrame,
+        size: int | Any | None = None,
+        tz: datetime.tzinfo | str | None = None,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
         name: Hashable | None = None,
     ) -> Self: ...
     @classmethod
     def fromdate(
         cls,
-        date: datetime.date | object,
+        date: datetime.date | ArrayLike,
+        size: int | Any | None = None,
         tz: datetime.tzinfo | str | None = None,
-        size: int | str | bytes | object = 1,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
         name: Hashable | None = None,
     ) -> Self: ...
     @classmethod
     def fromdatetime(
         cls,
-        dt: datetime.datetime | object,
-        size: int | str | bytes | object = 1,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
+        dt: DatetimeLike | ArrayLike,
+        size: int | Any | None = None,
+        tz: datetime.tzinfo | str | None = None,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
         name: Hashable | None = None,
     ) -> Self: ...
     @classmethod
     def fromdatetime64(
         cls,
-        dt64: np.datetime64 | object,
+        dt64: DatetimeLike | ArrayLike,
+        size: int | Any | None = None,
         tz: datetime.tzinfo | str | None = None,
-        size: int | str | bytes | object = 1,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
         name: Hashable | None = None,
     ) -> Self: ...
     @classmethod
     def strptime(
         cls,
-        dtstr: str | object,
+        dtstr: str | ArrayLike,
         fmt: str,
-        size: int | str | bytes | object = 1,
-        unit: Literal["s", "ms", "us", "ns"] | None = None,
+        size: int | Any | None = None,
+        as_unit: Literal["s", "ms", "us", "ns"] | None = None,
         name: Hashable | None = None,
     ) -> Self: ...
     # Convertor --------------------------------------------------------
     def ctime(self) -> pd.Index[str]: ...
-    def strftime(self, fmt: str) -> pd.Index[str]:
-        """Convert to index of strings according to the given format `<'Index[str]'>`.
-
-        :param format `<'str'>`: The format of the datetime strings.
-        """
-
+    def strftime(self, fmt: str) -> pd.Index[str]: ...
     def isoformat(self, sep: str = "T") -> pd.Index[str]: ...
     def timedf(self) -> pd.DataFrame: ...
     def utctimedf(self) -> pd.DataFrame: ...
     def toordinal(self) -> pd.Index[np.int64]: ...
-    def seconds(self, utc: bool = False) -> pd.Index[np.float64]: ...
-    def microseconds(self, utc: bool = False) -> pd.Index[np.int64]: ...
+    def toseconds(self, utc: bool = False) -> pd.Index[np.float64]: ...
+    def tomicroseconds(self, utc: bool = False) -> pd.Index[np.int64]: ...
     def timestamp(self) -> pd.Index[np.float64]: ...
-    def datetime(self) -> np.ndarray[datetime.datetime]: ...
+    def datetime(self) -> np.ndarray[Pydt]: ...
     def date(self) -> np.ndarray[datetime.date]: ...
     def time(self) -> np.ndarray[datetime.time]: ...
     def timetz(self) -> np.ndarray[datetime.time]: ...
-    def to_period(self, freq: str | pd.offsets.BaseOffset | None) -> pd.PeriodIndex:
-        """Cast to PeriodIndex at a particular frequency `<PeriodIndex>`."""
-
+    def to_period(self, freq: str | pd.offsets.BaseOffset | None) -> pd.PeriodIndex: ...
+    def to_list(self) -> list[pd.Timestamp]: ...
+    def to_numpy(
+        dtype: None = None,
+        copy: bool = False,
+        na_value: Scalar = ...,
+        **kwargs,
+    ) -> np.ndarray: ...
     def to_series(
         self,
         index: pd.Index | None = None,
@@ -263,36 +229,53 @@ class Pddt(pd.DatetimeIndex):
     # Manipulator ------------------------------------------------------
     def replace(
         self,
-        year: int = -1,
-        month: int = -1,
-        day: int = -1,
-        hour: int = -1,
-        minute: int = -1,
-        second: int = -1,
-        microsecond: int = -1,
-        nanosecond: int = -1,
-        tzinfo: datetime.tzinfo | str | None = -1,
+        year: int = SENTINEL,
+        month: int = SENTINEL,
+        day: int = SENTINEL,
+        hour: int = SENTINEL,
+        minute: int = SENTINEL,
+        second: int = SENTINEL,
+        microsecond: int = SENTINEL,
+        nanosecond: int = SENTINEL,
+        tzinfo: datetime.tzinfo | str | None = SENTINEL,
     ) -> Self: ...
     # . year
-    def to_curr_year(self, month: int | str | None = None, day: int = -1) -> Self: ...
-    def to_prev_year(self, month: int | str | None = None, day: int = -1) -> Self: ...
-    def to_next_year(self, month: int | str | None = None, day: int = -1) -> Self: ...
+    def to_curr_year(
+        self,
+        month: int | str | None = None,
+        day: int = SENTINEL,
+    ) -> Self: ...
+    def to_prev_year(
+        self,
+        month: int | str | None = None,
+        day: int = SENTINEL,
+    ) -> Self: ...
+    def to_next_year(
+        self,
+        month: int | str | None = None,
+        day: int = SENTINEL,
+    ) -> Self: ...
     def to_year(
         self,
         offset: int,
         month: int | str | None = None,
-        day: int = -1,
+        day: int = SENTINEL,
     ) -> Self: ...
     # . quarter
-    def to_curr_quarter(self, month: int = -1, day: int = -1) -> Self: ...
-    def to_prev_quarter(self, month: int = -1, day: int = -1) -> Self: ...
-    def to_next_quarter(self, month: int = -1, day: int = -1) -> Self: ...
-    def to_quarter(self, offset: int, month: int = -1, day: int = -1) -> Self: ...
+    def to_curr_quarter(self, month: int = SENTINEL, day: int = SENTINEL) -> Self: ...
+    def to_prev_quarter(self, month: int = SENTINEL, day: int = SENTINEL) -> Self: ...
+    def to_next_quarter(self, month: int = SENTINEL, day: int = SENTINEL) -> Self: ...
+    def to_quarter(
+        self,
+        offset: int,
+        month: int = SENTINEL,
+        day: int = SENTINEL,
+    ) -> Self: ...
     # . month
-    def to_curr_month(self, day: int = -1) -> Self: ...
-    def to_prev_month(self, day: int = -1) -> Self: ...
-    def to_next_month(self, day: int = -1) -> Self: ...
-    def to_month(self, offset: int, day: int = -1) -> Self: ...
+    def to_curr_month(self, day: int = SENTINEL) -> Self: ...
+    def to_prev_month(self, day: int = SENTINEL) -> Self: ...
+    def to_next_month(self, day: int = SENTINEL) -> Self: ...
+    def to_month(self, offset: int, day: int = SENTINEL) -> Self: ...
     # . weekday
     def to_monday(self) -> Self: ...
     def to_tuesday(self) -> Self: ...
@@ -310,40 +293,61 @@ class Pddt(pd.DatetimeIndex):
     def to_tomorrow(self) -> Self: ...
     def to_day(self, offset: int) -> Self: ...
     # . date&time
-    def normalize(self) -> Self:
-        """Set the time fields to midnight (i.e. 00:00:00) `<'Pddt'>`.
-
-        This method is useful in cases, when the time does not matter.
-        Length is unaltered. The timezones are unaffected.
-        """
-
+    def normalize(self) -> Self: ...
     def snap(self, freq: str | pd.offsets.BaseOffset) -> Self: ...
     def to_datetime(
         self,
-        year: int = -1,
-        month: int = -1,
-        day: int = -1,
-        hour: int = -1,
-        minute: int = -1,
-        second: int = -1,
-        microsecond: int = -1,
-        nanosecond: int = -1,
+        year: int = SENTINEL,
+        month: int = SENTINEL,
+        day: int = SENTINEL,
+        hour: int = SENTINEL,
+        minute: int = SENTINEL,
+        second: int = SENTINEL,
+        microsecond: int = SENTINEL,
+        nanosecond: int = SENTINEL,
     ) -> Self: ...
-    def to_date(self, year: int = -1, month: int = -1, day: int = -1) -> Self: ...
+    def to_date(
+        self,
+        year: int = SENTINEL,
+        month: int = SENTINEL,
+        day: int = SENTINEL,
+    ) -> Self: ...
     def to_time(
         self,
-        hour: int = -1,
-        minute: int = -1,
-        second: int = -1,
-        microsecond: int = -1,
-        nanosecond: int = -1,
+        hour: int = SENTINEL,
+        minute: int = SENTINEL,
+        second: int = SENTINEL,
+        microsecond: int = SENTINEL,
+        nanosecond: int = SENTINEL,
     ) -> Self: ...
-    def to_first_of(self, unit: str | Literal["Y", "Q", "M", "W"]) -> Self: ...
-    def to_last_of(self, unit: str | Literal["Y", "Q", "M", "W"]) -> Self: ...
+    def is_first_of(
+        self,
+        unit: str | Literal["Y", "Q", "M", "W"],
+    ) -> pd.Index[bool]: ...
+    def to_first_of(
+        self,
+        unit: str | Literal["Y", "Q", "M", "W"],
+    ) -> Self: ...
+    def is_last_of(
+        self,
+        unit: str | Literal["Y", "Q", "M", "W"],
+    ) -> pd.Index[bool]: ...
+    def to_last_of(
+        self,
+        unit: str | Literal["Y", "Q", "M", "W"],
+    ) -> Self: ...
+    def is_start_of(
+        self,
+        unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us", "ns"],
+    ) -> pd.Index[bool]: ...
     def to_start_of(
         self,
         unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us", "ns"],
     ) -> Self: ...
+    def is_end_of(
+        self,
+        unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us", "ns"],
+    ) -> pd.Index[bool]: ...
     def to_end_of(
         self,
         unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us", "ns"],
@@ -363,53 +367,37 @@ class Pddt(pd.DatetimeIndex):
     # . year
     @property
     def year(self) -> pd.Index[np.int64]: ...
+    def is_year(self, year: int) -> pd.Index[bool]: ...
     def is_leap_year(self) -> pd.Index[bool]: ...
     def is_long_year(self) -> pd.Index[bool]: ...
     def leap_bt_year(self, year: int) -> pd.Index[np.int64]: ...
     def days_in_year(self) -> pd.Index[np.int64]: ...
     def days_bf_year(self) -> pd.Index[np.int64]: ...
-    def days_of_year(self) -> pd.Index[np.int64]: ...
-    def is_year(self, year: int) -> pd.Index[bool]: ...
+    def day_of_year(self) -> pd.Index[np.int64]: ...
     # . quarter
     @property
     def quarter(self) -> pd.Index[np.int64]: ...
+    def is_quarter(self, quarter: int) -> pd.Index[bool]: ...
     def days_in_quarter(self) -> pd.Index[np.int64]: ...
     def days_bf_quarter(self) -> pd.Index[np.int64]: ...
-    def days_of_quarter(self) -> pd.Index[np.int64]: ...
-    def is_quarter(self, quarter: int) -> pd.Index[bool]: ...
+    def day_of_quarter(self) -> pd.Index[np.int64]: ...
     # . month
     @property
     def month(self) -> pd.Index[np.int64]: ...
+    def is_month(self, month: str | int) -> pd.Index[bool]: ...
     def days_in_month(self) -> pd.Index[np.int64]: ...
     def days_bf_month(self) -> pd.Index[np.int64]: ...
-    def days_of_month(self) -> pd.Index[np.int64]: ...
-    def is_month(self, month: str | int) -> pd.Index[bool]: ...
-    def month_name(self, locale: str | None = None) -> pd.Index[str]:
-        """Return the month names with specified locale `<'Index[str]'>`.
-
-        :param locale `<'str/None'>`: The locale to use for month names, defaults to `None`.
-            - Locale determining the language in which to return the month
-              name. Default (`None`) is English locale ('en_US.utf8').
-            - Use the command locale -a on your terminal on Unix systems to
-              find your locale language code.
-        """
+    def day_of_month(self) -> pd.Index[np.int64]: ...
+    def month_name(self, locale: str | None = None) -> pd.Index[str]: ...
     # . weekday
     @property
     def weekday(self) -> pd.Index[np.int64]: ...
     def is_weekday(self, weekday: int | str) -> pd.Index[bool]: ...
+    def weekday_name(self, locale: str | None = None) -> pd.Index[str]: ...
     # . day
     @property
     def day(self) -> pd.Index[np.int64]: ...
     def is_day(self, day: int) -> pd.Index[bool]: ...
-    def day_name(self, locale: str | None = None) -> pd.Index[str]:
-        """Return the weekday names with specified locale `<'Index[str]'>`.
-
-        :param locale `<'str/None'>`: The locale to use for weekday names, defaults to `None`.
-            - Locale determining the language in which to return the weekday
-              name. Default (`None`) is English locale ('en_US.utf8').
-            - Use the command locale -a on your terminal on Unix systems to
-              find your locale language code.
-        """
     # . time
     @property
     def hour(self) -> pd.Index[np.int64]: ...
@@ -423,23 +411,6 @@ class Pddt(pd.DatetimeIndex):
     def microsecond(self) -> pd.Index[np.int64]: ...
     @property
     def nanosecond(self) -> pd.Index[np.int64]: ...
-    # . date&time
-    def is_first_of(
-        self,
-        unit: str | Literal["Y", "Q", "M", "W"],
-    ) -> pd.Index[bool]: ...
-    def is_last_of(
-        self,
-        unit: str | Literal["Y", "Q", "M", "W"],
-    ) -> pd.Index[bool]: ...
-    def is_start_of(
-        self,
-        unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us", "ns"],
-    ) -> pd.Index[bool]: ...
-    def is_end_of(
-        self,
-        unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us", "ns"],
-    ) -> pd.Index[bool]: ...
     # Timezone -----------------------------------------------------------------------------
     @property
     def tz_available(self) -> set[str]: ...
@@ -453,21 +424,23 @@ class Pddt(pd.DatetimeIndex):
 
     def is_local(self) -> bool: ...
     def is_utc(self) -> bool: ...
-    def tzname(self) -> str: ...
+    def tzname(self) -> str | None: ...
     def astimezone(
         self,
         tz: datetime.tzinfo | str | None = None,
-        ambiguous: np.ndarray | Literal["infer", "raise"] = "raise",
+        ambiguous: np.ndarray[bool] | Literal["infer", "NaT", "raise"] = "raise",
         nonexistent: (
-            datetime.timedelta | Literal["shift_forward", "shift_backward", "raise"]
+            datetime.timedelta
+            | Literal["shift_forward", "shift_backward", "NaT", "raise"]
         ) = "raise",
     ) -> Self: ...
     def tz_localize(
         self,
         tz: datetime.tzinfo | str | None,
-        ambiguous: np.ndarray | Literal["infer", "raise"] = "raise",
+        ambiguous: np.ndarray[bool] | Literal["infer", "NaT", "raise"] = "raise",
         nonexistent: (
-            datetime.timedelta | Literal["shift_forward", "shift_backward", "raise"]
+            datetime.timedelta
+            | Literal["shift_forward", "shift_backward", "NaT", "raise"]
         ) = "raise",
     ) -> Self: ...
     def tz_convert(self, tz: datetime.tzinfo | str | None) -> Self: ...
@@ -476,9 +449,10 @@ class Pddt(pd.DatetimeIndex):
         targ_tz: datetime.tzinfo | str | None,
         base_tz: datetime.tzinfo | str | None = None,
         naive: bool = False,
-        ambiguous: np.ndarray | Literal["infer", "raise"] = "raise",
+        ambiguous: np.ndarray[bool] | Literal["infer", "NaT", "raise"] = "raise",
         nonexistent: (
-            datetime.timedelta | Literal["shift_forward", "shift_backward", "raise"]
+            datetime.timedelta
+            | Literal["shift_forward", "shift_backward", "NaT", "raise"]
         ) = "raise",
     ) -> Self: ...
     # Values -------------------------------------------------------------------------------
@@ -496,7 +470,7 @@ class Pddt(pd.DatetimeIndex):
 
     @property
     def values_naive(self) -> np.ndarray[np.datetime64]: ...
-    def as_unit(self, unit: Literal["s", "ms", "us", "ns"]) -> Self: ...
+    def as_unit(self, as_unit: Literal["s", "ms", "us", "ns"]) -> Self: ...
     # Arithmetic ---------------------------------------------------------------------------
     def add(
         self,
@@ -528,19 +502,11 @@ class Pddt(pd.DatetimeIndex):
     ) -> Self: ...
     def diff(
         self,
-        data: object,
+        data: DatetimeLike | ArrayLike,
         unit: Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us", "ns"],
         absolute: bool = False,
-        inclusive: Literal["one", "both", "neither"] = "both",
+        inclusive: Literal["one", "both", "neither"] = "one",
     ) -> np.ndarray[np.int64]: ...
-    def mean(*, skipna: bool = True, axis: int = 0) -> pd.Timestamp:
-        """Return the mean of the values `<'Timestamp'>`.
-
-        :param skipna `<'bool'>`: Exclude NA/null values, defaults to `True`.
-        :param axis `<'int'>`: The axis to use, defaults to `0`.
-        """
     # Comparison ---------------------------------------------------------------------------
     def is_past(self) -> pd.Index[bool]: ...
     def is_future(self) -> pd.Index[bool]: ...
-    def closest(self, data: object) -> Self: ...
-    def farthest(self, dtobjs: object) -> Self: ...
