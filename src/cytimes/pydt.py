@@ -23,8 +23,8 @@ np.import_umath()
 datetime.import_datetime()
 
 # Python imports
-from typing_extensions import Self
 from time import struct_time
+from typing_extensions import Self
 import datetime
 import numpy as np
 from babel.dates import format_date as _format_date
