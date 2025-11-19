@@ -426,6 +426,7 @@ class _Pydt(datetime.datetime):
             dt = datetime.datetime.fromisoformat(dtstr)
         except Exception as err:
             errors.raise_argument_error(cls, "fromisoformat(dtstr)", None, err)
+            return  # unreachable: suppress compiler warning
         return utils.dt_fr_dt(dt, cls)
 
     @classmethod
@@ -573,6 +574,7 @@ class _Pydt(datetime.datetime):
             dt = datetime.datetime.strptime(dtstr, fmt)
         except Exception as err:
             errors.raise_argument_error(cls, "strptime(dtstr, fmt)", None, err)
+            return  # unreachable: suppress compiler warning
         return utils.dt_fr_dt(dt, cls)
 
     # Convertor ----------------------------------------------------------------------------
@@ -3093,6 +3095,7 @@ class _Pydt(datetime.datetime):
             )
         except Exception as err:
             errors.raise_argument_error(self._cls(), "diff(dtobj, ...)", None, err)
+            return 0  # unreachable: suppress compiler warning
 
         # Check timezone parity
         my_tz = self.access_tzinfo()
