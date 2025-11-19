@@ -22,6 +22,8 @@ cdef:
     int DAYS_IN_MONTH[13]
     int DAYS_BR_QUARTER[5]
     int DAYS_IN_QUARTER[5]
+    # . pandas
+    object NAT
     # . date
     int ORDINAL_MAX
     # . datetime
@@ -42,6 +44,8 @@ cdef:
     long long EPOCH_CBASE
     # . timezone
     datetime.tzinfo UTC
+    object T_TIMEZONE
+    object T_ZONEINFO
     int NULL_TZOFFSET
     object _LOCAL_TIMEZONE
     set _UTC_ALIASES
@@ -132,6 +136,18 @@ cdef:
 
 
 # Struct -----------------------------------------------------------------------------------------------
+cdef extern from "<time.h>" nogil:
+    cdef struct tm:
+        int  tm_sec
+        int  tm_min
+        int  tm_hour
+        int  tm_mday
+        int  tm_mon
+        int  tm_year
+        int  tm_wday
+        int  tm_yday
+        int  tm_isdst
+
 ctypedef struct ymd:
     int year
     int month
@@ -160,18 +176,6 @@ ctypedef struct iso:
     int year
     int week
     int weekday
-
-cdef extern from "<time.h>" nogil:
-    cdef struct tm:
-        int  tm_sec
-        int  tm_min
-        int  tm_hour
-        int  tm_mday
-        int  tm_mon
-        int  tm_year
-        int  tm_wday
-        int  tm_yday
-        int  tm_isdst
 
 # Math -------------------------------------------------------------------------------------------------
 cdef inline long long math_mod(long long num, long long div, long long offset=0) except *:
@@ -2259,13 +2263,15 @@ cdef inline ymd ymd_fr_sec(double value) noexcept nogil:
             q -= 1
     return ymd_fr_ord(q + EPOCH_DAY)
 
-cdef inline ymd ymd_fr_isocalendar(long long year, int week, int weekday) noexcept nogil:
+cdef inline ymd ymd_fr_iso(long long year, int week, int weekday) noexcept nogil:
     """Create `struct:ymd` from ISO calendar values 
     (ISO year, ISO week, ISO weekday) `<'struct:ymd'>`.
 
     :param year `<'int'>`: ISO year number.
-    :param week `<'int'>`: ISO week index. Automatically clamped to [1..53].
-    :param weekday`<'int'>`: ISO weekday. Automatically clamped to [1..7] (Mon..Sun).
+    :param week `<'int'>`: ISO week number. 
+        Automatically clamped to [1..52/53] (depends on whether is a long year).
+    :param weekday `<'int'>`: ISO weekday. 
+        Automatically clamped to [1=Mon..7=Sun].
     :returns `<'struct:ymd'>`: Gregorian Y/M/D in the proleptic Gregorian calendar.
 
         - ymd.year  [Gregorian year number]
@@ -2298,12 +2304,12 @@ cdef inline ymd ymd_fr_isocalendar(long long year, int week, int weekday) noexce
     # Convert from ordinal to Y/M/D
     return ymd_fr_ord(ord_w1 + days)
 
-cdef inline ymd ymd_fr_day_of_year(long long year, int doy) noexcept nogil:
+cdef inline ymd ymd_fr_doy(long long year, int doy) noexcept nogil:
     """Create `struct:ymd` from Gregorian year and day-of-year `<'struct:ymd'>`.
 
-    :param year  `<'int'>`: Gregorian year number.
+    :param year `<'int'>`: Gregorian year number.
     :param doy `<'int'>`: The day-of-year.
-        Automatically clamped to [1..365/366] (depends on whether year leaps).
+        Automatically clamped to [1..365/366] (depends on whether is a long year).
     :returns `<'struct:ymd'>`: Gregorian Y/M/D in the proleptic Gregorian calendar.
 
         - ymd.year  [Gregorian year number]
@@ -2475,7 +2481,7 @@ cdef inline datetime.date date_new(int year=1, int month=1, int day=1, object dc
         try:
             return dclass(year=year, month=month, day=day)
         except Exception as err:
-            raise TypeError("Cannot create date using custom 'dclass' %s, %s" % (dclass, err)) from err
+            raise ValueError("Cannot create date using custom 'dclass' %s, %s" % (dclass, err)) from err
     return datetime.date_new(year, month, day)
 
 cdef inline datetime.date date_now(object tzinfo=None, object dclass=None):
@@ -2635,6 +2641,34 @@ cdef inline datetime.date date_fr_ord(int value, object dclass=None):
     cdef ymd _ymd = ymd_fr_ord(value)
     return date_new(_ymd.year, _ymd.month, _ymd.day, dclass)
 
+cdef inline datetime.date date_fr_iso(int year, int week, int weekday, object dclass=None):
+    """Create date from ISO calendar values (year, week, weekday) `<'datetime.date'>`.
+
+    :param year `<'int'>`: ISO year number.
+    :param week `<'int'>`: ISO week number. 
+        Automatically clamped to [1..52/53] (depends on whether is a long year).
+    :param weekday `<'int'>`: ISO weekday. 
+        Automatically clamped to [1=Mon..7=Sun].
+    :param dclass `<'type[datetime.date]/None'>`: Optional custom date class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.date` as the constructor.
+    :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified).
+    """
+    cdef ymd _ymd = ymd_fr_iso(year, week, weekday)
+    return date_new(_ymd.year, _ymd.month, _ymd.day, dclass)
+
+cdef inline datetime.date date_fr_doy(int year, int doy, object dclass=None):
+    """Create date from Gregorian year and day-of-year `<'datetime.date'>`.
+
+    :param year `<'int'>`: Gregorian year number.
+    :param doy `<'int'>`: The day-of-year.
+        Automatically clamped to [1..365/366] (depends on whether is a long year).
+    :param dclass `<'type[datetime.date]/None'>`: Optional custom date class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.date` as the constructor.
+    :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified).
+    """
+    cdef ymd _ymd = ymd_fr_doy(year, doy)
+    return date_new(_ymd.year, _ymd.month, _ymd.day, dclass)
+
 cdef inline datetime.date date_fr_ts(double value, object dclass=None):
     """Create date from a POSIX timestamp in **local** time `<'datetime.date'>`.
 
@@ -2642,7 +2676,7 @@ cdef inline datetime.date date_fr_ts(double value, object dclass=None):
     :param dclass `<'type[datetime.date]/None'>`: Optional custom date class. Defaults to `None`.
         if `None` uses python's built-in `datetime.date` as the constructor.
     :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified) 
-        in the system **local** time zone.
+        in the system **local** timezone.
     """
     cdef datetime.date date = datetime.date_from_timestamp(value)
     return date if dclass is None else date_fr_date(date, dclass)
@@ -2675,6 +2709,40 @@ cdef inline datetime.date date_fr_dt(datetime.datetime dt, object dclass=None):
     return date_new(dt.year, dt.month, dt.day, dclass)
 
 # . manipulation
+cdef inline datetime.date date_replace(datetime.date date, int year=-1, int month=-1, int day=-1, object dclass=None):
+    """Replace specified fields in date `<'datetime.date'>`.
+
+    :param date `<'datetime.date'>`: The source date.
+    :param year `<'int'>`: Absolute year. Defaults to `-1` (no change).
+        If specified (greater than `0`), clamps to [1..9999].
+    :param month `<'int'>`: Absolute month. Defaults to `-1` (no change).
+        If specified (greater than `0`), clamps to [1..12].
+    :param day `<'int'>`: Absolute day. Defaults to `-1` (no change).
+        If specified (greater than `0`), clamps to [1..maximum days the resulting month].
+    :param dclass `<'type[datetime.date]/None'>`: Optional custom date class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.date` as the constructor.
+    :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified)
+        after applying the field replacements.
+    """
+    # Get old fields
+    cdef int yy, mm, dd
+    yy, mm, dd = date.year, date.month, date.day
+
+    # Gen new fields
+    year  = yy if year < 1 else min(year, 9999) 
+    month = mm if month < 1 else min(month, 12)
+    if day < 1:
+        day = dd
+    elif day > 28:
+        day = min(day, days_in_month(year, month))
+
+    # Fast-path: same fields
+    if yy == year and mm == month and dd == day:
+        return date_fr_date(date, dclass)
+
+    # New date
+    return date_new(year, month, day, dclass)
+
 cdef inline datetime.date date_add_delta(datetime.date date,
     int years=0, int quarters=0, int months=0, int weeks=0, long long days=0, long long hours=0,
     long long minutes=0, long long seconds=0, long long milliseconds=0, long long microseconds=0,
@@ -2801,15 +2869,13 @@ cdef inline datetime.datetime dt_new(
     :param microsecond `<'int'>`: Microsecond [0..999999]. Defaults to `0`.
     :param tzinfo `<'tzinfo/None'>`: Optional timezone. Defaults to `None`.
     :param fold `<'int'>`: Optional fold flag for ambiguous times (0 or 1). Defaults to `0`.
-        Only relevant if `tzinfo` is not `None`, and values other than `1` are treated as `0`.
+        Values other than `1` are treated as `0`.
     :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
         if `None` uses python's built-in `datetime.datetime` as the constructor.
     :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
     """
-    # Normalize fold (0/1 only)
-    fold = 0 if tzinfo is None else fold == 1
-
     # Construct datetime
+    fold = fold == 1
     if dtclass is not None and dtclass is not datetime.datetime:
         try:
             return dtclass(
@@ -2824,7 +2890,7 @@ cdef inline datetime.datetime dt_new(
                 fold=fold,
             )
         except Exception as err:
-            raise TypeError("Cannot create datetime using custom 'dtclass' %s, %s" % (dtclass, err)) from err
+            raise ValueError("Cannot create datetime using custom 'dtclass' %s, %s" % (dtclass, err)) from err
     return datetime.datetime_new(year, month, day, hour, minute, second, microsecond, tzinfo, fold)
 
 cdef inline datetime.datetime dt_now(object tzinfo=None, object dtclass=None):
@@ -3447,6 +3513,36 @@ cdef inline datetime.datetime dt_fr_ord(int value, object tzinfo=None, object dt
     cdef ymd _ymd = ymd_fr_ord(value)
     return dt_new(_ymd.year, _ymd.month, _ymd.day, 0, 0, 0, 0, tzinfo, 0, dtclass)
 
+cdef inline datetime.datetime dt_fr_iso(int year, int week, int weekday, object tzinfo=None, object dtclass=None):
+    """Create datetime from ISO calendar values (year, week, weekday) `<'datetime.datetime'>`.
+
+    :param year `<'int'>`: ISO year number.
+    :param week `<'int'>`: ISO week number. 
+        Automatically clamped to [1..52/53] (depends on whether is a long year).
+    :param weekday `<'int'>`: ISO weekday. 
+        Automatically clamped to [1=Mon..7=Sun].
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
+    """
+    cdef ymd _ymd = ymd_fr_iso(year, week, weekday)
+    return dt_new(_ymd.year, _ymd.month, _ymd.day, 0, 0, 0, 0, tzinfo, 0, dtclass)
+
+cdef inline datetime.datetime dt_fr_doy(int year, int doy, object tzinfo=None, object dtclass=None):
+    """Create datetime from Gregorian year and day-of-year `<'datetime.datetime'>`.
+
+    :param year `<'int'>`: Gregorian year number.
+    :param doy `<'int'>`: The day-of-year.
+        Automatically clamped to [1..365/366] (depends on whether is a long year).
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
+    """
+    cdef ymd _ymd = ymd_fr_doy(year, doy)
+    return dt_new(_ymd.year, _ymd.month, _ymd.day, 0, 0, 0, 0, tzinfo, 0, dtclass)
+
 cdef inline datetime.datetime dt_fr_ts(double value, object tzinfo=None, object dtclass=None):
     """Create datetime from a POSIX timestamp with optional timezone `<'datetime.datetime'>`.
 
@@ -3515,9 +3611,9 @@ cdef inline datetime.datetime dt_combine(datetime.date date=None, datetime.time 
     """Create a `datetime.datetime` by combining a date and a time `<'datetime.datetime'>`.
 
     :param date `<'datetime.date/None'>`: The source date (including subclasses). Defaults to `None`.
-        If None, uses today's **local** date.
+        If None, uses today's `local` date.
     :param time `<'datetime.time/None'>`: The source time (including subclasses). Defaults to `None`.
-        If None, uses 00:00:00.000000.
+        If None, uses `00:00:00.000000`.
     :param tzinfo `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
         If specifed, overrides `time.tzinfo` (if any).
     :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
@@ -3729,6 +3825,99 @@ cdef inline datetime.datetime dt_add_delta(datetime.datetime dt,
     # New datetime
     return dt_new(yy, mm, dd, hh, mi, ss, us, dt.tzinfo, dt.fold, dtclass)
 
+cdef inline datetime.datetime dt_replace(datetime.datetime dt,
+    int year=-1, int month=-1, int day=-1, int hour=-1, int minute=-1,
+    int second=-1, int microsecond=-1, object tzinfo=-1, int fold=-1,
+    object dtclass=None,
+):
+    """Replace specified fields of a datetime `<'datetime.datetime'>`.
+
+    :param dt `<'datetime.datetime'>`: The source datetime (naive or aware).
+    :param year `<'int'>`: Absolute year. Defaults to `-1` (no change).
+        If specified (greater than `0`), clamps to [1..9999].
+    :param month `<'int'>`: Absolute month. Defaults to `-1` (no change).
+        If specified (greater than `0`), clamps to [1..12].
+    :param day `<'int'>`: Absolute day. Defaults to `-1` (no change).
+        If specified (greater than `0`), clamps to [1..maximum days the resulting month].
+    :param hour `<'int'>`: Absolute hour. Defaults to `-1` (no change).
+        If specified (greater than or equal to `0`), clamps to [0..23].
+    :param minute `<'int'>`: Absolute minute. Defaults to `-1` (no change).
+        If specified (greater than or equal to `0`), clamps to [0..59].
+    :param second `<'int'>`: Absolute second. Defaults to `-1` (no change).
+        If specified (greater than or equal to `0`), clamps to [0..59].
+    :param microsecond `<'int'>`: Absolute microsecond. Defaults to `-1` (no change).
+        If specified (greater than or equal to `0`), clamps to [0..999999].
+    :param tzinfo `<'tzinfo/None'>`: The timeone. Defaults to `-1` (no change).
+        If specified as `None`, removes tzinfo (makes datetime naive).
+        If specified as a `tzinfo` subclass, attaches to `dt`.
+    :param fold `<'int'>`: Fold value (0 or 1) for ambiguous times. Defaults to `-1` (no change).
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified),
+        after applying the specified field replacements.
+    """
+    # Get old fields
+    cdef int yy, mm, dd, hh, mi, ss, us, fd
+    yy, mm, dd = dt.year, dt.month, dt.day
+    hh, mi, ss = dt.hour, dt.minute, dt.second
+    us, fd     = dt.microsecond, dt.fold
+    cdef object tz = dt.tzinfo
+
+    # Gen new fields
+    year   = yy if year < 1 else min(year, 9999)
+    month  = mm if month < 1 else min(month, 12)
+    if day < 1:
+        day = dd
+    elif day > 28:
+        day = min(day, days_in_month(year, month))
+    hour   = hh if hour < 0 else min(hour, 23)
+    minute = mi if minute < 0 else min(minute, 59)
+    second = ss if second < 0 else min(second, 59)
+    microsecond = us if microsecond < 0 else min(microsecond, 999999)
+    tzinfo = tz if (tzinfo is not None and not is_tz(tzinfo)) else tzinfo
+    fold   = fd if fold not in (0, 1) else fold
+
+    # Fast-path: same fields
+    if (year == yy and month == mm and day == dd
+        and hour == hh and minute == mi and second == ss
+        and microsecond == us and tzinfo is tz and fold == fd
+    ):
+        return dt_fr_dt(dt, dtclass)
+
+    # New datetime
+    return dt_new(
+        year, month, day, hour, minute,
+        second, microsecond, tzinfo, fold, dtclass,
+    )
+
+cdef inline datetime.datetime dt_replace_tz_fold(datetime.datetime dt, object tzinfo, int fold, object dtclass=None):
+    """Create a copy of `dt` with `tzinfo` and `fold` replaced `<'datetime.datetime'>`.
+
+    :param dt `<'datetime.datetime'>`: Source datetime (naive or aware).
+    :param tzinfo `<'tzinfo/None'>`: The target tzinfo to attach.
+    :param fold `<'int'>`: Must be 0 or 1; otherwise `ValueError` is raised.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified) 
+        with the same fields except `tzinfo` and `fold`.
+
+    ## Equivalent
+    >>> dt.replace(tzinfo=tzinfo, fold=fold)
+    """
+    # Validate
+    if fold != 0 and fold != 1:
+        raise ValueError("fold must be either 0 or 1, got %d" % (fold))
+
+    # Same tzinfo and fold
+    if tzinfo is dt.tzinfo and fold == dt.fold:
+        return dt_fr_dt(dt, dtclass)
+
+    # New datetime
+    return dt_new(
+        dt.year, dt.month, dt.day, dt.hour, dt.minute,
+        dt.second, dt.microsecond, tzinfo, fold, dtclass,
+    )
+
 cdef inline datetime.datetime dt_replace_tz(datetime.datetime dt, object tzinfo, object dtclass=None):
     """Create a copy of `dt` with `tzinfo` replaced `<'datetime.datetime'>`.
 
@@ -3779,6 +3968,142 @@ cdef inline datetime.datetime dt_replace_fold(datetime.datetime dt, int fold, ob
         dt.second, dt.microsecond, dt.tzinfo, fold, dtclass,
     )
 
+# . check
+cdef inline int dt_compare(datetime.datetime dt1, datetime.datetime dt2, bint allow_mixed = False) except -2:
+    """Three-way comparison between two datetimes on a common microsecond timeline `<'int'>`.
+
+    :param dt1 `<'datetime.datetime'>`: The 1st datetime instance.
+    :param dt2 `<'datetime.datetime'>`: The 2nd datetime instance.
+    :param allow_mixed `<'bool'>`: Whether to allow comparisons between naive and aware datetimes. Defaults to `False`.
+    :returns `<'int'>`: The comparison result:
+
+        - `1`:  if dt1 > dt2
+        - `0`:  if dt1 == dt2
+        - `-1`: if dt1 < dt2
+        - `2`:  `only when` one operand is timezone-naive and the other is 
+                timezone-aware and `allow_mixed=True` (no comparison performed).
+
+    :raises `<'TypeError'>`: When comparing naive vs aware datetimes and `allow_mixed=False`.
+
+    ## Rules
+    - If exactly one operand is aware and the other is naive,
+      return `2` when `allow_mixed=True`, otherwise raise `TypeError`.
+    - If both are aware, both are converted to microseconds on a common 
+      timeline and compared.
+    - If both are naive, both are converted to microseconds and compared
+      on the naive timeline (no timezone semantics).
+    """
+    # Check tzinfo compatibility (Exactly one is naive → mixed)
+    cdef: 
+        object dt1_tz = dt1.tzinfo
+        object dt2_tz = dt2.tzinfo
+        bint dt1_aware = dt1_tz is not None
+        bint dt2_aware = dt2_tz is not None
+    if dt1_aware != dt2_aware:
+        if allow_mixed:
+            return 2
+        raise TypeError(
+            "Cannot compare naive and aware datetimes:\n"
+            "  - datetime1: '%s' %s\n"
+            "  - datetime2: '%s' %s" % (dt1, type(dt1), dt2, type(dt2))
+        )
+
+    # Compare in microseconds
+    cdef long long dt1_us = dt_to_us(dt1, dt1_aware)
+    cdef long long dt2_us = dt_to_us(dt2, dt2_aware)
+    if dt1_us > dt2_us:
+        return 1
+    elif dt1_us < dt2_us:
+        return -1
+    else:
+        return 0
+
+cdef inline bint dt_is_first_doy(datetime.datetime dt) noexcept:
+    """Check whether the datetime is on the first day of its year `<'bool'>`.
+
+    - First day of the year: `YYYY-01-01`
+
+    :param dt `<'datetime.datetime'>`: Datetime to check.
+    :returns `<'bool'>`: True if the datetime is January 1 of its year; Otherwiase False.
+    """
+    return dt.month == 1 and dt.day == 1
+
+cdef inline bint dt_is_last_doy(datetime.datetime dt) noexcept:
+    """Check whether the datetime is on the last day of its year `<'bool'>`.
+
+    - Last day of the year: `YYYY-12-31`
+
+    :param dt `<'datetime.datetime'>`: Datetime to check.
+    :returns `<'bool'>`: True if the datetime is December 31 of its year; Otherwiase False.
+    """
+    return dt.month == 12 and dt.day == 31
+
+cdef inline bint dt_is_first_doq(datetime.datetime dt) noexcept:
+    """Check whether the datetime is on the first day of its quarter `<'bool'>`.
+
+    - First day of the quarter: `YYYY-MM-01` where MM in `{01, 04, 07, 10}`
+
+    :param dt `<'datetime.datetime'>`: Datetime to check.
+    :returns `<'bool'>`: True if the datetime is the first day of its quarter; Otherwiase False.
+    """
+    return dt.day == 1 and dt.month in (1, 4, 7, 10)
+
+cdef inline bint dt_is_last_doq(datetime.datetime dt) noexcept:
+    """Check whether the datetime is on the last day of its quarter `<'bool'>`.
+
+    - Last day of the quarter: `YYYY-MM-DD` where MM in `{03, 06, 09, 12}`
+
+    :param dt `<'datetime.datetime'>`: Datetime to check.
+    :returns `<'bool'>`: True if the datetime is the last day of its quarter; Otherwiase False.
+    """
+    cdef int dd = dt.day
+    if dd < 30:
+        return False
+    cdef int mm = dt.month
+    if mm not in (3, 6, 9, 12):
+        return False
+    return dd == days_in_month(dt.year, mm)
+
+cdef inline bint dt_is_first_dom(datetime.datetime dt) noexcept:
+    """Check whether the datetime is on the first day of its month `<'bool'>`.
+
+    - First day of the month: `YYYY-MM-01`
+
+    :param dt `<'datetime.datetime'>`: Datetime to check.
+    :returns `<'bool'>`: True if the datetime is the first day of its month; Otherwiase False.
+    """
+    return dt.day == 1
+
+cdef inline bint dt_is_last_dom(datetime.datetime dt) noexcept:
+    """Check whether the datetime is on the last day of its month `<'bool'>`.
+
+    - Last day of the month: `YYYY-MM-DD` where DD is the maximum days in that month.
+
+    :param dt `<'datetime.datetime'>`: Datetime to check.
+    :returns `<'bool'>`: True if the datetime is the last day of its month; Otherwiase False.
+    """
+    return dt.day == days_in_month(dt.year, dt.month)
+
+cdef inline bint dt_is_start_of_time(datetime.datetime dt) noexcept:
+    """Check whether the datetime is at the start of time `<'bool'>`:
+
+    - Start of time: `YYYY-MM-DD 00:00:00`
+
+    :param dt `<'datetime.datetime'>`: Datetime to check.
+    :returns `<'bool'>`: True if datetime is at the start of time; Otherwise False.
+    """
+    return dt.hour == 0 and dt.minute == 0 and dt.second == 0 and dt.microsecond == 0
+
+cdef inline bint dt_is_end_of_time(datetime.datetime dt) noexcept:
+    """Check whether the datetime is at the end of time `<'bool'>`.
+
+    - End of time: `YYYY-MM-DD 23:59:59.999999`
+
+    :param dt `<'datetime.datetime'>`: Datetime to check.
+    :returns `<'bool'>`: True if datetime is at the end of time; Otherwise False.
+    """
+    return dt.hour == 23 and dt.minute == 59 and dt.second == 59 and dt.microsecond == 999_999
+    
 # . tzinfo
 cdef inline str dt_tzname(datetime.datetime dt):
     """Return the display name of a datetime's timezone `<'str/None'>`.
@@ -3817,18 +4142,18 @@ cdef inline datetime.timedelta dt_utcoffset(datetime.datetime dt):
     return tz_utcoffset(dt.tzinfo, dt)
 
 cdef inline datetime.datetime dt_astimezone(datetime.datetime dt, object tzinfo=None, object dtclass=None):
-    """Convert a `datetime.datetime` to another time zone `<'datetime.datetime'>`.
+    """Convert a `datetime.datetime` to another timezone `<'datetime.datetime'>`.
 
     :param dt `<'datetime.datetime'>`: Datetime to convert (naive or aware).
-    :param tzinfo `<'tzinfo/None'>`: Target time zone. Defaults to `None`.
+    :param tzinfo `<'tzinfo/None'>`: Target timezone. Defaults to `None`.
 
-        - If `None`, the system **local** time zone is used.
+        - If `None`, the system **local** timezone is used.
         - Must be a `tzinfo-compatible` object when provided.
 
     :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
         if `None` uses python's built-in `datetime.datetime` as the constructor.
     :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified) 
-        representing the **same instant** expressed in the target time zone. For naive 
+        representing the **same instant** expressed in the target timezone. For naive 
         inputs + `tzinfo is None`, this *localizes* the datetime to the system local zone.
 
     ## Semantics
@@ -3861,7 +4186,7 @@ cdef inline datetime.datetime dt_astimezone(datetime.datetime dt, object tzinfo=
     elif not is_tz(to_tz):
         raise TypeError(
             "Expects an instance of 'datetime.tzinfo', "
-            "instead got %s." % type(to_tz)
+            "instead got '%s' %s." % (to_tz, type(to_tz))
         )
 
     # Fast-exit: exact same tzinfo
@@ -3958,15 +4283,13 @@ cdef inline datetime.time time_new(
     :param microsecond `<'int'>`: Microsecond [0..999999]. Defaults to `0`.
     :param tzinfo `<'tzinfo/None'>`: Optional timezone. Defaults to `None`.
     :param fold `<'int'>`: Optional fold flag for ambiguous times (0 or 1). Defaults to `0`.
-        Only relevant if 'tzinfo' is not `None`, and values other than `1` are treated as `0`.
+        Values other than `1` are treated as `0`.
     :param tclass `<'type[datetime.time]/None'>`: Optional custom time class. Defaults to `None`.
         if `None` uses python's built-in `datetime.time` as the constructor.
     :returns `<'datetime.time'>`: The resulting time (or subclass if `tclass` is specified).
     """
-    # Normalize fold (0/1 only)
-    fold = 0 if tzinfo is None else fold == 1
-
     # Construct time
+    fold = fold == 1
     if tclass is not None and tclass is not datetime.time:
         try:
             return tclass(
@@ -3978,7 +4301,7 @@ cdef inline datetime.time time_new(
                 fold=fold,
             )
         except Exception as err:
-            raise TypeError("Cannot create time using custom 'tclass' %s, %s" % (tclass, err)) from err
+            raise ValueError("Cannot create time using custom 'tclass' %s, %s" % (tclass, err)) from err
     return datetime.time_new(hour, minute, second, microsecond, tzinfo, fold)
 
 cdef inline datetime.time time_now(object tzinfo=None, object tclass=None):
@@ -4149,7 +4472,7 @@ cdef inline datetime.timedelta td_new(int days=0, int seconds=0, int microsecond
         try:
             return tdclass(days=days, seconds=seconds, microseconds=microseconds)
         except Exception as err:
-            raise TypeError("Cannot create timedelta using custom 'tdclass' %s, %s" % (tdclass, err)) from err
+            raise ValueError("Cannot create timedelta using custom 'tdclass' %s, %s" % (tdclass, err)) from err
     return datetime.timedelta_new(days, seconds, microseconds)
 
 # . type check
@@ -4447,7 +4770,7 @@ cdef inline str tz_name(object tz, datetime.datetime dt=None):
         if not is_tz(tz):
             raise TypeError(
                 "Expects an instance of 'datetime.tzinfo', "
-                "instead got %s." % type(tz)
+                "instead got '%s' %s." % (tz, type(tz))
             ) from err
         raise err
 
@@ -4470,7 +4793,7 @@ cdef inline datetime.timedelta tz_dst(object tz, datetime.datetime dt=None):
         if not is_tz(tz):
             raise TypeError(
                 "Expects an instance of 'datetime.tzinfo', "
-                "instead got %s." % type(tz)
+                "instead got '%s' %s." % (tz, type(tz))
             ) from err
         raise err
 
@@ -4493,7 +4816,7 @@ cdef inline datetime.timedelta tz_utcoffset(object tz, datetime.datetime dt=None
         if not is_tz(tz):
             raise TypeError(
                 "Expects an instance of 'datetime.tzinfo', "
-                "instead got %s." % type(tz)
+                "instead got '%s' %s." % (tz, type(tz))
             ) from err
         raise err
 
@@ -4810,7 +5133,7 @@ cdef inline bint assure_dt64(object obj) except -1:
     if not np.is_datetime64_object(obj):
         raise TypeError(
             "Expects an instance of 'np.datetime64', "
-            "instead got %s." % type(obj)
+            "instead got '%s' %s." % (obj, type(obj))
         )
     return True
 
@@ -4968,7 +5291,7 @@ cdef inline bint assure_td64(object obj) except -1:
     if not np.is_timedelta64_object(obj):
         raise TypeError(
             "Expects an instance of 'np.timedelta64', "
-            "instead got %s." % type(obj)
+            "instead got '%s' %s." % (obj, type(obj))
         )
     return True
 
@@ -5141,7 +5464,10 @@ cdef inline bint is_arr(object obj) except -1:
     return np.PyArray_Check(obj)
 
 cdef inline bint assure_1dim_arr(np.ndarray arr) except -1:
-    """Assure the array is 1-dimensional."""
+    """Assure the array is 1-dimensional.
+    
+    :raises `<'ValueError'>`: If the array is not 1-dimensional.
+    """
     if arr.ndim != 1:
         raise ValueError("Expects 1-D ndarray, instead got %d-dimensional array." % arr.ndim)
     return True
@@ -5155,6 +5481,41 @@ cdef inline np.ndarray assure_arr_contiguous(np.ndarray arr):
     if np.PyArray_IS_C_CONTIGUOUS(arr):
         return arr
     return np.PyArray_GETCONTIGUOUS(arr)
+
+cdef inline bint is_arr_int(np.ndarray arr) except -1:
+    """Check if a numpy array is of integer dtype `<'bool'>`.
+    
+    - Integer dtype: `int8`, `int16`, `int32` and `int64`.
+    """
+    return np.PyArray_TYPE(arr) in (
+        np.NPY_TYPES.NPY_INT8,
+        np.NPY_TYPES.NPY_INT16,
+        np.NPY_TYPES.NPY_INT32,
+        np.NPY_TYPES.NPY_INT64,
+    )
+
+cdef inline bint is_arr_uint(np.ndarray arr) except -1:
+    """Check if a numpy array is of unsigned integer dtype `<'bool'>`.
+    
+    - Unsigned Integer dtype: `uint8`, `uint16`, `uint32` and `uint64`.
+    """
+    return np.PyArray_TYPE(arr) in (
+        np.NPY_TYPES.NPY_UINT8,
+        np.NPY_TYPES.NPY_UINT16,
+        np.NPY_TYPES.NPY_UINT32,
+        np.NPY_TYPES.NPY_UINT64,
+    )
+
+cdef inline bint is_arr_float(np.ndarray arr) except -1:
+    """Check if a numpy array is of float dtype `<'bool'>`.
+    
+    - Float dtype: `float16`, `float32` and `float64`.
+    """
+    return np.PyArray_TYPE(arr) in (
+        np.NPY_TYPES.NPY_FLOAT16,
+        np.NPY_TYPES.NPY_FLOAT32,
+        np.NPY_TYPES.NPY_FLOAT64,
+    )
 
 # . dtype
 cdef inline np.ndarray arr_assure_int64(np.ndarray arr, bint copy=True):
@@ -6637,8 +6998,7 @@ cdef inline np.ndarray arr_eq(np.ndarray arr, np.npy_int64 value):
     ## Notice
     - For datetime64/timedelta64 inputs, `value` is interpreted in the 
       array's underlying integer unit (e.g., ns for datetime64[ns]).
-    - NaT is represented as LLONG_MIN and is compared as a normal integer
-      (unlike NumPy's datetime behavior where NaT comparisons always yield False).
+    - NaT values (LLONG_MIN) always yeild `False`, and LLONG_MIN is treated as NaT.
 
     ## Equivalent
     >>> arr == value
@@ -6653,10 +7013,23 @@ cdef inline np.ndarray arr_eq(np.ndarray arr, np.npy_int64 value):
         # Output array
         np.ndarray out = np.PyArray_EMPTY(1, [size], np.NPY_TYPES.NPY_BOOL, 0)
         np.npy_bool* out_ptr = <np.npy_bool*> np.PyArray_DATA(out)
+        np.npy_int64 v
+
+    # Fast-path: value is NaT
+    if value == LLONG_MIN:
+        for i in range(size):
+            out_ptr[i] = False
+        return out
 
     # Compare
     for i in range(size):
-        out_ptr[i] = arr_ptr[i] == value
+        # Preserve NaT
+        v = arr_ptr[i]
+        if v == LLONG_MIN:
+            out_ptr[i] = False
+            continue
+        # Compare value
+        out_ptr[i] = v == value
     return out
 
 cdef inline np.ndarray arr_gt(np.ndarray arr, np.npy_int64 value):
@@ -6670,8 +7043,7 @@ cdef inline np.ndarray arr_gt(np.ndarray arr, np.npy_int64 value):
     ## Notice
     - For datetime64/timedelta64 inputs, `value` is interpreted in the 
       array's underlying integer unit (e.g., ns for datetime64[ns]).
-    - NaT is represented as LLONG_MIN and is compared as a normal integer
-      (unlike NumPy's datetime behavior where NaT comparisons always yield False).
+    - NaT values (LLONG_MIN) always yeild `False`, and LLONG_MIN is treated as NaT.
 
     ## Equivalent
     >>> arr > value
@@ -6686,10 +7058,23 @@ cdef inline np.ndarray arr_gt(np.ndarray arr, np.npy_int64 value):
         # Output array
         np.ndarray out = np.PyArray_EMPTY(1, [size], np.NPY_TYPES.NPY_BOOL, 0)
         np.npy_bool* out_ptr = <np.npy_bool*> np.PyArray_DATA(out)
+        np.npy_int64 v
+
+    # Fast-path: value is NaT
+    if value == LLONG_MIN:
+        for i in range(size):
+            out_ptr[i] = False
+        return out
 
     # Compare
     for i in range(size):
-        out_ptr[i] = arr_ptr[i] > value
+        # Preserve NaT
+        v = arr_ptr[i]
+        if v == LLONG_MIN:
+            out_ptr[i] = False
+            continue
+        # Compare value
+        out_ptr[i] = v > value
     return out
 
 cdef inline np.ndarray arr_ge(np.ndarray arr, np.npy_int64 value):
@@ -6703,8 +7088,7 @@ cdef inline np.ndarray arr_ge(np.ndarray arr, np.npy_int64 value):
     ## Notice
     - For datetime64/timedelta64 inputs, `value` is interpreted in the 
       array's underlying integer unit (e.g., ns for datetime64[ns]).
-    - NaT is represented as LLONG_MIN and is compared as a normal integer
-      (unlike NumPy's datetime behavior where NaT comparisons always yield False).
+    - NaT values (LLONG_MIN) always yeild `False`, and LLONG_MIN is treated as NaT.
 
     ## Equivalent
     >>> arr >= value
@@ -6719,10 +7103,23 @@ cdef inline np.ndarray arr_ge(np.ndarray arr, np.npy_int64 value):
         # Output array
         np.ndarray out = np.PyArray_EMPTY(1, [size], np.NPY_TYPES.NPY_BOOL, 0)
         np.npy_bool* out_ptr = <np.npy_bool*> np.PyArray_DATA(out)
+        np.npy_int64 v
+
+    # Fast-path: value is NaT
+    if value == LLONG_MIN:
+        for i in range(size):
+            out_ptr[i] = False
+        return out
 
     # Compare
     for i in range(size):
-        out_ptr[i] = arr_ptr[i] >= value
+        # Preserve NaT
+        v = arr_ptr[i]
+        if v == LLONG_MIN:
+            out_ptr[i] = False
+            continue
+        # Compare value
+        out_ptr[i] = v >= value
     return out
 
 cdef inline np.ndarray arr_lt(np.ndarray arr, np.npy_int64 value):
@@ -6736,8 +7133,7 @@ cdef inline np.ndarray arr_lt(np.ndarray arr, np.npy_int64 value):
     ## Notice
     - For datetime64/timedelta64 inputs, `value` is interpreted in the 
       array's underlying integer unit (e.g., ns for datetime64[ns]).
-    - NaT is represented as LLONG_MIN and is compared as a normal integer
-      (unlike NumPy's datetime behavior where NaT comparisons always yield False).
+    - NaT values (LLONG_MIN) always yeild `False`, and LLONG_MIN is treated as NaT.
 
     ## Equivalent
     >>> arr < value
@@ -6752,10 +7148,23 @@ cdef inline np.ndarray arr_lt(np.ndarray arr, np.npy_int64 value):
         # Output array
         np.ndarray out = np.PyArray_EMPTY(1, [size], np.NPY_TYPES.NPY_BOOL, 0)
         np.npy_bool* out_ptr = <np.npy_bool*> np.PyArray_DATA(out)
+        np.npy_int64 v
+
+    # Fast-path: value is NaT
+    if value == LLONG_MIN:
+        for i in range(size):
+            out_ptr[i] = False
+        return out
 
     # Compare
     for i in range(size):
-        out_ptr[i] = arr_ptr[i] < value
+        # Preserve NaT
+        v = arr_ptr[i]
+        if v == LLONG_MIN:
+            out_ptr[i] = False
+            continue
+        # Compare value
+        out_ptr[i] = v < value
     return out
 
 cdef inline np.ndarray arr_le(np.ndarray arr, np.npy_int64 value):
@@ -6769,8 +7178,7 @@ cdef inline np.ndarray arr_le(np.ndarray arr, np.npy_int64 value):
     ## Notice
     - For datetime64/timedelta64 inputs, `value` is interpreted in the 
       array's underlying integer unit (e.g., ns for datetime64[ns]).
-    - NaT is represented as LLONG_MIN and is compared as a normal integer
-      (unlike NumPy's datetime behavior where NaT comparisons always yield False).
+    - NaT values (LLONG_MIN) always yeild `False`, and LLONG_MIN is treated as NaT.
 
     ## Equivalent
     >>> arr <= value
@@ -6785,10 +7193,23 @@ cdef inline np.ndarray arr_le(np.ndarray arr, np.npy_int64 value):
         # Output array
         np.ndarray out = np.PyArray_EMPTY(1, [size], np.NPY_TYPES.NPY_BOOL, 0)
         np.npy_bool* out_ptr = <np.npy_bool*> np.PyArray_DATA(out)
+        np.npy_int64 v
+
+    # Fast-path: value is NaT
+    if value == LLONG_MIN:
+        for i in range(size):
+            out_ptr[i] = False
+        return out
 
     # Compare
     for i in range(size):
-        out_ptr[i] = arr_ptr[i] <= value
+        # Preserve NaT
+        v = arr_ptr[i]
+        if v == LLONG_MIN:
+            out_ptr[i] = False
+            continue
+        # Compare value
+        out_ptr[i] = v <= value
     return out
 
 cdef inline np.ndarray arr_eq_arr(np.ndarray arr1, np.ndarray arr2):
@@ -6801,8 +7222,7 @@ cdef inline np.ndarray arr_eq_arr(np.ndarray arr1, np.ndarray arr2):
     
     ## Notice
     - For datetime64/timedelta64 inputs, comparison is performed on underlying int64 ticks.
-    - NaT is represented as LLONG_MIN and is compared as a normal integer
-      (unlike NumPy's datetime behavior where NaT comparisons always yield False).
+    - NaT values (LLONG_MIN) always yeild `False`, and LLONG_MIN is treated as NaT.
 
     ## Equivalent
     >>> arr1 == arr2
@@ -6827,10 +7247,21 @@ cdef inline np.ndarray arr_eq_arr(np.ndarray arr1, np.ndarray arr2):
         # Output array
         np.ndarray out = np.PyArray_EMPTY(1, [size], np.NPY_TYPES.NPY_BOOL, 0)
         np.npy_bool* out_ptr = <np.npy_bool*> np.PyArray_DATA(out)
+        np.npy_int64 v1, v2
     
     # Compare
     for i in range(size):
-        out_ptr[i] = arr1_ptr[i] == arr2_ptr[i]
+        # Preserve NaT
+        v1 = arr1_ptr[i]
+        if v1 == LLONG_MIN:
+            out_ptr[i] = False
+            continue
+        v2 = arr2_ptr[i]
+        if v2 == LLONG_MIN:
+            out_ptr[i] = False
+            continue
+        # Compare values
+        out_ptr[i] = v1 == v2
     return out
 
 cdef inline np.ndarray arr_gt_arr(np.ndarray arr1, np.ndarray arr2):
@@ -6843,8 +7274,7 @@ cdef inline np.ndarray arr_gt_arr(np.ndarray arr1, np.ndarray arr2):
     
     ## Notice
     - For datetime64/timedelta64 inputs, comparison is performed on underlying int64 ticks.
-    - NaT is represented as LLONG_MIN and is compared as a normal integer
-      (unlike NumPy's datetime behavior where NaT comparisons always yield False).
+    - NaT values (LLONG_MIN) always yeild `False`, and LLONG_MIN is treated as NaT.
 
     ## Equivalent
     >>> arr1 > arr2
@@ -6869,10 +7299,21 @@ cdef inline np.ndarray arr_gt_arr(np.ndarray arr1, np.ndarray arr2):
         # Output array
         np.ndarray out = np.PyArray_EMPTY(1, [size], np.NPY_TYPES.NPY_BOOL, 0)
         np.npy_bool* out_ptr = <np.npy_bool*> np.PyArray_DATA(out)
+        np.npy_int64 v1, v2
 
     # Compare
     for i in range(size):
-        out_ptr[i] = arr1_ptr[i] > arr2_ptr[i]
+        # Preserve NaT
+        v1 = arr1_ptr[i]
+        if v1 == LLONG_MIN:
+            out_ptr[i] = False
+            continue
+        v2 = arr2_ptr[i]
+        if v2 == LLONG_MIN:
+            out_ptr[i] = False
+            continue
+        # Compare values
+        out_ptr[i] = v1 > v2
     return out
 
 cdef inline np.ndarray arr_ge_arr(np.ndarray arr1, np.ndarray arr2):
@@ -6885,8 +7326,7 @@ cdef inline np.ndarray arr_ge_arr(np.ndarray arr1, np.ndarray arr2):
     
     ## Notice
     - For datetime64/timedelta64 inputs, comparison is performed on underlying int64 ticks.
-    - NaT is represented as LLONG_MIN and is compared as a normal integer
-      (unlike NumPy's datetime behavior where NaT comparisons always yield False).
+    - NaT values (LLONG_MIN) always yeild `False`, and LLONG_MIN is treated as NaT.
 
     ## Equivalent
     >>> arr1 >= arr2
@@ -6911,10 +7351,21 @@ cdef inline np.ndarray arr_ge_arr(np.ndarray arr1, np.ndarray arr2):
         # Output array
         np.ndarray out = np.PyArray_EMPTY(1, [size], np.NPY_TYPES.NPY_BOOL, 0)
         np.npy_bool* out_ptr = <np.npy_bool*> np.PyArray_DATA(out)
+        np.npy_int64 v1, v2
 
     # Compare
     for i in range(size):
-        out_ptr[i] = arr1_ptr[i] >= arr2_ptr[i]
+        # Preserve NaT
+        v1 = arr1_ptr[i]
+        if v1 == LLONG_MIN:
+            out_ptr[i] = False
+            continue
+        v2 = arr2_ptr[i]
+        if v2 == LLONG_MIN:
+            out_ptr[i] = False
+            continue
+        # Compare values
+        out_ptr[i] = v1 >= v2
     return out
 
 # NumPy: ndarray[datetime64] ---------------------------------------------------------------------------
@@ -7336,8 +7787,30 @@ cdef inline np.ndarray dt64arr_nanosecond(np.ndarray arr, int arr_reso=-1, np.np
     ## Equivalent
     >>> arr.astype('datetime64[ns]').astype('int64') % 1000 + offset
     """
-    cdef np.ndarray out = dt64arr_as_int64_ns(arr, arr_reso, 0, copy)
-    return arr_mod(out, 1_000, offset, False)
+    # Get array resolution
+    if arr_reso < 0:
+        if np.PyArray_TYPE(arr) != np.NPY_TYPES.NPY_DATETIME:
+            _raise_missing_arr_reso_error(arr)
+        arr_reso = get_arr_nptime_unit(arr)
+
+    # Compute nanosecond
+    cdef np.ndarray out
+    if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
+        out = dt64arr_as_int64_ns(arr, arr_reso, 0, copy)
+        return arr_mod(out, 1_000, offset, False)
+
+    # Return zero for coarser resolutions
+    out = arr_assure_int64(arr, copy)
+    cdef: 
+        np.npy_int64* out_ptr = <np.npy_int64*> np.PyArray_DATA(out)
+        np.npy_intp size = out.shape[0]
+        np.npy_intp i, v
+    for i in range(size):
+        # Propagate NaT
+        if out_ptr[i] == LLONG_MIN:
+            continue
+        out_ptr[i] = offset
+    return out
 
 cdef inline np.ndarray dt64arr_times(np.ndarray arr, int arr_reso=-1, np.npy_int64 offset=0, bint copy=True):
     """Extract time-of-day (elapsed since midnight) in the same unit as `arr` <'ndarray[int64]'>.
@@ -8924,24 +9397,23 @@ cdef inline np.ndarray dt64arr_as_unit(np.ndarray arr, str as_unit, int arr_reso
     ## Equivalent
     >>> arr.astype(f"datetime64[{as_unit}]")
     """
+    # Guard
     if as_unit is None:
         _raise_invalid_nptime_str_unit_error(as_unit)
+
     # Get array resolution
     cdef bint is_dt64 = np.PyArray_TYPE(arr) == np.NPY_TYPES.NPY_DATETIME
     if arr_reso < 0:
         if not is_dt64:
             _raise_missing_arr_reso_error(arr)
         arr_reso = get_arr_nptime_unit(arr)
-    elif not is_dt64:
-        arr = arr.astype(nptime_unit_int2dt64(arr_reso))
-        copy = False
-    #: from now on, 'arr' can only be datetime64 
-    #: array under the 'arr_reso' resolution.
-    cdef int tg_unit = nptime_unit_str2int(as_unit)
+    
+    # Parse target resolution
+    cdef int as_reso = nptime_unit_str2int(as_unit)
 
     # Check limit
     if limit:
-        if tg_unit not in (
+        if as_reso not in (
             np.NPY_DATETIMEUNIT.NPY_FR_ns,
             np.NPY_DATETIMEUNIT.NPY_FR_us,
             np.NPY_DATETIMEUNIT.NPY_FR_ms,
@@ -8953,164 +9425,630 @@ cdef inline np.ndarray dt64arr_as_unit(np.ndarray arr, str as_unit, int arr_reso
             np.NPY_DATETIMEUNIT.NPY_FR_s,
         ):
             raise ValueError(
-                "Cannot convert ndarray from datetime64[%s] to datetime64[%s].\n"
-                "Conversion limits to datetime units between: 's', 'ms', 'us', 'ns'." 
-                % (nptime_unit_int2str(arr_reso), nptime_unit_int2str(tg_unit))
+                "Cannot convert array from datetime64[%s] to datetime64[%s].\n"
+                "Conversion limits to units between: 's', 'ms', 'us', 'ns'." 
+                % (nptime_unit_int2str(arr_reso), nptime_unit_int2str(as_reso))
             )
 
     # Fast-path: same unit
-    if arr_reso == tg_unit:
-        return arr_add(arr, 0, copy)  # honor 'copy' flag
+    if arr_reso == as_reso:
+        if is_dt64:
+            return arr_add(arr, 0, copy)  # honor 'copy' flag
+        return arr.astype(nptime_unit_int2dt64(arr_reso))
 
     # To nanosecond [ns]
     cdef bint is_ns_safe
-    if tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:
+    cdef object as_dtype = None
+    if as_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
         # check 'ns' overflow
         is_ns_safe = is_dt64arr_ns_safe(arr, arr_reso)
-        # my_unit [us] -> tg_unit [ns]
+        # my_unit [us] -> [ns]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
             if not is_ns_safe:
-                return arr_add(arr, 0, copy)  # honor 'copy' flag
-            return arr.astype(DT64_DTYPE_NS)
-        # my_unit [M, Y] -> tg_unit [ns]
-        elif arr_reso in (
-            np.NPY_DATETIMEUNIT.NPY_FR_M,
-            np.NPY_DATETIMEUNIT.NPY_FR_Y,
-        ):
+                if is_dt64:
+                    return arr_add(arr, 0, copy)  # honor 'copy' flag
+                return arr.astype(nptime_unit_int2dt64(arr_reso))
+        # my_unit [M, Y] -> [ns]
+        elif arr_reso in (np.NPY_DATETIMEUNIT.NPY_FR_M, np.NPY_DATETIMEUNIT.NPY_FR_Y):
             if not is_ns_safe:
                 arr = dt64arr_as_int64_us(arr, arr_reso, 0, copy)
                 return arr.astype(DT64_DTYPE_US)
             arr = dt64arr_as_int64_ns(arr, arr_reso, 0, copy)
             return arr.astype(DT64_DTYPE_NS)
-        # my_unit [rest] -> tg_unit [ns]
-        else:
-            if not is_ns_safe:
-                return arr.astype(DT64_DTYPE_US)
-            return arr.astype(DT64_DTYPE_NS)
+        # Fallback [rest] -> [ns]
+        as_dtype = DT64_DTYPE_NS if is_ns_safe else DT64_DTYPE_US
 
     # To microsecond [us]
-    if tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
-        # my_unit [ns] -> tg_unit [us]
+    elif as_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
+        # my_unit [ns] -> [us]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_floor(arr, NS_MICROSECOND, 0, copy)
-        # my_unit [M, Y] -> tg_unit [us]
-        elif arr_reso in (
-            np.NPY_DATETIMEUNIT.NPY_FR_M,
-            np.NPY_DATETIMEUNIT.NPY_FR_Y,
-        ):
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_assure_int64(arr, copy)
+                arr = arr_div_floor(arr, NS_MICROSECOND, 0, False)
+                return arr.astype(DT64_DTYPE_US)
+        # my_unit [M, Y] -> [us]
+        elif arr_reso in (np.NPY_DATETIMEUNIT.NPY_FR_M, np.NPY_DATETIMEUNIT.NPY_FR_Y):
             arr = dt64arr_as_int64_us(arr, arr_reso, 0, copy)
-        # my_unit [rest] -> tg_unit [us]
-        return arr.astype(DT64_DTYPE_US)
+            return arr.astype(DT64_DTYPE_US)
+        # Fallback [rest] -> [us]
+        as_dtype = DT64_DTYPE_US
     
     # To millisecond [ms]
-    if tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-        # my_unit [ns] -> tg_unit [ms]
+    elif as_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
+        # my_unit [ns] -> [ms]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_floor(arr, NS_MILLISECOND, 0, copy)
-        # my_unit [M, Y] -> tg_unit [ms]
-        elif arr_reso in (
-            np.NPY_DATETIMEUNIT.NPY_FR_M,
-            np.NPY_DATETIMEUNIT.NPY_FR_Y,
-        ):
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_assure_int64(arr, copy)
+                arr = arr_div_floor(arr, NS_MILLISECOND, 0, False)
+                return arr.astype(DT64_DTYPE_MS)
+        # my_unit [M, Y] -> [ms]
+        elif arr_reso in (np.NPY_DATETIMEUNIT.NPY_FR_M, np.NPY_DATETIMEUNIT.NPY_FR_Y):
             arr = dt64arr_as_int64_ms(arr, arr_reso, 0, copy)
-        # my_unit [rest] -> tg_unit [ms]
-        return arr.astype(DT64_DTYPE_MS)
+            return arr.astype(DT64_DTYPE_MS)
+        # Fallback [rest] -> [ms]
+        as_dtype = DT64_DTYPE_MS
 
     # To second [s]
-    if tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:
-        # my_unit [ns] -> tg_unit [s]
+    elif as_reso == np.NPY_DATETIMEUNIT.NPY_FR_s:
+        # my_unit [ns] -> [s]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_floor(arr, NS_SECOND, 0, copy)
-        # my_unit [M, Y] -> tg_unit [s]
-        elif arr_reso in (
-            np.NPY_DATETIMEUNIT.NPY_FR_M,
-            np.NPY_DATETIMEUNIT.NPY_FR_Y,
-        ):
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_assure_int64(arr, copy)
+                arr = arr_div_floor(arr, NS_SECOND, 0, False)
+                return arr.astype(DT64_DTYPE_SS)
+        # my_unit [M, Y] -> [s]
+        elif arr_reso in (np.NPY_DATETIMEUNIT.NPY_FR_M, np.NPY_DATETIMEUNIT.NPY_FR_Y):
             arr = dt64arr_as_int64_s(arr, arr_reso, 0, copy)
-        # my_unit [rest] -> tg_unit [s]
-        return arr.astype(DT64_DTYPE_SS)
+            return arr.astype(DT64_DTYPE_SS)
+        # Fallback [rest] -> [s]
+        as_dtype = DT64_DTYPE_SS
 
     # To minute [m]
-    if tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:
-        # my_unit [ns] -> tg_unit [m]
+    elif as_reso == np.NPY_DATETIMEUNIT.NPY_FR_m:
+        # my_unit [ns] -> [m]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_floor(arr, NS_MINUTE, 0, copy)
-        # my_unit [M, Y] -> tg_unit [m]
-        elif arr_reso in (
-            np.NPY_DATETIMEUNIT.NPY_FR_M,
-            np.NPY_DATETIMEUNIT.NPY_FR_Y,
-        ):
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_assure_int64(arr, copy)
+                arr = arr_div_floor(arr, NS_MINUTE, 0, False)
+                return arr.astype(DT64_DTYPE_MI)
+        # my_unit [M, Y] -> [m]
+        elif arr_reso in (np.NPY_DATETIMEUNIT.NPY_FR_M, np.NPY_DATETIMEUNIT.NPY_FR_Y):
             arr = dt64arr_as_int64_m(arr, arr_reso, 0, copy)
-        # my_unit [rest] -> tg_unit [m]
-        return arr.astype(DT64_DTYPE_MI)
+            return arr.astype(DT64_DTYPE_MI)
+        # Fallback [rest] -> [m]
+        as_dtype = DT64_DTYPE_MI
 
     # To hour [h]
-    if tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:
-        # my_unit [ns] -> tg_unit [h]
+    elif as_reso == np.NPY_DATETIMEUNIT.NPY_FR_h:
+        # my_unit [ns] -> [h]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_floor(arr, NS_HOUR, 0, copy)
-        # my_unit [M, Y] -> tg_unit [h]
-        elif arr_reso in (
-            np.NPY_DATETIMEUNIT.NPY_FR_M,
-            np.NPY_DATETIMEUNIT.NPY_FR_Y,
-        ):
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_assure_int64(arr, copy)
+                arr = arr_div_floor(arr, NS_HOUR, 0, False)
+                return arr.astype(DT64_DTYPE_HH)
+        # my_unit [M, Y] -> [h]
+        elif arr_reso in (np.NPY_DATETIMEUNIT.NPY_FR_M, np.NPY_DATETIMEUNIT.NPY_FR_Y):
             arr = dt64arr_as_int64_h(arr, arr_reso, 0, copy)
-        # my_unit [rest] -> tg_unit [h]
-        return arr.astype(DT64_DTYPE_HH)
+            return arr.astype(DT64_DTYPE_HH)
+        # Fallback [rest] -> [h]
+        as_dtype = DT64_DTYPE_HH
 
     # To day [D]
-    if tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:
-        # my_unit [ns] -> tg_unit [D]
+    elif as_reso == np.NPY_DATETIMEUNIT.NPY_FR_D:
+        # my_unit [ns] -> [D]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_floor(arr, NS_DAY, 0, copy)
-        # my_unit [M, Y] -> tg_unit [D]
-        elif arr_reso in (
-            np.NPY_DATETIMEUNIT.NPY_FR_M,
-            np.NPY_DATETIMEUNIT.NPY_FR_Y,
-        ):
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_assure_int64(arr, copy)
+                arr = arr_div_floor(arr, NS_DAY, 0, False)
+                return arr.astype(DT64_DTYPE_DD)
+        # my_unit [M, Y] -> [D]
+        elif arr_reso in (np.NPY_DATETIMEUNIT.NPY_FR_M, np.NPY_DATETIMEUNIT.NPY_FR_Y):
             arr = dt64arr_as_int64_D(arr, arr_reso, 0, copy)
-        # my_unit [rest] -> tg_unit [D]
-        return arr.astype(DT64_DTYPE_DD)
+            return arr.astype(DT64_DTYPE_DD)
+        # Fallback [rest] -> [D]
+        as_dtype = DT64_DTYPE_DD
 
     # To week [W]
-    if tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_W:
-        # my_unit [ns] -> tg_unit [W]
+    elif as_reso == np.NPY_DATETIMEUNIT.NPY_FR_W:
+        # my_unit [ns] -> [W]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_floor(arr, NS_DAY * 7, 0, copy)
-        # my_unit [M, Y] -> tg_unit [W]
-        elif arr_reso in (
-            np.NPY_DATETIMEUNIT.NPY_FR_M,
-            np.NPY_DATETIMEUNIT.NPY_FR_Y,
-        ):
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_assure_int64(arr, copy)
+                arr = arr_div_floor(arr, NS_DAY * 7, 0, False)
+                return arr.astype(DT64_DTYPE_WW)
+        # my_unit [M, Y] -> [W]
+        elif arr_reso in (np.NPY_DATETIMEUNIT.NPY_FR_M, np.NPY_DATETIMEUNIT.NPY_FR_Y):
             arr = dt64arr_as_int64_W(arr, arr_reso, 0, copy)
-        # my_unit [rest] -> tg_unit [W]
-        return arr.astype(DT64_DTYPE_WW)
+            return arr.astype(DT64_DTYPE_WW)
+        # Fallback [rest] -> [W]
+        as_dtype = DT64_DTYPE_WW
 
     # To month [M]
-    if tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_M:
-        # my_unit [ns, Y] -> tg_unit [M]
-        if arr_reso in (
-            np.NPY_DATETIMEUNIT.NPY_FR_ns,
-            np.NPY_DATETIMEUNIT.NPY_FR_Y,
-        ):
+    elif as_reso == np.NPY_DATETIMEUNIT.NPY_FR_M:
+        # my_unit [ns, Y] -> [M]
+        if arr_reso in (np.NPY_DATETIMEUNIT.NPY_FR_ns, np.NPY_DATETIMEUNIT.NPY_FR_Y):
             arr = dt64arr_as_int64_M(arr, arr_reso, 0, copy)
-        # my_unit [rest] -> tg_unit [M]
-        return arr.astype(DT64_DTYPE_MM)
+            return arr.astype(DT64_DTYPE_MM)
+        # Fallback [rest] -> [ms]
+        as_dtype = DT64_DTYPE_MM
 
     # To year [Y]
-    if tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_Y:
+    elif as_reso == np.NPY_DATETIMEUNIT.NPY_FR_Y:
         arr = dt64arr_as_int64_Y(arr, arr_reso, 0, copy)
         return arr.astype(DT64_DTYPE_YY)
 
     # Fallback
-    return arr.astype(nptime_unit_int2dt64(tg_unit))
+    if not is_dt64:
+        arr = arr.astype(nptime_unit_int2dt64(arr_reso))
+    if as_dtype is None:
+        as_dtype = nptime_unit_int2dt64(as_reso)
+    return arr.astype(as_dtype)
+
+# . manipulation
+cdef inline np.ndarray dt64arr_add_delta(np.ndarray arr,
+    np.npy_int64 years=0, np.npy_int64 quarters=0, np.npy_int64 months=0, np.npy_int64 weeks=0, np.npy_int64 days=0,
+    np.npy_int64 hours=0, np.npy_int64 minutes=0, np.npy_int64 seconds=0, np.npy_int64 milliseconds=0, 
+    np.npy_int64 microseconds=0, np.npy_int64 nanoseconds=0, int arr_reso=-1
+):
+    """Add a mixed calendar/time delta to an ndarray[datetime64] `<'ndarray[datetime64'>`.
+
+    Calendar components (years/quarters/months/weeks/days) are applied first on the
+    date part; time components (hours…nanoseconds) are then added and normalized.
+
+    :param arr `<'ndarray[datetime64'>`: Source datetime64 array.
+        Supported resolutions: `'ns'`, `'us'`, `'ms'`, `'s'`, `'m'`, `'h'`, `'D'`.
+    :param years `<'int'>`: Relative years. Defaults to `0`.
+    :param quarters `<'int'>`: Relative quarters (3 months). Defaults to `0`.
+    :param months `<'int'>`: Relative months. Defaults to `0`.
+    :param weeks `<'int'>`: Relative weeks (7 days). Defaults to `0`.
+    :param days `<'int'>`: Relative days. Defaults to `0`.
+    :param hours `<'int'>`: Relative hours. Defaults to `0`.
+    :param minutes `<'int'>`: Relative minutes. Defaults to `0`.
+    :param seconds `<'int'>`: Relative seconds. Defaults to `0`.
+    :param milliseconds `<'int'>`: Relative milliseconds (`1000 us`). Defaults to `0`.
+    :param microseconds `<'int'>`: Relative microseconds. Defaults to `0`.
+    :param nanoseconds `<'int'>`: Relative nanoseconds. Defaults to `0`.
+    :param arr_reso `<'int'>`: The unit of `arr` as an `NPY_DATETIMEUNIT` enum value. Defaults to `-1`.
+    
+        - If not specified and `arr` is `datetime64`, the array's 
+          intrinsic resolution is used.
+        - If `arr` dtype is int64, you **MUST** specify the `arr_reso`,
+          and values are interpreted as ticks in that unit.
+
+    :returns `<'ndarray[datetime64[*]'>`: New datetime64 array at the same resolution as `arr`,
+        `except` that for `'ns'` inputs the result may be down-casted to `'us'` if ns range
+        would overflow.
+    """
+    # Get array resolution
+    if arr_reso < 0:
+        if np.PyArray_TYPE(arr) != np.NPY_TYPES.NPY_DATETIME:
+            _raise_missing_arr_reso_error(arr)
+        arr_reso = get_arr_nptime_unit(arr)
+
+    # Resolution: 'ns'
+    if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
+        return _dt64arr_ns_add_delta(
+            arr, years, quarters, months, weeks, days,
+            hours, minutes, seconds, milliseconds,
+            microseconds, nanoseconds
+        )
+
+    # Adjust dates -> int64[D]
+    cdef np.ndarray dates = _dt64arr_add_delta_date(arr, years, quarters, months, weeks, days, arr_reso)
+
+    # Total time delta in 'us'
+    cdef np.npy_int64 delta, q, r
+    if nanoseconds != 0:
+        with cython.cdivision(True):
+            q = nanoseconds / NS_MICROSECOND; r = nanoseconds % NS_MICROSECOND
+            microseconds += (q - 1 if r < 0 else q)
+    if hours != 0 or minutes != 0 or seconds != 0 or milliseconds != 0 or microseconds != 0:
+        delta = (
+            (hours * 3600 + minutes * 60 + seconds) * US_SECOND
+            + milliseconds * US_MILLISECOND
+            + microseconds
+        )
+    else:
+        delta = 0
+
+    # Resolution: 'us'
+    cdef np.ndarray times
+    if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
+        times = dt64arr_times(arr, np.NPY_DATETIMEUNIT.NPY_FR_us, delta, True)
+        dates = arr_mul(dates, US_DAY, 0, False)
+        return arr_add_arr(dates, times, 0, False).astype(DT64_DTYPE_US)
+
+    # Resolution: 'ms'
+    elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
+        if delta != 0:
+            with cython.cdivision(True):
+                q = delta / US_MILLISECOND; r = delta % US_MILLISECOND
+                delta = q - 1 if r < 0 else q
+        times = dt64arr_times(arr, np.NPY_DATETIMEUNIT.NPY_FR_ms, delta, True)
+        dates = arr_mul(dates, MS_DAY, 0, False)
+        return arr_add_arr(dates, times, 0, False).astype(DT64_DTYPE_MS)
+
+    # Resolution: 's'
+    elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_s:
+        if delta != 0:
+            with cython.cdivision(True):
+                q = delta / US_SECOND; r = delta % US_SECOND
+                delta = q - 1 if r < 0 else q
+        times = dt64arr_times(arr, np.NPY_DATETIMEUNIT.NPY_FR_s, delta, True)
+        dates = arr_mul(dates, SS_DAY, 0, False)
+        return arr_add_arr(dates, times, 0, False).astype(DT64_DTYPE_SS)
+
+    # Resolution: 'm'
+    elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_m:
+        if delta != 0:
+            with cython.cdivision(True):
+                q = delta / US_MINUTE; r = delta % US_MINUTE
+                delta = q - 1 if r < 0 else q
+        times = dt64arr_times(arr, np.NPY_DATETIMEUNIT.NPY_FR_m, delta, True)
+        dates = arr_mul(dates, 1_440, 0, False)
+        return arr_add_arr(dates, times, 0, False).astype(DT64_DTYPE_MI)
+
+    # Resolution: 'h'
+    elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_h:
+        if delta != 0:
+            with cython.cdivision(True):
+                q = delta / US_HOUR; r = delta % US_HOUR
+                delta = q - 1 if r < 0 else q
+        times = dt64arr_times(arr, np.NPY_DATETIMEUNIT.NPY_FR_h, delta, True)
+        dates = arr_mul(dates, 24, 0, False)
+        return arr_add_arr(dates, times, 0, False).astype(DT64_DTYPE_HH)
+
+    # Resolution: 'D'
+    elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_D:
+        if delta != 0:
+            with cython.cdivision(True):
+                q = delta / US_DAY; r = delta % US_DAY
+                delta = q - 1 if r < 0 else q
+        return arr_add(dates, delta, False).astype(DT64_DTYPE_DD)
+        
+    # Unsupported array resolution
+    raise ValueError(
+        "Cannot add delta to ndarray[%s].\n"
+        "Supported resolutions: 'ns', 'us', 'ms', 's', 'm', 'h', 'D'." % (arr.dtype)
+    )
+
+cdef inline np.ndarray _dt64arr_add_delta_date(np.ndarray arr, np.npy_int64 years, np.npy_int64 quarters, np.npy_int64 months, np.npy_int64 weeks, np.npy_int64 days, int arr_reso=-1):
+    """(internal) Apply only the calendar delta (Y/Q/M/W/D) to an ndarray[datetime64] 
+    and return `int64` day ticks `<'ndarray[int64]'>`.
+
+    This function constructs new calendar dates by adding the specified delta
+    to the original dates, The result is returned as an `int64` array expressed 
+    in `days since epoch` (not `datetime64`).
+
+    :param arr `<'ndarray'>`: Source `datetime64` or `int64` array (1-D).
+    :param years `<'int'>`: Relative years.
+    :param quarters `<'int'>`: Relative quarters (3 months).
+    :param months `<'int'>`: Relative months.
+    :param weeks `<'int'>`: Relative weeks (7 days).
+    :param days `<'int'>`: Relative days.
+    :param arr_reso `<'int'>`: The unit of `arr` as an `NPY_DATETIMEUNIT` enum value. Defaults to `-1`.
+    
+        - If not specified and `arr` is `datetime64`, the array's 
+          intrinsic resolution is used.
+        - If `arr` dtype is int64, you **MUST** specify the `arr_reso`,
+          and values are interpreted as ticks in that unit.
+
+    :returns `<'ndarray[int64]'>`: Integer `day` ticks (days since epoch) 
+        after adding the delta (not in `datetime64` dtype).
+
+    ## Behavior
+    - If any of `years`, `quarters`, or `months` is non-zero (`day-clamping` semantics):
+
+        * 1. Convert the dates to month units (`int64[M]`).
+        * 2. Add the total month delta: `years*12 + quarters*3 + months`.
+        * 3. Convert back to day units (`int64[D]`) anchored at the `first day` of the target month.
+        * 4. Compute the maximum number of days in each target month.
+        * 5. Clamp the original day to this maximum and add it back as `(clamped_day - 1)`, together with `weeks*7 + days`.
+
+    - If `years == quarters == months == 0`:
+
+        * Convert the `arr` directly to `int64[D]`, then add `weeks*7 + days`.
+    """
+    # Get array resolution
+    if arr_reso < 0:
+        if np.PyArray_TYPE(arr) != np.NPY_TYPES.NPY_DATETIME:
+            _raise_missing_arr_reso_error(arr)
+        arr_reso = get_arr_nptime_unit(arr)
+
+    cdef np.ndarray dateM, dateD, delta
+    # Year/Quarter/Month -> int64[M] -> int64[D]
+    if years != 0 or quarters != 0 or months != 0:
+        #: convert to int64[M]
+        dateM = dt64arr_as_int64_M(arr, arr_reso, 0, True)
+        #: add 'months' delta
+        dateM = arr_add(dateM, years * 12 + quarters * 3 + months, False)
+        #: compute the maximum days in the target month
+        delta = dt64arr_days_in_month(dateM, np.NPY_DATETIMEUNIT.NPY_FR_M, True)
+        #: convert to int64[D]
+        dateD = dt64arr_as_int64_D(dateM, np.NPY_DATETIMEUNIT.NPY_FR_M, 0, False)
+        #: compute original day and clamp to max days in month
+        delta = arr_min_arr(delta, dt64arr_day(arr, arr_reso, 0, True), 0, False)
+        #: add back original day-1 (0-based) and 'days' delta
+        return arr_add_arr(dateD, delta, weeks * 7 + days - 1, False)
+    # Weeks/Days -> int64[D]
+    else:
+        #: convert to int64[D]
+        dateD = dt64arr_as_int64_D(arr, arr_reso, 0, True)
+        #: add weeks/days delta
+        return arr_add(dateD, weeks * 7 + days, False)
+
+cdef inline np.ndarray _dt64arr_ns_add_delta(np.ndarray arr,
+    np.npy_int64 years, np.npy_int64 quarters, np.npy_int64 months, np.npy_int64 weeks, np.npy_int64 days,
+    np.npy_int64 hours, np.npy_int64 minutes, np.npy_int64 seconds, np.npy_int64 milliseconds, 
+    np.npy_int64 microseconds, np.npy_int64 nanoseconds
+):
+    """(internal) Add a mixed calendar/time delta to an ndarray[datetime64[ns]] `<'ndarray[datetime64]'>`.
+
+    This is the specialized nanosecond-resolution backend used by `dt64arr_add_delta`.
+
+    :param arr `<'ndarray'>`: Source `datetime64[ns]` or `int64` nanosecond tick array (1-D).
+    :param years `<'int'>`: Relative years.
+    :param quarters `<'int'>`: Relative quarters (3 months).
+    :param months `<'int'>`: Relative months.
+    :param weeks `<'int'>`: Relative weeks (7 days).
+    :param days `<'int'>`: Relative days.
+    :param hours `<'int'>`: Relative hours.
+    :param minutes `<'int'>`: Relative minutes.
+    :param seconds `<'int'>`: Relative seconds.
+    :param milliseconds `<'int'>`: Relative milliseconds (`1000 us`).
+    :param microseconds `<'int'>`: Relative microseconds.
+    :param nanoseconds `<'int'>`: Relative nanoseconds.
+    :returns `<'ndarray[datetime64]'>`: New datetime64 array at `ns` resolution, or `us` if nanosecond range would overflow.
+
+    ## Behavior
+    1) Apply the calendar delta (years/quarters/months/weeks/days) via
+       `_dt64arr_add_delta_date(..., NPY_FR_ns)` to obtain day ticks (`int64[D]`),
+       with `day clamping` for month roll-overs.
+    2) Extract time-of-day in nanoseconds and add the accumulated nanosecond
+       delta built from hours/minutes/seconds/milliseconds/microseconds/nanoseconds.
+    3) Normalize time such that `0 <= remainder < NS_DAY`, carrying extra (or deficit)
+       days into the date ticks. Negative deltas are handled using floor division.
+    4) If the resulting `datetime64[ns]` representation would overflow 64-bit,
+       down-convert to `datetime64[us]`; otherwise keep `datetime64[ns]`.
+    """
+    # Adjust dates -> int64[D]
+    cdef np.ndarray dates = _dt64arr_add_delta_date(arr, years, quarters, months, weeks, days, np.NPY_DATETIMEUNIT.NPY_FR_ns)
+
+    # Adjust times -> int64[ns]
+    cdef: 
+        np.ndarray times = dt64arr_times(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns, 0, True)
+        np.npy_int64* dates_ptr
+        np.npy_int64* times_ptr
+        np.npy_intp size, i
+        np.npy_int64 delta, d, t, q, r
+    if hours != 0 or minutes != 0 or seconds != 0 or milliseconds != 0 or microseconds != 0 or nanoseconds != 0:
+        delta = (
+            (hours * 3600 + minutes * 60 + seconds) * NS_SECOND
+            + milliseconds * NS_MILLISECOND
+            + microseconds * NS_MICROSECOND
+            + nanoseconds
+        )
+        dates_ptr = <np.npy_int64*> np.PyArray_DATA(dates)
+        times_ptr = <np.npy_int64*> np.PyArray_DATA(times)
+        size = arr.shape[0]
+        for i in range(size):
+            # Preserve NaT
+            d = dates_ptr[i]
+            if d == LLONG_MIN:
+                continue
+            t = times_ptr[i]
+            if t == LLONG_MIN:
+                continue
+            # Add delta & Normalize time
+            t += delta
+            with cython.cdivision(True):
+                q = t / NS_DAY; r = t % NS_DAY
+                if r < 0:
+                    q -= 1; r += NS_DAY
+            dates_ptr[i] = d + q
+            times_ptr[i] = r
+
+    # If out of 'ns' range, down-convert to 'us'
+    if not is_dt64arr_ns_safe(dates, np.NPY_DATETIMEUNIT.NPY_FR_D):
+        dates = arr_mul(dates, US_DAY, 0, False)
+        times = arr_div_floor(times, NS_MICROSECOND, 0, False)
+        return arr_add_arr(dates, times, 0, False).astype(DT64_DTYPE_US)
+    else:
+        dates = arr_mul(dates, NS_DAY, 0, False)
+        return arr_add_arr(dates, times, 0, False).astype(DT64_DTYPE_NS)
+
+cdef inline np.ndarray dt64arr_replace_dates(np.ndarray arr, np.npy_int64 year, np.npy_int64 month, np.npy_int64 day, int arr_reso=-1):
+    """Replace the Y/M/D components of an ndarray[datetime64] and return `int64` day ticks `<'ndarray[int64]'>`.
+
+    This function constructs new calendar dates by optionally replacing the
+    `year`, `month`, and/or `day` fields of each element in the array.
+    The result is returned as an `int64` array expressed in `days since epoch`
+    (not `datetime64`).
+
+    :param arr `<'ndarray'>`: Source `datetime64` or `int64` array (1-D).
+    :param year `<'int64'>`: Set the year to this value when `> 0`; otherwise, retain the original year.
+    :param month `<'int64'>`: Set the month to this value when `> 0`; otherwise, retain the original month.
+    :param day `<'int64'>`: Set the day to this value when `> 0`; otherwise, retain the original day.
+    :param arr_reso `<'int'>`: The unit of `arr` as an `NPY_DATETIMEUNIT` enum value. Defaults to `-1`.
+    
+        - If not specified and `arr` is `datetime64`, the array's 
+          intrinsic resolution is used.
+        - If `arr` dtype is int64, you **MUST** specify the `arr_reso`,
+          and values are interpreted as ticks in that unit.
+
+    :returns `<'ndarray[int64]'>`: Integer `day` ticks (days since epoch) 
+        after applying the replacements (not in `datetime64` dtype).
+
+    ## Behavior
+    - Replacements are `component-wise`: any of the date fields may be left
+      as `<= 0` to keep original values.
+    - Day values are `clamped` to the maximum valid day in the resulting month.
+    - The output is `int64` in day resolution, not `datetime64` dtype.
+    """
+    # Get array resolution
+    if arr_reso < 0:
+        if np.PyArray_TYPE(arr) != np.NPY_TYPES.NPY_DATETIME:
+            _raise_missing_arr_reso_error(arr)
+        arr_reso = get_arr_nptime_unit(arr)
+
+    # Year replacement -> int64[M] YYYY-01
+    cdef np.ndarray dateY, dateM, dateD, delta
+    # . set to specific year
+    if year > 0:
+        assure_1dim_arr(arr)
+        dateM = arr_fill_int64((year - EPOCH_YEAR) * 12, arr.shape[0])
+    # . retain original year
+    else:
+        dateY = dt64arr_as_int64_Y(arr, arr_reso, 0, True)
+        dateM = arr_mul(dateY, 12, 0, False)
+
+    # Month replacement -> int64[M] YYYY-MM
+    # . set to specific month
+    if month > 0:
+        dateM = arr_add(dateM, min(month, 12) - 1, False)
+    # . retain original month
+    else:
+        delta = dt64arr_month(arr, arr_reso, 0, True)
+        dateM = arr_add_arr(dateM, delta, -1, False)
+    
+    # Day replacement -> int64[D] YYYY-MM-DD
+    dateD = dt64arr_as_int64_D(dateM, np.NPY_DATETIMEUNIT.NPY_FR_M, 0, True)
+    delta = dt64arr_days_in_month(dateM, np.NPY_DATETIMEUNIT.NPY_FR_M, False)
+
+    # . set to specific day (clamp to maximum days in month)
+    if day > 0:
+        delta = arr_min(delta, day, 0, False)
+    # . retain original day (clamp to maximum days in month)
+    else:
+        delta = arr_min_arr(delta, dt64arr_day(arr, arr_reso, 0, True), 0, False)
+    dateD = arr_add_arr(dateD, delta, -1, False)
+
+    # Return the date part: int64[D]
+    return dateD
+
+cdef inline np.ndarray dt64arr_replace_times(np.ndarray arr, np.npy_int64 hour, np.npy_int64 minute, np.npy_int64 second, np.npy_int64 microsecond, np.npy_int64 nanosecond, int arr_reso=-1):
+    """Replace the h/m/s/us/ns components of an ndarray[datetime64] and return the 
+    time components `int64` ticks in the original resolution `<'ndarray[int64]'>`.
+
+    This function constructs new time values by optionally replacing the
+    `hour`, `minute`, `second`, `microsecond`, and/or `nanosecond` fields 
+    of each element in the array. The result is returned as an `int64` array 
+    representing the `time of day` ticks expressed in the original resolution
+    (not `datetime64`).
+
+    :param arr `<'ndarray'>`: Source `datetime64` or `int64` array (1-D).
+    :param hour `<'int64'>`: Set the hour to this value when `>= 0`; otherwise, retain the original hour.
+    :param minute `<'int64'>`: Set the minute to this value when `>= 0`; otherwise, retain the original minute.
+    :param second `<'int64'>`: Set the second to this value when `>= 0`; otherwise, retain the original second.
+    :param microsecond `<'int64'>`: Set the microsecond to this value when `>= 0`; otherwise, retain the original microsecond.
+    :param nanosecond `<'int64'>`: Set the nanosecond to this value when `>= 0`; otherwise, retain the original nanosecond.
+    :param arr_reso `<'int'>`: The unit of `arr` as an `NPY_DATETIMEUNIT` enum value. Defaults to `-1`.
+    
+        - If not specified and `arr` is `datetime64`, the array's 
+          intrinsic resolution is used.
+        - If `arr` dtype is int64, you **MUST** specify the `arr_reso`,
+          and values are interpreted as ticks in that unit.
+
+    :returns `<'ndarray[int64]'>`: Integer `time-of-day` ticks (in original resolution) 
+        after applying the replacements (not in `datetime64` dtype).
+
+    ## Behavior
+    - Replacements are `component-wise`: any of the time fields may be left 
+      as `< 0` to keep original values.
+    - Only time components within the array resolution are modified; 
+      e.g., when `arr` is in `'s'` resolution, `microsecond` and `nanosecond` 
+      replacements are ignored.
+    - The output is time components `int64` ticks in the original resolution, 
+      not `datetime64` dtype.
+    """
+    # Get array resolution
+    if arr_reso < 0:
+        if np.PyArray_TYPE(arr) != np.NPY_TYPES.NPY_DATETIME:
+            _raise_missing_arr_reso_error(arr)
+        arr_reso = get_arr_nptime_unit(arr)
+
+    # Get conversion factors
+    cdef np.npy_int64 hh_f, mi_f, ss_f, us_f
+    if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
+        hh_f = NS_HOUR; mi_f = NS_MINUTE; ss_f = NS_SECOND; us_f = NS_MICROSECOND
+    elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
+        hh_f = US_HOUR; mi_f = US_MINUTE; ss_f = US_SECOND; us_f = 1
+    elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
+        hh_f = MS_HOUR; mi_f = MS_MINUTE; ss_f = MS_SECOND; us_f = 1
+    elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_s:
+        hh_f = SS_HOUR; mi_f = SS_MINUTE; ss_f = 1;         us_f = 0
+    else:
+        raise ValueError(
+            "Only supports arrays with units in ['ns', 'us', 'ms', 's'], "
+            "instead got '%s'." % nptime_unit_int2str(arr_reso)
+        )
+
+    # Hour replacement -> int64[ns] hh:00:00.000000000
+    cdef np.ndarray times, delta
+    cdef np.npy_int64 millisecond
+    # . set to specific hour
+    if hour >= 0:
+        assure_1dim_arr(arr)
+        times = arr_fill_int64(min(hour, 23) * hh_f, arr.shape[0])
+    # . retain original hour
+    else:
+        delta = dt64arr_hour(arr, arr_reso, 0, True)
+        times = arr_mul(delta, hh_f, 0, False)
+
+    # Minute replacement -> int64[ns] hh:mm:00.000000000
+    # . set to specific minute
+    if minute >= 0:
+        times = arr_add(times, min(minute, 59) * mi_f, False)
+    # . retain original minute
+    else:
+        delta = dt64arr_minute(arr, arr_reso, 0, True)
+        delta = arr_mul(delta, mi_f, 0, False)
+        times = arr_add_arr(times, delta, 0, False)
+
+    # Second replacement -> int64[ns] hh:mm:ss.000000000
+    # . set to specific second
+    if second >= 0:
+        times = arr_add(times, min(second, 59) * ss_f, False)
+    # . retain original second
+    else:
+        delta = dt64arr_second(arr, arr_reso, 0, True)
+        delta = arr_mul(delta, ss_f, 0, False)
+        times = arr_add_arr(times, delta, 0, False)
+
+    # . Millisecond replacement -> int64[ns] hh:mm:ss.sss000000
+    if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
+        millisecond = 0 if microsecond < 0 else microsecond // 1000
+        # . set to specific millisecond
+        if microsecond >= 0:
+            times = arr_add(times, min(millisecond, 999), False)
+        # . retain original millisecond
+        else:
+            delta = dt64arr_millisecond(arr, arr_reso, 0, True)
+            times = arr_add_arr(times, delta, 0, False)
+
+    # Microsecond replacement -> int64[ns] hh:mm:ss.uuuuuu000
+    elif arr_reso != np.NPY_DATETIMEUNIT.NPY_FR_s:
+        # . set to specific microsecond
+        if microsecond >= 0:
+            times = arr_add(times, min(microsecond, 999_999) * us_f, False)
+        # . retain original microsecond
+        else:
+            delta = dt64arr_microsecond(arr, arr_reso, 0, True)
+            delta = arr_mul(delta, us_f, 0, False)
+            times = arr_add_arr(times, delta, 0, False)
+            
+    # Nanosecond replacement -> int64[ns] hh:mm:ss.uuuuuunnn
+    if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
+        # . set to specific nanosecond
+        if nanosecond >= 0:
+            times = arr_add(times, min(nanosecond, 999), False)
+        # . retain original nanosecond
+        else:
+            delta = dt64arr_nanosecond(arr, arr_reso, 0, True)
+            times = arr_add_arr(times, delta, 0, False)
+
+    # Return the time part: int64[arr_reso]
+    return times
 
 # . arithmetic
 cdef inline np.ndarray dt64arr_round(np.ndarray arr, str to_unit, int arr_reso=-1, bint copy=True):
@@ -9138,31 +10076,35 @@ cdef inline np.ndarray dt64arr_round(np.ndarray arr, str to_unit, int arr_reso=-
     :returns `<'np.ndarray[datetime64]'>`: The rounded array.
         `NaT` values are preserved.
     """
+    # Guard
     if to_unit is None:
         _raise_invalid_nptime_str_unit_error(to_unit)
+
     # Get array resolution
     cdef bint is_dt64 = np.PyArray_TYPE(arr) == np.NPY_TYPES.NPY_DATETIME
     if arr_reso < 0:
         if not is_dt64:
             _raise_missing_arr_reso_error(arr)
         arr_reso = get_arr_nptime_unit(arr)
-    elif not is_dt64:
-        arr = arr.astype(nptime_unit_int2dt64(arr_reso))
-        copy = False
-    #: from now on, 'arr' can only be datetime64 
-    #: array under the 'arr_reso' resolution.
-    cdef int tg_unit = nptime_unit_str2int(to_unit)
+
+    # Parse target resolution
+    cdef int to_reso = nptime_unit_str2int(to_unit)
 
     # Fast-path
     #: source is coarser or equal to target (no rounding needed)
-    if arr_reso <= tg_unit:
-        return arr_add(arr, 0, copy)  # honor `copy` flag
+    if arr_reso <= to_reso:
+        if is_dt64:
+            return arr_add(arr, 0, copy)  # honor `copy` flag
+        return arr.astype(nptime_unit_int2dt64(arr_reso))
+
+    #: Convert to int64
+    arr = arr_assure_int64(arr, copy)
 
     # To microsecond [us]
-    if tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
-        # my_unit [ns] -> tg_unit [us]
+    if to_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
+        # my_unit [ns] -> [us]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
                 arr = arr_div_even(arr, NS_MICROSECOND, 0, copy)
                 return arr.astype(DT64_DTYPE_US)
             else:
@@ -9171,122 +10113,122 @@ cdef inline np.ndarray dt64arr_round(np.ndarray arr, str to_unit, int arr_reso=-
         # Coarser/equal units are handled by fast-path.
 
     # To millisecond [ms]
-    elif tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-        # my_unit [ns] -> tg_unit [ms]
+    elif to_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
+        # my_unit [ns] -> [ms]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_even_mul(arr, NS_MILLISECOND, US_MILLISECOND, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_even_mul(arr, NS_MILLISECOND, US_MILLISECOND, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_even_mul(arr, NS_MILLISECOND, NS_MILLISECOND, 0, copy)
+                arr = arr_div_even_mul(arr, NS_MILLISECOND, NS_MILLISECOND, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
-        # my_unit [us] -> tg_unit [ms]
+        # my_unit [us] -> [ms]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
-            arr = arr_div_even_mul(arr, US_MILLISECOND, US_MILLISECOND, 0, copy)
+            arr = arr_div_even_mul(arr, US_MILLISECOND, US_MILLISECOND, 0, False)
             return arr.astype(DT64_DTYPE_US)
         # Coarser/equal units are handled by fast-path.
 
     # To second [s]
-    elif tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:
-        # my_unit [ns] -> tg_unit [s]
+    elif to_reso == np.NPY_DATETIMEUNIT.NPY_FR_s:
+        # my_unit [ns] -> [s]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_even_mul(arr, NS_SECOND, US_SECOND, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_even_mul(arr, NS_SECOND, US_SECOND, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_even_mul(arr, NS_SECOND, NS_SECOND, 0, copy)
+                arr = arr_div_even_mul(arr, NS_SECOND, NS_SECOND, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
-        # my_unit [us] -> tg_unit [s]
+        # my_unit [us] -> [s]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
-            arr = arr_div_even_mul(arr, US_SECOND, US_SECOND, 0, copy)
+            arr = arr_div_even_mul(arr, US_SECOND, US_SECOND, 0, False)
             return arr.astype(DT64_DTYPE_US)
-        # my_unit [ms] -> tg_unit [s]
+        # my_unit [ms] -> [s]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-            arr = arr_div_even_mul(arr, MS_SECOND, MS_SECOND, 0, copy)
+            arr = arr_div_even_mul(arr, MS_SECOND, MS_SECOND, 0, False)
             return arr.astype(DT64_DTYPE_MS)
         # Coarser/equal units are handled by fast-path.
 
     # To minute [m]
-    elif tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:
-        # my_unit [ns] -> tg_unit [m]
+    elif to_reso == np.NPY_DATETIMEUNIT.NPY_FR_m:
+        # my_unit [ns] -> [m]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_even_mul(arr, NS_MINUTE, US_MINUTE, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_even_mul(arr, NS_MINUTE, US_MINUTE, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_even_mul(arr, NS_MINUTE, NS_MINUTE, 0, copy)
+                arr = arr_div_even_mul(arr, NS_MINUTE, NS_MINUTE, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
-        # my_unit [us] -> tg_unit [m]
+        # my_unit [us] -> [m]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
-            arr = arr_div_even_mul(arr, US_MINUTE, US_MINUTE, 0, copy)
+            arr = arr_div_even_mul(arr, US_MINUTE, US_MINUTE, 0, False)
             return arr.astype(DT64_DTYPE_US)
-        # my_unit [ms] -> tg_unit [m]
+        # my_unit [ms] -> [m]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-            arr = arr_div_even_mul(arr, MS_MINUTE, MS_MINUTE, 0, copy)
+            arr = arr_div_even_mul(arr, MS_MINUTE, MS_MINUTE, 0, False)
             return arr.astype(DT64_DTYPE_MS)
-        # my_unit [s] -> tg_unit [m]
+        # my_unit [s] -> [m]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_s:
-            arr = arr_div_even_mul(arr, SS_MINUTE, SS_MINUTE, 0, copy)
+            arr = arr_div_even_mul(arr, SS_MINUTE, SS_MINUTE, 0, False)
             return arr.astype(DT64_DTYPE_SS)
         # Coarser/equal units are handled by fast-path.
     
     # To hour [h]
-    elif tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:
-        # my_unit [ns] -> tg_unit [h]
+    elif to_reso == np.NPY_DATETIMEUNIT.NPY_FR_h:
+        # my_unit [ns] -> [h]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_even_mul(arr, NS_HOUR, US_HOUR, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_even_mul(arr, NS_HOUR, US_HOUR, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_even_mul(arr, NS_HOUR, NS_HOUR, 0, copy)
+                arr = arr_div_even_mul(arr, NS_HOUR, NS_HOUR, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
-        # my_unit [us] -> tg_unit [h]
+        # my_unit [us] -> [h]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
-            arr = arr_div_even_mul(arr, US_HOUR, US_HOUR, 0, copy)
+            arr = arr_div_even_mul(arr, US_HOUR, US_HOUR, 0, False)
             return arr.astype(DT64_DTYPE_US)
-        # my_unit [ms] -> tg_unit [h]
+        # my_unit [ms] -> [h]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-            arr = arr_div_even_mul(arr, MS_HOUR, MS_HOUR, 0, copy)
+            arr = arr_div_even_mul(arr, MS_HOUR, MS_HOUR, 0, False)
             return arr.astype(DT64_DTYPE_MS)
-        # my_unit [s] -> tg_unit [h]
+        # my_unit [s] -> [h]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_s:
-            arr = arr_div_even_mul(arr, SS_HOUR, SS_HOUR, 0, copy)
+            arr = arr_div_even_mul(arr, SS_HOUR, SS_HOUR, 0, False)
             return arr.astype(DT64_DTYPE_SS)
-        # my_unit [m] -> tg_unit [h]
+        # my_unit [m] -> [h]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_m:
-            arr = arr_div_even_mul(arr, 60, 60, 0, copy)
+            arr = arr_div_even_mul(arr, 60, 60, 0, False)
             return arr.astype(DT64_DTYPE_MI)
         # Coarser/equal units are handled by fast-path.
 
     # To day [D]
-    elif tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:
-        # my_unit [ns] -> tg_unit [D]
+    elif to_reso == np.NPY_DATETIMEUNIT.NPY_FR_D:
+        # my_unit [ns] -> [D]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_even_mul(arr, NS_DAY, US_DAY, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_even_mul(arr, NS_DAY, US_DAY, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_even_mul(arr, NS_DAY, NS_DAY, 0, copy)
+                arr = arr_div_even_mul(arr, NS_DAY, NS_DAY, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
-        # my_unit [us] -> tg_unit [D]
+        # my_unit [us] -> [D]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
-            arr = arr_div_even_mul(arr, US_DAY, US_DAY, 0, copy)
+            arr = arr_div_even_mul(arr, US_DAY, US_DAY, 0, False)
             return arr.astype(DT64_DTYPE_US)
-        # my_unit [ms] -> tg_unit [D]
+        # my_unit [ms] -> [D]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-            arr = arr_div_even_mul(arr, MS_DAY, MS_DAY, 0, copy)
+            arr = arr_div_even_mul(arr, MS_DAY, MS_DAY, 0, False)
             return arr.astype(DT64_DTYPE_MS)
-        # my_unit [s] -> tg_unit [D]
+        # my_unit [s] -> [D]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_s:
-            arr = arr_div_even_mul(arr, SS_DAY, SS_DAY, 0, copy)
+            arr = arr_div_even_mul(arr, SS_DAY, SS_DAY, 0, False)
             return arr.astype(DT64_DTYPE_SS)
-        # my_unit [m] -> tg_unit [D]
+        # my_unit [m] -> [D]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_m:
-            arr = arr_div_even_mul(arr, 1440, 1440, 0, copy)
+            arr = arr_div_even_mul(arr, 1440, 1440, 0, False)
             return arr.astype(DT64_DTYPE_MI)
-        # my_unit [h] -> tg_unit [D]
+        # my_unit [h] -> [D]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_h:
-            arr = arr_div_even_mul(arr, 24, 24, 0, copy)
+            arr = arr_div_even_mul(arr, 24, 24, 0, False)
             return arr.astype(DT64_DTYPE_HH)
         # Coarser/equal units are handled by fast-path.
 
@@ -9318,155 +10260,159 @@ cdef inline np.ndarray dt64arr_ceil(np.ndarray arr, str to_unit, int arr_reso=-1
     :returns `<'np.ndarray[datetime64]'>`: The ceiled array.
         `NaT` values are preserved.
     """
+    # Guard
     if to_unit is None:
         _raise_invalid_nptime_str_unit_error(to_unit)
+
     # Get array resolution
     cdef bint is_dt64 = np.PyArray_TYPE(arr) == np.NPY_TYPES.NPY_DATETIME
     if arr_reso < 0:
         if not is_dt64:
             _raise_missing_arr_reso_error(arr)
         arr_reso = get_arr_nptime_unit(arr)
-    elif not is_dt64:
-        arr = arr.astype(nptime_unit_int2dt64(arr_reso))
-        copy = False
-    #: from now on, 'arr' can only be datetime64 
-    #: array under the 'arr_reso' resolution.
-    cdef int tg_unit = nptime_unit_str2int(to_unit)
+
+    # Parse target resolution
+    cdef int to_reso = nptime_unit_str2int(to_unit)
 
     # Fast-path
     #: source is coarser or equal to target (no rounding needed)
-    if arr_reso <= tg_unit:
-        return arr_add(arr, 0, copy)  # honor `copy` flag
+    if arr_reso <= to_reso:
+        if is_dt64:
+            return arr_add(arr, 0, copy)  # honor `copy` flag
+        return arr.astype(nptime_unit_int2dt64(arr_reso))
+
+    #: Convert to int64
+    arr = arr_assure_int64(arr, copy)
 
     # To microsecond [us]
-    if tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
-        # my_unit [ns] -> tg_unit [us]
+    if to_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
+        # my_unit [ns] -> [us]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_ceil(arr, NS_MICROSECOND, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_ceil(arr, NS_MICROSECOND, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_ceil_mul(arr, NS_MICROSECOND, NS_MICROSECOND, 0, copy)
+                arr = arr_div_ceil_mul(arr, NS_MICROSECOND, NS_MICROSECOND, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
         # Coarser/equal units are handled by fast-path.
 
     # To millisecond [ms]
-    elif tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-        # my_unit [ns] -> tg_unit [ms]
+    elif to_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
+        # my_unit [ns] -> [ms]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_ceil_mul(arr, NS_MILLISECOND, US_MILLISECOND, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_ceil_mul(arr, NS_MILLISECOND, US_MILLISECOND, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_ceil_mul(arr, NS_MILLISECOND, NS_MILLISECOND, 0, copy)
+                arr = arr_div_ceil_mul(arr, NS_MILLISECOND, NS_MILLISECOND, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
-        # my_unit [us] -> tg_unit [ms]
+        # my_unit [us] -> [ms]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
-            arr = arr_div_ceil_mul(arr, US_MILLISECOND, US_MILLISECOND, 0, copy)
+            arr = arr_div_ceil_mul(arr, US_MILLISECOND, US_MILLISECOND, 0, False)
             return arr.astype(DT64_DTYPE_US)
         # Coarser/equal units are handled by fast-path.
 
     # To second [s]
-    elif tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:
-        # my_unit [ns] -> tg_unit [s]
+    elif to_reso == np.NPY_DATETIMEUNIT.NPY_FR_s:
+        # my_unit [ns] -> [s]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_ceil_mul(arr, NS_SECOND, US_SECOND, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_ceil_mul(arr, NS_SECOND, US_SECOND, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_ceil_mul(arr, NS_SECOND, NS_SECOND, 0, copy)
+                arr = arr_div_ceil_mul(arr, NS_SECOND, NS_SECOND, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
-        # my_unit [us] -> tg_unit [s]
+        # my_unit [us] -> [s]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
-            arr = arr_div_ceil_mul(arr, US_SECOND, US_SECOND, 0, copy)
+            arr = arr_div_ceil_mul(arr, US_SECOND, US_SECOND, 0, False)
             return arr.astype(DT64_DTYPE_US)
-        # my_unit [ms] -> tg_unit [s]
+        # my_unit [ms] -> [s]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-            arr = arr_div_ceil_mul(arr, MS_SECOND, MS_SECOND, 0, copy)
+            arr = arr_div_ceil_mul(arr, MS_SECOND, MS_SECOND, 0, False)
             return arr.astype(DT64_DTYPE_MS)
         # Coarser/equal units are handled by fast-path.
 
     # To minute [m]
-    elif tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:
-        # my_unit [ns] -> tg_unit [m]
+    elif to_reso == np.NPY_DATETIMEUNIT.NPY_FR_m:
+        # my_unit [ns] -> [m]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_ceil_mul(arr, NS_MINUTE, US_MINUTE, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_ceil_mul(arr, NS_MINUTE, US_MINUTE, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_ceil_mul(arr, NS_MINUTE, NS_MINUTE, 0, copy)
+                arr = arr_div_ceil_mul(arr, NS_MINUTE, NS_MINUTE, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
-        # my_unit [us] -> tg_unit [m]
+        # my_unit [us] -> [m]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
-            arr = arr_div_ceil_mul(arr, US_MINUTE, US_MINUTE, 0, copy)
+            arr = arr_div_ceil_mul(arr, US_MINUTE, US_MINUTE, 0, False)
             return arr.astype(DT64_DTYPE_US)
-        # my_unit [ms] -> tg_unit [m]
+        # my_unit [ms] -> [m]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-            arr = arr_div_ceil_mul(arr, MS_MINUTE, MS_MINUTE, 0, copy)
+            arr = arr_div_ceil_mul(arr, MS_MINUTE, MS_MINUTE, 0, False)
             return arr.astype(DT64_DTYPE_MS)
-        # my_unit [s] -> tg_unit [m]
+        # my_unit [s] -> [m]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_s:
-            arr = arr_div_ceil_mul(arr, SS_MINUTE, SS_MINUTE, 0, copy)
+            arr = arr_div_ceil_mul(arr, SS_MINUTE, SS_MINUTE, 0, False)
             return arr.astype(DT64_DTYPE_SS)
         # Coarser/equal units are handled by fast-path.
     
     # To hour [h]
-    elif tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:
-        # my_unit [ns] -> tg_unit [h]
+    elif to_reso == np.NPY_DATETIMEUNIT.NPY_FR_h:
+        # my_unit [ns] -> [h]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_ceil_mul(arr, NS_HOUR, US_HOUR, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_ceil_mul(arr, NS_HOUR, US_HOUR, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_ceil_mul(arr, NS_HOUR, NS_HOUR, 0, copy)
+                arr = arr_div_ceil_mul(arr, NS_HOUR, NS_HOUR, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
-        # my_unit [us] -> tg_unit [h]
+        # my_unit [us] -> [h]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
-            arr = arr_div_ceil_mul(arr, US_HOUR, US_HOUR, 0, copy)
+            arr = arr_div_ceil_mul(arr, US_HOUR, US_HOUR, 0, False)
             return arr.astype(DT64_DTYPE_US)
-        # my_unit [ms] -> tg_unit [h]
+        # my_unit [ms] -> [h]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-            arr = arr_div_ceil_mul(arr, MS_HOUR, MS_HOUR, 0, copy)
+            arr = arr_div_ceil_mul(arr, MS_HOUR, MS_HOUR, 0, False)
             return arr.astype(DT64_DTYPE_MS)
-        # my_unit [s] -> tg_unit [h]
+        # my_unit [s] -> [h]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_s:
-            arr = arr_div_ceil_mul(arr, SS_HOUR, SS_HOUR, 0, copy)
+            arr = arr_div_ceil_mul(arr, SS_HOUR, SS_HOUR, 0, False)
             return arr.astype(DT64_DTYPE_SS)
-        # my_unit [m] -> tg_unit [h]
+        # my_unit [m] -> [h]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_m:
-            arr = arr_div_ceil_mul(arr, 60, 60, 0, copy)
+            arr = arr_div_ceil_mul(arr, 60, 60, 0, False)
             return arr.astype(DT64_DTYPE_MI)
         # Coarser/equal units are handled by fast-path.
 
     # To day [D]
-    elif tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:
-        # my_unit [ns] -> tg_unit [D]
+    elif to_reso == np.NPY_DATETIMEUNIT.NPY_FR_D:
+        # my_unit [ns] -> [D]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_ceil_mul(arr, NS_DAY, US_DAY, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_ceil_mul(arr, NS_DAY, US_DAY, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_ceil_mul(arr, NS_DAY, NS_DAY, 0, copy)
+                arr = arr_div_ceil_mul(arr, NS_DAY, NS_DAY, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
-        # my_unit [us] -> tg_unit [D]
+        # my_unit [us] -> [D]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
-            arr = arr_div_ceil_mul(arr, US_DAY, US_DAY, 0, copy)
+            arr = arr_div_ceil_mul(arr, US_DAY, US_DAY, 0, False)
             return arr.astype(DT64_DTYPE_US)
-        # my_unit [ms] -> tg_unit [D]
+        # my_unit [ms] -> [D]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-            arr = arr_div_ceil_mul(arr, MS_DAY, MS_DAY, 0, copy)
+            arr = arr_div_ceil_mul(arr, MS_DAY, MS_DAY, 0, False)
             return arr.astype(DT64_DTYPE_MS)
-        # my_unit [s] -> tg_unit [D]
+        # my_unit [s] -> [D]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_s:
-            arr = arr_div_ceil_mul(arr, SS_DAY, SS_DAY, 0, copy)
+            arr = arr_div_ceil_mul(arr, SS_DAY, SS_DAY, 0, False)
             return arr.astype(DT64_DTYPE_SS)
-        # my_unit [m] -> tg_unit [D]
+        # my_unit [m] -> [D]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_m:
-            arr = arr_div_ceil_mul(arr, 1440, 1440, 0, copy)
+            arr = arr_div_ceil_mul(arr, 1440, 1440, 0, False)
             return arr.astype(DT64_DTYPE_MI)
-        # my_unit [h] -> tg_unit [D]
+        # my_unit [h] -> [D]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_h:
-            arr = arr_div_ceil_mul(arr, 24, 24, 0, copy)
+            arr = arr_div_ceil_mul(arr, 24, 24, 0, False)
             return arr.astype(DT64_DTYPE_HH)
         # Coarser/equal units are handled by fast-path.
 
@@ -9498,155 +10444,159 @@ cdef inline np.ndarray dt64arr_floor(np.ndarray arr, str to_unit, int arr_reso=-
     :returns `<'np.ndarray[datetime64]'>`: The floored array.
         `NaT` values are preserved.
     """
+    # Guard
     if to_unit is None:
         _raise_invalid_nptime_str_unit_error(to_unit)
+
     # Get array resolution
     cdef bint is_dt64 = np.PyArray_TYPE(arr) == np.NPY_TYPES.NPY_DATETIME
     if arr_reso < 0:
         if not is_dt64:
             _raise_missing_arr_reso_error(arr)
         arr_reso = get_arr_nptime_unit(arr)
-    elif not is_dt64:
-        arr = arr.astype(nptime_unit_int2dt64(arr_reso))
-        copy = False
-    #: from now on, 'arr' can only be datetime64 
-    #: array under the 'arr_reso' resolution.
-    cdef int tg_unit = nptime_unit_str2int(to_unit)
+
+    # Parse target resolution
+    cdef int to_reso = nptime_unit_str2int(to_unit)
 
     # Fast-path
     #: source is coarser or equal to target (no rounding needed)
-    if arr_reso <= tg_unit:
-        return arr_add(arr, 0, copy)  # honor `copy` flag
+    if arr_reso <= to_reso:
+        if is_dt64:
+            return arr_add(arr, 0, copy)  # honor `copy` flag
+        return arr.astype(nptime_unit_int2dt64(arr_reso))
+
+    #: Convert to int64
+    arr = arr_assure_int64(arr, copy)
 
     # To microsecond [us]
-    if tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_us:
-        # my_unit [ns] -> tg_unit [us]
+    if to_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
+        # my_unit [ns] -> [us]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_floor(arr, NS_MICROSECOND, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_floor(arr, NS_MICROSECOND, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_floor_mul(arr, NS_MICROSECOND, NS_MICROSECOND, 0, copy)
+                arr = arr_div_floor_mul(arr, NS_MICROSECOND, NS_MICROSECOND, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
         # Coarser/equal units are handled by fast-path.
 
     # To millisecond [ms]
-    elif tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-        # my_unit [ns] -> tg_unit [ms]
+    elif to_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
+        # my_unit [ns] -> [ms]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_floor_mul(arr, NS_MILLISECOND, US_MILLISECOND, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_floor_mul(arr, NS_MILLISECOND, US_MILLISECOND, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_floor_mul(arr, NS_MILLISECOND, NS_MILLISECOND, 0, copy)
+                arr = arr_div_floor_mul(arr, NS_MILLISECOND, NS_MILLISECOND, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
-        # my_unit [us] -> tg_unit [ms]
+        # my_unit [us] -> [ms]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
-            arr = arr_div_floor_mul(arr, US_MILLISECOND, US_MILLISECOND, 0, copy)
+            arr = arr_div_floor_mul(arr, US_MILLISECOND, US_MILLISECOND, 0, False)
             return arr.astype(DT64_DTYPE_US)
         # Coarser/equal units are handled by fast-path.
 
     # To second [s]
-    elif tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_s:
-        # my_unit [ns] -> tg_unit [s]
+    elif to_reso == np.NPY_DATETIMEUNIT.NPY_FR_s:
+        # my_unit [ns] -> [s]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_floor_mul(arr, NS_SECOND, US_SECOND, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_floor_mul(arr, NS_SECOND, US_SECOND, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_floor_mul(arr, NS_SECOND, NS_SECOND, 0, copy)
+                arr = arr_div_floor_mul(arr, NS_SECOND, NS_SECOND, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
-        # my_unit [us] -> tg_unit [s]
+        # my_unit [us] -> [s]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
-            arr = arr_div_floor_mul(arr, US_SECOND, US_SECOND, 0, copy)
+            arr = arr_div_floor_mul(arr, US_SECOND, US_SECOND, 0, False)
             return arr.astype(DT64_DTYPE_US)
-        # my_unit [ms] -> tg_unit [s]
+        # my_unit [ms] -> [s]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-            arr = arr_div_floor_mul(arr, MS_SECOND, MS_SECOND, 0, copy)
+            arr = arr_div_floor_mul(arr, MS_SECOND, MS_SECOND, 0, False)
             return arr.astype(DT64_DTYPE_MS)
         # Coarser/equal units are handled by fast-path.
 
     # To minute [m]
-    elif tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_m:
-        # my_unit [ns] -> tg_unit [m]
+    elif to_reso == np.NPY_DATETIMEUNIT.NPY_FR_m:
+        # my_unit [ns] -> [m]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_floor_mul(arr, NS_MINUTE, US_MINUTE, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_floor_mul(arr, NS_MINUTE, US_MINUTE, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_floor_mul(arr, NS_MINUTE, NS_MINUTE, 0, copy)
+                arr = arr_div_floor_mul(arr, NS_MINUTE, NS_MINUTE, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
-        # my_unit [us] -> tg_unit [m]
+        # my_unit [us] -> [m]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
-            arr = arr_div_floor_mul(arr, US_MINUTE, US_MINUTE, 0, copy)
+            arr = arr_div_floor_mul(arr, US_MINUTE, US_MINUTE, 0, False)
             return arr.astype(DT64_DTYPE_US)
-        # my_unit [ms] -> tg_unit [m]
+        # my_unit [ms] -> [m]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-            arr = arr_div_floor_mul(arr, MS_MINUTE, MS_MINUTE, 0, copy)
+            arr = arr_div_floor_mul(arr, MS_MINUTE, MS_MINUTE, 0, False)
             return arr.astype(DT64_DTYPE_MS)
-        # my_unit [s] -> tg_unit [m]
+        # my_unit [s] -> [m]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_s:
-            arr = arr_div_floor_mul(arr, SS_MINUTE, SS_MINUTE, 0, copy)
+            arr = arr_div_floor_mul(arr, SS_MINUTE, SS_MINUTE, 0, False)
             return arr.astype(DT64_DTYPE_SS)
         # Coarser/equal units are handled by fast-path.
     
     # To hour [h]
-    elif tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_h:
-        # my_unit [ns] -> tg_unit [h]
+    elif to_reso == np.NPY_DATETIMEUNIT.NPY_FR_h:
+        # my_unit [ns] -> [h]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_floor_mul(arr, NS_HOUR, US_HOUR, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_floor_mul(arr, NS_HOUR, US_HOUR, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_floor_mul(arr, NS_HOUR, NS_HOUR, 0, copy)
+                arr = arr_div_floor_mul(arr, NS_HOUR, NS_HOUR, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
-        # my_unit [us] -> tg_unit [h]
+        # my_unit [us] -> [h]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
-            arr = arr_div_floor_mul(arr, US_HOUR, US_HOUR, 0, copy)
+            arr = arr_div_floor_mul(arr, US_HOUR, US_HOUR, 0, False)
             return arr.astype(DT64_DTYPE_US)
-        # my_unit [ms] -> tg_unit [h]
+        # my_unit [ms] -> [h]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-            arr = arr_div_floor_mul(arr, MS_HOUR, MS_HOUR, 0, copy)
+            arr = arr_div_floor_mul(arr, MS_HOUR, MS_HOUR, 0, False)
             return arr.astype(DT64_DTYPE_MS)
-        # my_unit [s] -> tg_unit [h]
+        # my_unit [s] -> [h]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_s:
-            arr = arr_div_floor_mul(arr, SS_HOUR, SS_HOUR, 0, copy)
+            arr = arr_div_floor_mul(arr, SS_HOUR, SS_HOUR, 0, False)
             return arr.astype(DT64_DTYPE_SS)
-        # my_unit [m] -> tg_unit [h]
+        # my_unit [m] -> [h]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_m:
-            arr = arr_div_floor_mul(arr, 60, 60, 0, copy)
+            arr = arr_div_floor_mul(arr, 60, 60, 0, False)
             return arr.astype(DT64_DTYPE_MI)
         # Coarser/equal units are handled by fast-path.
 
     # To day [D]
-    elif tg_unit == np.NPY_DATETIMEUNIT.NPY_FR_D:
-        # my_unit [ns] -> tg_unit [D]
+    elif to_reso == np.NPY_DATETIMEUNIT.NPY_FR_D:
+        # my_unit [ns] -> [D]
         if arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ns:
-            if not is_dt64arr_ns_safe(arr, DT_NPY_UNIT_NS):
-                arr = arr_div_floor_mul(arr, NS_DAY, US_DAY, 0, copy)
+            if not is_dt64arr_ns_safe(arr, np.NPY_DATETIMEUNIT.NPY_FR_ns):
+                arr = arr_div_floor_mul(arr, NS_DAY, US_DAY, 0, False)
                 return arr.astype(DT64_DTYPE_US)
             else:
-                arr = arr_div_floor_mul(arr, NS_DAY, NS_DAY, 0, copy)
+                arr = arr_div_floor_mul(arr, NS_DAY, NS_DAY, 0, False)
                 return arr.astype(DT64_DTYPE_NS)
-        # my_unit [us] -> tg_unit [D]
+        # my_unit [us] -> [D]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_us:
-            arr = arr_div_floor_mul(arr, US_DAY, US_DAY, 0, copy)
+            arr = arr_div_floor_mul(arr, US_DAY, US_DAY, 0, False)
             return arr.astype(DT64_DTYPE_US)
-        # my_unit [ms] -> tg_unit [D]
+        # my_unit [ms] -> [D]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_ms:
-            arr = arr_div_floor_mul(arr, MS_DAY, MS_DAY, 0, copy)
+            arr = arr_div_floor_mul(arr, MS_DAY, MS_DAY, 0, False)
             return arr.astype(DT64_DTYPE_MS)
-        # my_unit [s] -> tg_unit [D]
+        # my_unit [s] -> [D]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_s:
-            arr = arr_div_floor_mul(arr, SS_DAY, SS_DAY, 0, copy)
+            arr = arr_div_floor_mul(arr, SS_DAY, SS_DAY, 0, False)
             return arr.astype(DT64_DTYPE_SS)
-        # my_unit [m] -> tg_unit [D]
+        # my_unit [m] -> [D]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_m:
-            arr = arr_div_floor_mul(arr, 1440, 1440, 0, copy)
+            arr = arr_div_floor_mul(arr, 1440, 1440, 0, False)
             return arr.astype(DT64_DTYPE_MI)
-        # my_unit [h] -> tg_unit [D]
+        # my_unit [h] -> [D]
         elif arr_reso == np.NPY_DATETIMEUNIT.NPY_FR_h:
-            arr = arr_div_floor_mul(arr, 24, 24, 0, copy)
+            arr = arr_div_floor_mul(arr, 24, 24, 0, False)
             return arr.astype(DT64_DTYPE_HH)
         # Coarser/equal units are handled by fast-path.
 
@@ -9698,7 +10648,7 @@ cdef inline bint _raise_dt64arr_to_reso_error(np.ndarray arr, int arr_reso, str 
     else:
         raise ValueError(
             "Cannot convert ndarray[%s[%s]] to int64 '%s' ticks.\n"
-            "Supported units: 'Y', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us', 'ns'" 
+            "Supported resolution: 'Y', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us', 'ns'" 
             % (dtype_str, arr_reso_str, to_unit)
         )
 

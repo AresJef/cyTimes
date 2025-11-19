@@ -15,11 +15,16 @@ datetime.import_datetime()
 
 # Python imports
 import numpy as np
+import pandas as pd
 import datetime, zoneinfo
 from functools import lru_cache as _lru_cache
 from cytimes import errors
 
 # Constants --------------------------------------------------------------------------------------------
+# . argument
+SENTINEL: int = -1
+# . pandas
+NAT: object = pd.NaT
 # . calendar
 # fmt: off
 DAYS_BR_MONTH: cython.int[13] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365]
@@ -49,6 +54,8 @@ EPOCH_C400: cython.longlong = math_div_floor(1970, 400)  # type: ignore
 EPOCH_CBASE: cython.longlong = EPOCH_C4 - EPOCH_C100 + EPOCH_C400
 # . timezone
 UTC: datetime.tzinfo = datetime.get_utc()
+T_TIMEZONE: object = datetime.timezone
+T_ZONEINFO: object = zoneinfo.ZoneInfo
 NULL_TZOFFSET: cython.int = -100_000  # Sentinel for null offset
 # . conversion for seconds
 SS_MINUTE: cython.longlong = 60
@@ -153,10 +160,10 @@ def _get_local_timezone() -> object:
     """
     from babel.dates import LOCALTZ
 
-    if isinstance(LOCALTZ, zoneinfo.ZoneInfo):
+    if isinstance(LOCALTZ, T_ZONEINFO):
         return LOCALTZ
     try:
-        return zoneinfo.ZoneInfo(LOCALTZ.zone)
+        return T_ZONEINFO(LOCALTZ.zone)
     except Exception:
         return tz_new(0, 0, tz_local_sec(None))  # type: ignore
 
@@ -173,7 +180,7 @@ def _get_zoneinfo(name: str) -> zoneinfo.ZoneInfo | datetime.timezone:
     if set_contains(_UTC_ALIASES, name_lower):  # type: ignore
         return UTC
     try:
-        return zoneinfo.ZoneInfo(name)
+        return T_ZONEINFO(name)
     except Exception as err:
         raise errors.InvalidTimezoneError("Invalid timezone name '%s'" % name) from err
 
@@ -220,22 +227,48 @@ def tz_parse(tz: zoneinfo.ZoneInfo | datetime.timezone | str | None) -> object:
     """
     # None
     if tz is None:
-        return tz
+        return tz  # exit: as-is
 
     # zoneinfo.ZoneInfo / datetime.timezone
-    if isinstance(tz, (zoneinfo.ZoneInfo, datetime.timezone)):
-        return tz
+    dtype = type(tz)
+    if dtype is T_ZONEINFO or dtype is T_TIMEZONE:
+        return tz  # exit: as-is
 
-    # `str` timezone name
+    # 'str' timezone name
     if isinstance(tz, str):
         return _get_zoneinfo(tz)
 
-    # 'pytz' timezone
-    if hasattr(tz, "localize"):
-        return _get_zoneinfo(tz.zone)  # type: ignore
+    # 'key' attribute: ZoneInfo subclass
+    exc = None
+    if hasattr(tz, "key"):
+        try:
+            return _get_zoneinfo(tz.key)
+        except Exception as err:
+            exc = err
+
+    # name attribute: ZoneInfo subclass
+    if hasattr(tz, "name"):
+        try:
+            return _get_zoneinfo(tz.name)
+        except Exception as err:
+            exc = err
+
+    # 'zone' attribute: pytz
+    if hasattr(tz, "zone"):
+        try:
+            return _get_zoneinfo(tz.zone)
+        except Exception as err:
+            exc = err
 
     # Unsupported type
-    raise errors.InvalidTimezoneError("Invalid timezone '%s' %s" % (tz, type(tz)))
+    if exc is None:
+        raise errors.InvalidTimezoneError(
+            "Unsupported timezone '%s' %s" % (tz, type(tz))
+        )
+    else:
+        raise errors.InvalidTimezoneError(
+            "Unsupported timezone '%s' %s\nError: %s" % (tz, type(tz), exc)
+        ) from exc
 
 
 ########## The REST utility functions are in the utils.pxd file ##########
@@ -248,7 +281,7 @@ def _test_utils() -> None:
     # Calendar
     _test_is_leap_year()
     _test_days_bf_year()
-    _test_day_of_year()
+    _test_doy()
     _test_quarter_of_month()
     _test_days_in_quarter()
     _test_days_in_month()
@@ -258,7 +291,7 @@ def _test_utils() -> None:
     _test_iso_week1_mon_ord()
     _test_ymd_to_ord()
     _test_ymd_fr_ord()
-    _test_ymd_fr_isocalendar()
+    _test_ymd_fr_iso()
     # datetime.date
     _test_date_generate()
     _test_date_type_check()
@@ -593,7 +626,7 @@ def _test_days_bf_year() -> None:
     del _days_before_year
 
 
-def _test_day_of_year() -> None:
+def _test_doy() -> None:
 
     for y in range(-10000, 10001):
         for m in range(1, 13):
@@ -601,12 +634,12 @@ def _test_day_of_year() -> None:
                 if d > 28:
                     d = min(d, days_in_month(y, m))  # type: ignore
                 doy = day_of_year(y, m, d)  # type: ignore
-                _ymd = ymd_fr_day_of_year(y, doy)  # type: ignore
+                _ymd = ymd_fr_doy(y, doy)  # type: ignore
                 assert _ymd.year == y, f"{y}-{m}-{d}: {y} != {_ymd.year}"
                 assert _ymd.month == m, f"{y}-{m}-{d}: {m} != {_ymd.month}"
                 assert _ymd.day == d, f"{y}-{m}-{d}: {d} != {_ymd.day}"
 
-    print("Passed: day_of_year")
+    print("Passed: ymd_fr_doy")
 
 
 def _test_quarter_of_month() -> None:
@@ -778,7 +811,7 @@ def _test_ymd_fr_ord() -> None:
     del _ord2ymd, _MAXORDINAL
 
 
-def _test_ymd_fr_isocalendar() -> None:
+def _test_ymd_fr_iso() -> None:
     from _pydatetime import _isoweek_to_gregorian  # type: ignore
 
     year: cython.int
@@ -791,14 +824,14 @@ def _test_ymd_fr_isocalendar() -> None:
                     (y, m, d) = _isoweek_to_gregorian(year, week, weekday)
                 except ValueError:
                     continue
-                val = ymd_fr_isocalendar(year, week, weekday)  # type: ignore
+                val = ymd_fr_iso(year, week, weekday)  # type: ignore
                 if y == 10_000 or val.year == 10_000:
                     continue
                 assert (
                     val.year == y and val.month == m and val.day == d
                 ), f"{year}-{week}-{weekday}: {val} != {y}-{m}-{d}"
 
-    print("Passed: ymd_fr_isocalendar")
+    print("Passed: ymd_fr_iso")
 
     del _isoweek_to_gregorian
 

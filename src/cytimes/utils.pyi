@@ -4,6 +4,10 @@ import datetime
 import numpy as np
 
 # Constants -----------------------------------------------------------------------------------------
+# . argument
+SENTINEL: int
+# . pandas
+NAT: object
 # . date
 ORDINAL_MAX: int
 # . datetime
@@ -19,6 +23,8 @@ EPOCH_MILLISECOND: int
 EPOCH_MICROSECOND: int
 # . timezone
 UTC: datetime.tzinfo
+T_TIMEZONE: type[datetime.timezone]
+T_ZONEINFO: type[zoneinfo.ZoneInfo]
 NULL_TZOFFSET: int
 # . conversion for seconds
 SS_MINUTE: int
@@ -1171,13 +1177,15 @@ def ymd_fr_sec(value: float) -> dict:
         - ymd.day   [1..31]
     """
 
-def ymd_fr_isocalendar(year: int, week: int, weekday: int) -> dict:
+def ymd_fr_iso(year: int, week: int, weekday: int) -> dict:
     """(cfunc) Create `struct:ymd` from ISO calendar values
     (ISO year, ISO week, ISO weekday) `<'struct:ymd'>`.
 
     :param year `<'int'>`: ISO year number.
-    :param week `<'int'>`: ISO week index. Automatically clamped to [1..53].
-    :param weekday`<'int'>`: ISO weekday. Automatically clamped to [1..7] (Mon..Sun).
+    :param week `<'int'>`: ISO week number.
+        Automatically clamped to [1..52/53] (depends on whether is a long year).
+    :param weekday `<'int'>`: ISO weekday.
+        Automatically clamped to [1=Mon..7=Sun].
     :returns `<'struct:ymd'>`: Gregorian Y/M/D in the proleptic Gregorian calendar.
 
         - ymd.year  [Gregorian year number]
@@ -1185,12 +1193,12 @@ def ymd_fr_isocalendar(year: int, week: int, weekday: int) -> dict:
         - ymd.day   [1..31]
     """
 
-def ymd_fr_day_of_year(year: int, days: int) -> dict:
+def ymd_fr_doy(year: int, doy: int) -> dict:
     """(cfunc) Create `struct:ymd` from Gregorian year and day-of-year `<'struct:ymd'>`.
 
-    :param year  `<'int'>`: Gregorian year number.
+    :param year `<'int'>`: Gregorian year number.
     :param doy `<'int'>`: The day-of-year.
-        Automatically clamped to [1..365/366] (depends on whether year leaps).
+        Automatically clamped to [1..365/366] (depends on whether is a long year).
     :returns `<'struct:ymd'>`: Gregorian Y/M/D in the proleptic Gregorian calendar.
 
         - ymd.year  [Gregorian year number]
@@ -1418,6 +1426,39 @@ def date_fr_ord(
     :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified).
     """
 
+def date_fr_iso(
+    year: int,
+    week: int,
+    weekday: int,
+    dclass: type[datetime.date] | None = None,
+) -> datetime.date:
+    """(cfunc) Create date from ISO calendar values (year, week, weekday) `<'datetime.date'>`.
+
+    :param year `<'int'>`: ISO year number.
+    :param week `<'int'>`: ISO week number.
+        Automatically clamped to [1..52/53] (depends on whether is a long year).
+    :param weekday `<'int'>`: ISO weekday.
+        Automatically clamped to [1=Mon..7=Sun].
+    :param dclass `<'type[datetime.date]/None'>`: Optional custom date class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.date` as the constructor.
+    :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified).
+    """
+
+def date_fr_doy(
+    year: int,
+    doy: int,
+    dclass: type[datetime.date] | None = None,
+) -> datetime.date:
+    """(cfunc) Create date from Gregorian year and day-of-year `<'datetime.date'>`.
+
+    :param year `<'int'>`: Gregorian year number.
+    :param doy `<'int'>`: The day-of-year.
+        Automatically clamped to [1..365/366] (depends on whether is a long year).
+    :param dclass `<'type[datetime.date]/None'>`: Optional custom date class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.date` as the constructor.
+    :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified).
+    """
+
 def date_fr_ts(
     value: float,
     dclass: type[datetime.date] | None = None,
@@ -1428,7 +1469,7 @@ def date_fr_ts(
     :param dclass `<'type[datetime.date]/None'>`: Optional custom date class. Defaults to `None`.
         if `None` uses python's built-in `datetime.date` as the constructor.
     :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified)
-        in the system **local** time zone.
+        in the system **local** timezone.
     """
 
 def date_fr_date(
@@ -1459,6 +1500,28 @@ def date_fr_dt(
     """
 
 # . manipulation
+def date_replace(
+    date: datetime.date,
+    year: int = -1,
+    month: int = -1,
+    day: int = -1,
+    dclass: type[datetime.date] | None = None,
+) -> datetime.date:
+    """(cfunc) Replace specified fields in date `<'datetime.date'>`.
+
+    :param date `<'datetime.date'>`: The source date.
+    :param year `<'int'>`: Absolute year. Defaults to `-1` (no change).
+        If specified (greater than `0`), clamps to [1..9999].
+    :param month `<'int'>`: Absolute month. Defaults to `-1` (no change).
+        If specified (greater than `0`), clamps to [1..12].
+    :param day `<'int'>`: Absolute day. Defaults to `-1` (no change).
+        If specified (greater than `0`), clamps to [1..maximum days the resulting month].
+    :param dclass `<'type[datetime.date]/None'>`: Optional custom date class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.date` as the constructor.
+    :returns `<'datetime.date'>`: The resulting date (or subclass if `dclass` is specified)
+        after applying the field replacements.
+    """
+
 def date_add_delta(
     date: datetime.date,
     years: int = 0,
@@ -1544,7 +1607,7 @@ def dt_new(
     :param microsecond `<'int'>`: Microsecond [0..999999]. Defaults to `0`.
     :param tzinfo `<'tzinfo/None'>`: Optional timezone. Defaults to `None`.
     :param fold `<'int'>`: Optional fold flag for ambiguous times (0 or 1). Defaults to `0`.
-        Only relevant if `tzinfo` is not `None`, and values other than `1` are treated as `0`.
+        Values other than `1` are treated as `0`.
     :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
         if `None` uses python's built-in `datetime.datetime` as the constructor.
     :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
@@ -1824,6 +1887,43 @@ def dt_fr_ord(
     :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
     """
 
+def dt_fr_iso(
+    year: int,
+    week: int,
+    weekday: int,
+    tzinfo: datetime.tzinfo | None = None,
+    dtclass: type[datetime.datetime] | None = None,
+) -> datetime.datetime:
+    """(cfunc) Create datetime from ISO calendar values (year, week, weekday) `<'datetime.datetime'>`.
+
+    :param year `<'int'>`: ISO year number.
+    :param week `<'int'>`: ISO week number.
+        Automatically clamped to [1..52/53] (depends on whether is a long year).
+    :param weekday `<'int'>`: ISO weekday.
+        Automatically clamped to [1=Mon..7=Sun].
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
+    """
+
+def dt_fr_doy(
+    year: int,
+    doy: int,
+    tzinfo: datetime.tzinfo | None = None,
+    dtclass: type[datetime.datetime] | None = None,
+) -> datetime.datetime:
+    """(cfunc) Create datetime from Gregorian year and day-of-year `<'datetime.datetime'>`.
+
+    :param year `<'int'>`: Gregorian year number.
+    :param doy `<'int'>`: The day-of-year.
+        Automatically clamped to [1..365/366] (depends on whether is a long year).
+    :param tzinfo `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified).
+    """
+
 def dt_fr_ts(
     value: float,
     tzinfo: datetime.tzinfo | None = None,
@@ -1896,9 +1996,9 @@ def dt_combine(
     """(cfunc) Create a `datetime.datetime` by combining a date and a time `<'datetime.datetime'>`.
 
     :param date `<'datetime.date/None'>`: The source date (including subclasses). Defaults to `None`.
-        If None, uses today's **local** date.
+        If None, uses today's `local` date.
     :param time `<'datetime.time/None'>`: The source time (including subclasses). Defaults to `None`.
-        If None, uses 00:00:00.000000.
+        If None, uses `00:00:00.000000`.
     :param tzinfo `<'tzinfo/None'>`: Optional timezone to **attach**. Defaults to `None`.
         If specifed, overrides `time.tzinfo` (if any).
     :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
@@ -1993,6 +2093,66 @@ def dt_add_delta(
         after applying the specified deltas.
     """
 
+def dt_replace(
+    dt: datetime.datetime,
+    year: int = -1,
+    month: int = -1,
+    day: int = -1,
+    hour: int = -1,
+    minute: int = -1,
+    second: int = -1,
+    microsecond: int = -1,
+    tzinfo: datetime.tzinfo | None = -1,
+    fold: int = -1,
+    dtclass: type[datetime.datetime] | None = None,
+) -> datetime.datetime:
+    """(cfunc) Replace specified fields of a datetime `<'datetime.datetime'>`.
+
+    :param dt `<'datetime.datetime'>`: The source datetime (naive or aware).
+    :param year `<'int'>`: Absolute year. Defaults to `-1` (no change).
+        If specified (greater than `0`), clamps to [1..9999].
+    :param month `<'int'>`: Absolute month. Defaults to `-1` (no change).
+        If specified (greater than `0`), clamps to [1..12].
+    :param day `<'int'>`: Absolute day. Defaults to `-1` (no change).
+        If specified (greater than `0`), clamps to [1..maximum days the resulting month].
+    :param hour `<'int'>`: Absolute hour. Defaults to `-1` (no change).
+        If specified (greater than or equal to `0`), clamps to [0..23].
+    :param minute `<'int'>`: Absolute minute. Defaults to `-1` (no change).
+        If specified (greater than or equal to `0`), clamps to [0..59].
+    :param second `<'int'>`: Absolute second. Defaults to `-1` (no change).
+        If specified (greater than or equal to `0`), clamps to [0..59].
+    :param microsecond `<'int'>`: Absolute microsecond. Defaults to `-1` (no change).
+        If specified (greater than or equal to `0`), clamps to [0..999999].
+    :param tzinfo `<'tzinfo/None'>`: The timeone. Defaults to `-1` (no change).
+        If specified as `None`, removes tzinfo (makes datetime naive).
+        If specified as a `tzinfo` subclass, attaches to `dt`.
+    :param fold `<'int'>`: Fold value (0 or 1) for ambiguous times. Defaults to `-1` (no change).
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified),
+        after applying the specified field replacements.
+    """
+
+def dt_replace_tz_fold(
+    dt: datetime.datetime,
+    tzinfo: datetime.tzinfo | None,
+    fold: int,
+    dtclass: type[datetime.datetime] | None = None,
+) -> datetime.datetime:
+    """(cfunc) Create a copy of `dt` with `tzinfo` and `fold` replaced `<'datetime.datetime'>`.
+
+    :param dt `<'datetime.datetime'>`: Source datetime (naive or aware).
+    :param tzinfo `<'tzinfo/None'>`: The target tzinfo to attach.
+    :param fold `<'int'>`: Must be 0 or 1; otherwise `ValueError` is raised.
+    :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
+        if `None` uses python's built-in `datetime.datetime` as the constructor.
+    :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified)
+        with the same fields except `tzinfo` and `fold`.
+
+    ## Equivalent
+    >>> dt.replace(tzinfo=tzinfo, fold=fold)
+    """
+
 def dt_replace_tz(
     dt: datetime.datetime,
     tzinfo: datetime.tzinfo | None,
@@ -2029,6 +2189,108 @@ def dt_replace_fold(
     >>> dt.replace(fold=fold)
     """
 
+# . check
+def dt_compare(
+    dt1: datetime.datetime,
+    dt2: datetime.datetime,
+    allow_mixed: bool = False,
+) -> int:
+    """(cfunc) Three-way comparison between two datetimes on a common microsecond timeline `<'int'>`.
+
+    :param dt1 `<'datetime.datetime'>`: The 1st datetime instance.
+    :param dt2 `<'datetime.datetime'>`: The 2nd datetime instance.
+    :param allow_mixed `<'bool'>`: Whether to allow comparisons between naive and aware datetimes. Defaults to `False`.
+    :returns `<'int'>`: The comparison result:
+
+        - `1`:  if dt1 > dt2
+        - `0`:  if dt1 == dt2
+        - `-1`: if dt1 < dt2
+        - `2`:  `only when` one operand is timezone-naive and the other is
+                timezone-aware and `allow_mixed=True` (no comparison performed).
+
+    :raises `<'TypeError'>`: When comparing naive vs aware datetimes and `allow_mixed=False`.
+
+    ## Rules
+    - If exactly one operand is aware and the other is naive,
+      return `2` when `allow_mixed=True`, otherwise raise `TypeError`.
+    - If both are aware, both are converted to microseconds on a common
+      timeline and compared.
+    - If both are naive, both are converted to microseconds and compared
+      on the naive timeline (no timezone semantics).
+    """
+
+def dt_is_first_doy(dt: datetime.datetime) -> bool:
+    """(cfunc) Check whether the datetime is on the first day of its year `<'bool'>`.
+
+    - First day of the year: `YYYY-01-01`
+
+    :param dt `<'datetime.datetime'>`: Datetime to check.
+    :returns `<'bool'>`: True if the datetime is January 1 of its year; Otherwiase False.
+    """
+
+def dt_is_last_doy(dt: datetime.datetime) -> bool:
+    """(cfunc) Check whether the datetime is on the last day of its year `<'bool'>`.
+
+    - Last day of the year: `YYYY-12-31`
+
+    :param dt `<'datetime.datetime'>`: Datetime to check.
+    :returns `<'bool'>`: True if the datetime is December 31 of its year; Otherwiase False.
+    """
+
+def dt_is_first_doq(dt: datetime.datetime) -> bool:
+    """(cfunc) Check whether the datetime is on the first day of its quarter `<'bool'>`.
+
+    - First day of the quarter: `YYYY-MM-01` where MM in `{01, 04, 07, 10}`
+
+    :param dt `<'datetime.datetime'>`: Datetime to check.
+    :returns `<'bool'>`: True if the datetime is the first day of its quarter; Otherwiase False.
+    """
+
+def dt_is_last_doq(dt: datetime.datetime) -> bool:
+    """(cfunc) Check whether the datetime is on the last day of its quarter `<'bool'>`.
+
+    - Last day of the quarter: `YYYY-MM-DD` where MM in `{03, 06, 09, 12}`
+
+    :param dt `<'datetime.datetime'>`: Datetime to check.
+    :returns `<'bool'>`: True if the datetime is the last day of its quarter; Otherwiase False.
+    """
+
+def dt_is_first_dom(dt: datetime.datetime) -> bool:
+    """(cfunc) Check whether the datetime is on the first day of its month `<'bool'>`.
+
+    - First day of the month: `YYYY-MM-01`
+
+    :param dt `<'datetime.datetime'>`: Datetime to check.
+    :returns `<'bool'>`: True if the datetime is the first day of its month; Otherwiase False.
+    """
+
+def dt_is_last_dom(dt: datetime.datetime) -> bool:
+    """(cfunc) Check whether the datetime is on the last day of its month `<'bool'>`.
+
+    - Last day of the month: `YYYY-MM-DD` where DD is the maximum days in that month.
+
+    :param dt `<'datetime.datetime'>`: Datetime to check.
+    :returns `<'bool'>`: True if the datetime is the last day of its month; Otherwiase False.
+    """
+
+def dt_is_start_of_time(dt: datetime.datetime) -> bool:
+    """(cfunc) Check whether the datetime is at the start of time `<'bool'>`:
+
+    - Start of time: `YYYY-MM-DD 00:00:00`
+
+    :param dt `<'datetime.datetime'>`: Datetime to check.
+    :returns `<'bool'>`: True if datetime is at the start of time; Otherwise False.
+    """
+
+def dt_is_end_of_time(dt: datetime.datetime) -> bool:
+    """(cfunc) Check whether the datetime is at the end of time `<'bool'>`.
+
+    - End of time: `YYYY-MM-DD 23:59:59.999999`
+
+    :param dt `<'datetime.datetime'>`: Datetime to check.
+    :returns `<'bool'>`: True if datetime is at the end of time; Otherwise False.
+    """
+
 # . tzinfo
 def dt_tzname(dt: datetime.datetime) -> str | None:
     """(cfunc) Get the tzinfo 'tzname' of the datetime `<'str/None'>`.
@@ -2056,18 +2318,18 @@ def dt_astimezone(
     tzinfo: datetime.tzinfo | None = None,
     dtclass: type[datetime.datetime] | None = None,
 ) -> datetime.datetime:
-    """(cfunc) Convert a `datetime.datetime` to another time zone `<'datetime.datetime'>`.
+    """(cfunc) Convert a `datetime.datetime` to another timezone `<'datetime.datetime'>`.
 
     :param dt `<'datetime.datetime'>`: Datetime to convert (naive or aware).
-    :param tzinfo `<'tzinfo/None'>`: Target time zone. Defaults to `None`.
+    :param tzinfo `<'tzinfo/None'>`: Target timezone. Defaults to `None`.
 
-        - If `None`, the system **local** time zone is used.
+        - If `None`, the system **local** timezone is used.
         - Must be a `tzinfo-compatible` object when provided.
 
     :param dtclass `<'type[datetime.datetime]/None'>`: Optional custom datetime class. Defaults to `None`.
         if `None` uses python's built-in `datetime.datetime` as the constructor.
     :returns `<'datetime.datetime'>`: The resulting datetime (or subclass if `dtclass` is specified)
-        representing the **same instant** expressed in the target time zone. For naive
+        representing the **same instant** expressed in the target timezone. For naive
         inputs + `tzinfo is None`, this *localizes* the datetime to the system local zone.
 
     ## Semantics
@@ -2131,7 +2393,7 @@ def time_new(
     :param microsecond `<'int'>`: Microsecond [0..999999]. Defaults to `0`.
     :param tzinfo `<'tzinfo/None'>`: Optional timezone. Defaults to `None`.
     :param fold `<'int'>`: Optional fold flag for ambiguous times (0 or 1). Defaults to `0`.
-        Only relevant if 'tzinfo' is not `None`, and values other than `1` are treated as `0`.
+        Values other than `1` are treated as `0`.
     :param tclass `<'type[datetime.time]/None'>`: Optional custom time class. Defaults to `None`.
         if `None` uses python's built-in `datetime.time` as the constructor.
     :returns `<'datetime.time'>`: The resulting time (or subclass if `tclass` is specified).
@@ -2417,7 +2679,9 @@ def tz_local_sec(dt: datetime.datetime | None = None) -> int:
     :returns `<'int'>`: The local UTC offset in seconds (positive east of UTC, negative west).
     """
 
-def tz_parse(tz: zoneinfo.ZoneInfo | datetime.timezone | str | None) -> object:
+def tz_parse(
+    tz: zoneinfo.ZoneInfo | datetime.timezone | str | None,
+) -> zoneinfo.ZoneInfo | datetime.timezone | None:
     """(cfunc) Parse timezone input to `<'zoneinfo.ZoneInfo/datetime.timezone/None'>`.
 
     :param tz `<'datetime.timezone/zoneinfo.ZoneInfo/pytz/str/None'>`: The timezone object.
@@ -2665,6 +2929,24 @@ def assure_arr_contiguous(arr: np.ndarray) -> np.ndarray:
 
     :returns `<'np.ndarray'>`: The original array if already contiguous;
         otherwise, returns a contiguous copy.
+    """
+
+def is_arr_int(arr: np.ndarray) -> bool:
+    """(cfunc) Check if a numpy array is of integer dtype `<'bool'>`.
+
+    - Integer dtype: `int8`, `int16`, `int32` and `int64`.
+    """
+
+def is_arr_uint(arr: np.ndarray) -> bool:
+    """(cfunc) Check if a numpy array is of unsigned integer dtype `<'bool'>`.
+
+    - Unsigned Integer dtype: `uint8`, `uint16`, `uint32` and `uint64`.
+    """
+
+def is_arr_float(arr: np.ndarray) -> bool:
+    """(cfunc) Check if a numpy array is of float dtype `<'bool'>`.
+
+    - Float dtype: `float16`, `float32` and `float64`.
     """
 
 # . dtype
@@ -3363,8 +3645,7 @@ def arr_eq(arr: np.ndarray, value: int) -> np.ndarray[bool]:
     ## Notice
     - For datetime64/timedelta64 inputs, `value` is interpreted in the
       array's underlying integer unit (e.g., ns for datetime64[ns]).
-    - NaT is represented as LLONG_MIN and is compared as a normal integer
-      (unlike NumPy's datetime behavior where NaT comparisons always yield False).
+    - NaT values (LLONG_MIN) always yeild `False`, and LLONG_MIN is treated as NaT.
 
     ## Equivalent
     >>> arr == value
@@ -3381,8 +3662,7 @@ def arr_gt(arr: np.ndarray, value: int) -> np.ndarray[bool]:
     ## Notice
     - For datetime64/timedelta64 inputs, `value` is interpreted in the
       array's underlying integer unit (e.g., ns for datetime64[ns]).
-    - NaT is represented as LLONG_MIN and is compared as a normal integer
-      (unlike NumPy's datetime behavior where NaT comparisons always yield False).
+    - NaT values (LLONG_MIN) always yeild `False`, and LLONG_MIN is treated as NaT.
 
     ## Equivalent
     >>> arr > value
@@ -3399,8 +3679,7 @@ def arr_ge(arr: np.ndarray, value: int) -> np.ndarray[bool]:
     ## Notice
     - For datetime64/timedelta64 inputs, `value` is interpreted in the
       array's underlying integer unit (e.g., ns for datetime64[ns]).
-    - NaT is represented as LLONG_MIN and is compared as a normal integer
-      (unlike NumPy's datetime behavior where NaT comparisons always yield False).
+    - NaT values (LLONG_MIN) always yeild `False`, and LLONG_MIN is treated as NaT.
 
     ## Equivalent
     >>> arr >= value
@@ -3417,8 +3696,7 @@ def arr_lt(arr: np.ndarray, value: int) -> np.ndarray[bool]:
     ## Notice
     - For datetime64/timedelta64 inputs, `value` is interpreted in the
       array's underlying integer unit (e.g., ns for datetime64[ns]).
-    - NaT is represented as LLONG_MIN and is compared as a normal integer
-      (unlike NumPy's datetime behavior where NaT comparisons always yield False).
+    - NaT values (LLONG_MIN) always yeild `False`, and LLONG_MIN is treated as NaT.
 
     ## Equivalent
     >>> arr < value
@@ -3435,8 +3713,7 @@ def arr_le(arr: np.ndarray, value: int) -> np.ndarray[bool]:
     ## Notice
     - For datetime64/timedelta64 inputs, `value` is interpreted in the
       array's underlying integer unit (e.g., ns for datetime64[ns]).
-    - NaT is represented as LLONG_MIN and is compared as a normal integer
-      (unlike NumPy's datetime behavior where NaT comparisons always yield False).
+    - NaT values (LLONG_MIN) always yeild `False`, and LLONG_MIN is treated as NaT.
 
     ## Equivalent
     >>> arr <= value
@@ -3452,8 +3729,7 @@ def arr_eq_arr(arr1: np.ndarray, arr2: np.ndarray) -> np.ndarray[bool]:
 
     ## Notice
     - For datetime64/timedelta64 inputs, comparison is performed on underlying int64 ticks.
-    - NaT is represented as LLONG_MIN and is compared as a normal integer
-      (unlike NumPy's datetime behavior where NaT comparisons always yield False).
+    - NaT values (LLONG_MIN) always yeild `False`, and LLONG_MIN is treated as NaT.
 
     ## Equivalent
     >>> arr1 == arr2
@@ -3469,8 +3745,7 @@ def arr_gt_arr(arr1: np.ndarray, arr2: np.ndarray) -> np.ndarray[bool]:
 
     ## Notice
     - For datetime64/timedelta64 inputs, comparison is performed on underlying int64 ticks.
-    - NaT is represented as LLONG_MIN and is compared as a normal integer
-      (unlike NumPy's datetime behavior where NaT comparisons always yield False).
+    - NaT values (LLONG_MIN) always yeild `False`, and LLONG_MIN is treated as NaT.
 
     ## Equivalent
     >>> arr1 > arr2
@@ -3486,8 +3761,7 @@ def arr_ge_arr(arr1: np.ndarray, arr2: np.ndarray) -> np.ndarray[bool]:
 
     ## Notice
     - For datetime64/timedelta64 inputs, comparison is performed on underlying int64 ticks.
-    - NaT is represented as LLONG_MIN and is compared as a normal integer
-      (unlike NumPy's datetime behavior where NaT comparisons always yield False).
+    - NaT values (LLONG_MIN) always yeild `False`, and LLONG_MIN is treated as NaT.
 
     ## Equivalent
     >>> arr1 >= arr2
@@ -4716,6 +4990,131 @@ def dt64arr_as_unit(
 
     ## Equivalent
     >>> arr.astype(f"datetime64[{as_unit}]")
+    """
+
+# . manipulation
+def dt64arr_add_delta(
+    arr: np.ndarray,
+    years: int = 0,
+    quarters: int = 0,
+    months: int = 0,
+    weeks: int = 0,
+    days: int = 0,
+    hours: int = 0,
+    minutes: int = 0,
+    seconds: int = 0,
+    milliseconds: int = 0,
+    microseconds: int = 0,
+    nanoseconds: int = 0,
+    arr_reso: int = -1,
+) -> np.ndarray[np.datetime64]:
+    """(cfunc) Add a mixed calendar/time delta to an ndarray[datetime64] `<'ndarray[datetime64'>`.
+
+    Calendar components (years/quarters/months/weeks/days) are applied first on the
+    date part; time components (hours…nanoseconds) are then added and normalized.
+
+    :param arr `<'ndarray[datetime64'>`: Source datetime64 array.
+        Supported resolutions: `'ns'`, `'us'`, `'ms'`, `'s'`, `'m'`, `'h'`, `'D'`.
+    :param years `<'int'>`: Relative years.
+    :param quarters `<'int'>`: Relative quarters (3 months).
+    :param months `<'int'>`: Relative months.
+    :param weeks `<'int'>`: Relative weeks (7 days).
+    :param days `<'int'>`: Relative days.
+    :param hours `<'int'>`: Relative hours.
+    :param minutes `<'int'>`: Relative minutes.
+    :param seconds `<'int'>`: Relative seconds.
+    :param milliseconds `<'int'>`: Relative milliseconds (`1000 us`).
+    :param microseconds `<'int'>`: Relative microseconds.
+    :param nanoseconds `<'int'>`: Relative nanoseconds.
+    :param arr_reso `<'int'>`: The unit of `arr` as an `NPY_DATETIMEUNIT` enum value. Defaults to `-1`.
+
+        - If not specified and `arr` is `datetime64`, the array's
+          intrinsic resolution is used.
+        - If `arr` dtype is int64, you **MUST** specify the `arr_reso`,
+          and values are interpreted as ticks in that unit.
+
+    :returns `<'ndarray[datetime64[*]'>`: New datetime64 array at the same resolution as `arr`,
+        `except` that for `'ns'` inputs the result may be down-casted to `'us'` if ns range
+        would overflow.
+    """
+
+def dt64arr_replace_dates(
+    arr: np.ndarray,
+    year: int,
+    month: int,
+    day: int,
+    arr_reso: int = -1,
+) -> np.ndarray[np.int64]:
+    """(cfunc) Replace the Y/M/D components of an ndarray[datetime64] and return `int64` day ticks `<'ndarray[int64]'>`.
+
+    This function constructs new calendar dates by optionally replacing the
+    `year`, `month`, and/or `day` fields of each element in the array.
+    The result is returned as an `int64` array expressed in `days since epoch`
+    (not `datetime64`).
+
+    :param arr `<'ndarray'>`: Source `datetime64` or `int64` array (1-D).
+    :param year `<'int64'>`: Set the year to this value when `> 0`; otherwise, retain the original year.
+    :param month `<'int64'>`: Set the month to this value when `> 0`; otherwise, retain the original month.
+    :param day `<'int64'>`: Set the day to this value when `> 0`; otherwise, retain the original day.
+    :param arr_reso `<'int'>`: The unit of `arr` as an `NPY_DATETIMEUNIT` enum value. Defaults to `-1`.
+
+        - If not specified and `arr` is `datetime64`, the array's
+          intrinsic resolution is used.
+        - If `arr` dtype is int64, you **MUST** specify the `arr_reso`,
+          and values are interpreted as ticks in that unit.
+
+    :returns `<'ndarray[int64]'>`: Integer `day` ticks (days since epoch)
+        after applying the replacements (not in `datetime64` dtype).
+
+    ## Behavior
+    - Replacements are `component-wise`: any of the date fields may be left
+      as `<= 0` to keep original values.
+    - Day values are `clamped` to the maximum valid day in the resulting month.
+    - The output is `int64` in day resolution, not `datetime64` dtype.
+    """
+
+def dt64arr_replace_times(
+    arr: np.ndarray,
+    hour: int,
+    minute: int,
+    second: int,
+    microsecond: int,
+    nanosecond: int,
+    arr_reso: int = -1,
+) -> np.ndarray[np.int64]:
+    """(cfunc) Replace the h/m/s/us/ns components of an ndarray[datetime64] and return the
+    time components `int64` ticks in the original resolution `<'ndarray[int64]'>`.
+
+    This function constructs new time values by optionally replacing the
+    `hour`, `minute`, `second`, `microsecond`, and/or `nanosecond` fields
+    of each element in the array. The result is returned as an `int64` array
+    representing the `time of day` ticks expressed in the original resolution
+    (not `datetime64`).
+
+    :param arr `<'ndarray'>`: Source `datetime64` or `int64` array (1-D).
+    :param hour `<'int64'>`: Set the hour to this value when `>= 0`; otherwise, retain the original hour.
+    :param minute `<'int64'>`: Set the minute to this value when `>= 0`; otherwise, retain the original minute.
+    :param second `<'int64'>`: Set the second to this value when `>= 0`; otherwise, retain the original second.
+    :param microsecond `<'int64'>`: Set the microsecond to this value when `>= 0`; otherwise, retain the original microsecond.
+    :param nanosecond `<'int64'>`: Set the nanosecond to this value when `>= 0`; otherwise, retain the original nanosecond.
+    :param arr_reso `<'int'>`: The unit of `arr` as an `NPY_DATETIMEUNIT` enum value. Defaults to `-1`.
+
+        - If not specified and `arr` is `datetime64`, the array's
+          intrinsic resolution is used.
+        - If `arr` dtype is int64, you **MUST** specify the `arr_reso`,
+          and values are interpreted as ticks in that unit.
+
+    :returns `<'ndarray[int64]'>`: Integer `time-of-day` ticks (in original resolution)
+        after applying the replacements (not in `datetime64` dtype).
+
+    ## Behavior
+    - Replacements are `component-wise`: any of the time fields may be left
+      as `< 0` to keep original values.
+    - Only time components within the array resolution are modified;
+      e.g., when `arr` is in `'s'` resolution, `microsecond` and `nanosecond`
+      replacements are ignored.
+    - The output is time components `int64` ticks in the original resolution,
+      not `datetime64` dtype.
     """
 
 # . arithmetic
