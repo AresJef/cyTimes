@@ -32,7 +32,7 @@ class TestCase(unittest.TestCase):
         print(msg.ljust(60))
 
 
-class Test_Pydt(TestCase):
+class TestPydt(TestCase):
     name = "Pydt"
 
     def test_all(self) -> None:
@@ -162,10 +162,10 @@ class Test_Pydt(TestCase):
         # fromicroseconds()
         for seconds in (-78914791.123, -1, 0, 1, 78914791.123):
             us = int(seconds * 1_000_000)
-            self.assertEqual(Pydt.fromseconds(seconds), Pydt.fromicroseconds(us))
+            self.assertEqual(Pydt.fromseconds(seconds), Pydt.frommicroseconds(us))
             self.assertEqual(
                 Pydt.fromseconds(seconds, datetime.UTC),
-                Pydt.fromicroseconds(us, "UTC"),
+                Pydt.frommicroseconds(us, "UTC"),
             )
 
         # fromtimestamp()
@@ -276,7 +276,7 @@ class Test_Pydt(TestCase):
             # seconds()
             self.assertEqual(dt, Pydt.fromseconds(pt.toseconds(), tz))
             # microseconds()
-            self.assertEqual(dt, Pydt.fromicroseconds(pt.tomicroseconds(), tz))
+            self.assertEqual(dt, Pydt.frommicroseconds(pt.tomicroseconds(), tz))
             # timestamp()
             self.assertEqual(dt.timestamp(), pt.timestamp())
             # date()
@@ -661,6 +661,24 @@ class Test_Pydt(TestCase):
                 pt.to_end_of("Sun"),
             )
 
+        # is_first_of / is_last_of
+        units = ["W", "M", "Q", "Y", "Jan", "Feb", "Dec"]
+        for tz in (None, datetime.UTC, ZoneInfo("CET")):
+            dt = datetime.datetime(2023, 5, 16, 3, 4, 5, 666666, tz)
+            pt = Pydt.fromdatetime(dt)
+            for unit in ["W", "M", "Q", "Y", "Jan", "Feb", "Dec"]:
+                self.assertTrue(pt.to_first_of(unit).is_first_of(unit))
+                self.assertTrue(pt.to_last_of(unit).is_last_of(unit))
+
+        # is_start_of / is_end_of
+        units += ["us", "ms", "s", "m", "h", "D", "Mon", "Sun"]
+        for tz in (None, datetime.UTC, ZoneInfo("CET")):
+            dt = datetime.datetime(2023, 5, 16, 3, 4, 5, 666666, tz)
+            pt = Pydt.fromdatetime(dt)
+            for unit in units:
+                self.assertTrue(pt.to_start_of(unit).is_start_of(unit))
+                self.assertTrue(pt.to_end_of(unit).is_end_of(unit))
+
         # round() / ceil() / floor()
         for tz in (None, datetime.UTC, ZoneInfo("CET")):
             for dt in (
@@ -776,18 +794,6 @@ class Test_Pydt(TestCase):
                 (dt.hour, dt.minute, dt.second, dt.microsecond // 1000, dt.microsecond),
                 (pt.hour, pt.minute, pt.second, pt.millisecond, pt.microsecond),
             )
-            # Date&Time ------------------------------------------------------
-            # is_first_of / is_last_of
-            units = ["W", "M", "Q", "Y", "Jan", "Feb", "Dec"]
-            for unit in units:
-                self.assertTrue(pt.to_first_of(unit).is_first_of(unit))
-                self.assertTrue(pt.to_last_of(unit).is_last_of(unit))
-
-            # is_start_of / is_end_of
-            units += ["us", "ms", "s", "m", "h", "D", "Mon", "Sun"]
-            for unit in units:
-                self.assertTrue(pt.to_start_of(unit).is_start_of(unit))
-                self.assertTrue(pt.to_end_of(unit).is_end_of(unit))
 
         self.log_ended(test)
 
@@ -1028,7 +1034,7 @@ class Test_Pydt(TestCase):
             for d, b in enumerate(inclusive):
                 self.assertEqual(d, dt.diff(dt_str, unit, True, b))
         # . incomparable
-        with self.assertRaises(errors.InvalidArgumentError):
+        with self.assertRaises(errors.MixedTimezoneError):
             dt.diff("1972-02-02 01:01:01+01:00", "us")
 
         # addition
@@ -1157,4 +1163,7 @@ class Test_Pydt(TestCase):
 
 
 if __name__ == "__main__":
-    Test_Pydt().test_all()
+    TestPydt().test_all()
+
+    
+
