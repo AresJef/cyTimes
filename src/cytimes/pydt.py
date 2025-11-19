@@ -10,33 +10,87 @@ from cython.cimports import numpy as np  # type: ignore
 from cython.cimports.cpython import datetime  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_READ_CHAR as str_read  # type: ignore
 from cython.cimports.cpython.unicode import PyUnicode_GET_LENGTH as str_len  # type: ignore
-from cython.cimports.cytimes import errors, utils  # type: ignore
 from cython.cimports.cytimes.parser import (  # type: ignore
     Configs,
     parse_obj as _parse_obj,
     parse_month as _parse_month,
     parse_weekday as _parse_weekday,
 )
+from cython.cimports.cytimes import errors, utils  # type: ignore
 
 np.import_array()
 np.import_umath()
 datetime.import_datetime()
 
 # Python imports
-from time import struct_time
-import datetime, numpy as np
 from typing_extensions import Self
+from time import struct_time
+import datetime
+import numpy as np
 from babel.dates import format_date as _format_date
 from zoneinfo import available_timezones as _available_timezones
-from cytimes import errors, utils
 from cytimes.parser import (
     Configs,
     parse_obj as _parse_obj,
     parse_month as _parse_month,
     parse_weekday as _parse_weekday,
 )
+from cytimes import errors, utils
 
 __all__ = ["Pydt"]
+
+
+# Utils ---------------------------------------------------------------------------------------
+@cython.cfunc
+@cython.inline(True)
+@cython.exceptval(-2, check=False)
+def _parse_unit_factor(cls: object, unit: str) -> cython.longlong:
+    """(internal) Parse the datetime 'unit' to the corresponding
+    conversion factor to microsecond `<'int'>`.
+
+    :param cls `<'type'>`: The class object calling this function.
+    :param unit `<'str'>`: The datetime unit: 'D', 'h', 'm', 's', 'ms', 'us'.
+    :return `<'int'>`: The corresponding microsecond conversion factor.
+    """
+    # Guard
+    if unit is None:
+        errors.raise_argument_error(
+            cls,
+            "round/ceil/floor(unit)",
+            "Supports: 'D', 'h', 'm', 's', 'ms' or 'us'; got None.",
+        )
+
+    # Unit: 's', 'm', 'h', 'D'
+    unit_len: cython.Py_ssize_t = str_len(unit)
+    if unit_len == 1:
+        ch0: cython.Py_UCS4 = str_read(unit, 0)
+        if ch0 == "s":
+            return utils.US_SECOND
+        if ch0 == "m":
+            return utils.US_MINUTE
+        if ch0 == "h":
+            return utils.US_HOUR
+        if ch0 == "D":
+            return utils.US_DAY
+
+    # Unit: 'ms', 'us', 'ns'
+    elif unit_len == 2 and str_read(unit, 1) == "s":
+        ch0: cython.Py_UCS4 = str_read(unit, 0)
+        if ch0 == "m":
+            return utils.US_MILLISECOND
+        if ch0 in ("u", "n"):
+            return 1
+
+    # Unit: 'min' for pandas compatibility
+    elif unit_len == 3 and unit == "min":
+        return utils.US_MINUTE
+
+    # Unsupported unit
+    errors.raise_argument_error(
+        cls,
+        "round/ceil/floor(unit)",
+        "Supports: 'D', 'h', 'm', 's', 'ms' or 'us'; got '%s'." % unit,
+    )
 
 
 # Pydt (Python Datetime) ----------------------------------------------------------------------
@@ -50,6 +104,52 @@ class _Pydt(datetime.datetime):
     __cls: object
 
     # Constructor --------------------------------------------------------------------------
+    @classmethod
+    def _new(
+        cls,
+        year: cython.int = 1,
+        month: cython.int = 1,
+        day: cython.int = 1,
+        hour: cython.int = 0,
+        minute: cython.int = 0,
+        second: cython.int = 0,
+        microsecond: cython.int = 0,
+        tzinfo: datetime.tzinfo | str | None = None,
+        fold: cython.int = 1,
+    ) -> Self:
+        """(internal) Create a new `Pydt` instance."""
+        # Normalize non-fixed timezone
+        tzinfo = utils.tz_parse(tzinfo)
+        if tzinfo is not None and type(tzinfo) is not utils.T_TIMEZONE:
+            dt: datetime.datetime = datetime.datetime_new(
+                year, month, day, hour, minute, second, microsecond, tzinfo, fold
+            )
+            try:
+                dt_norm: datetime.datetime = utils.dt_normalize_tz(dt, None)
+            except Exception as err:
+                raise errors.AmbiguousTimeError(err) from err
+            if dt is not dt_norm:
+                year = dt_norm.year
+                month = dt_norm.month
+                day = dt_norm.day
+                hour = dt_norm.hour
+                minute = dt_norm.minute
+                second = dt_norm.second
+                microsecond = dt_norm.microsecond
+                fold = 0
+
+        # Construct datetime
+        if fold == 1:
+            pt: _Pydt = _Pydt.__new__(
+                cls, year, month, day, hour, minute, second, microsecond, tzinfo, fold=1
+            )
+        else:
+            pt: _Pydt = _Pydt.__new__(
+                cls, year, month, day, hour, minute, second, microsecond, tzinfo
+            )
+        pt.__cls = cls
+        return pt
+
     @classmethod
     def parse(
         cls,
@@ -77,9 +177,9 @@ class _Pydt(datetime.datetime):
 
         :param default `<'datetime/date/None'>`: Fallback source for missing Y/M/D. Defaults to `None`.
             If `None` and required fields are missing, raises an error.
-        :param yearfirst `<'bool/None'>`: Interpret the first ambiguous Y/M/D value as year. Defaults to `None`.
+        :param yearfirst `<'bool/None'>`: Parse the first ambiguous Y/M/D value as year. Defaults to `None`.
             If 'None', uses `cfg.yearfirst` if 'cfg' is specified; otherwise. Defaults to `True`.
-        :param dayfirst `<'bool/None'>`: Interpret the first ambiguous Y/M/D values as day. Defaults to `None`.
+        :param dayfirst `<'bool/None'>`: Parse the first ambiguous Y/M/D values as day. Defaults to `None`.
             If 'None', uses `cfg.dayfirst` if 'cfg' is specified; otherwise. Defaults to `False`.
         :param ignoretz `<'bool'>`: If `True`, ignore any timezone information and return a naive datetime. Defaults to `True`.
             When timezone info is not needed, setting to `True` can improve performance.
@@ -134,7 +234,11 @@ class _Pydt(datetime.datetime):
 
     @classmethod
     def today(cls) -> Self:
-        """Construct a current `local` datetime (timezone-naive) `<'Pydt'>`."""
+        """Construct a current `local` datetime (timezone-naive) `<'Pydt'>`.
+
+        ## Equivalent
+        >>> Pydt.now(None)
+        """
         return utils.dt_now(None, cls)
 
     @classmethod
@@ -243,7 +347,7 @@ class _Pydt(datetime.datetime):
             errors.raise_argument_error(cls, "fromseconds(seconds, ...)", None, err)
 
     @classmethod
-    def fromicroseconds(
+    def frommicroseconds(
         cls,
         us: cython.longlong,
         tz: datetime.tzinfo | str | None = None,
@@ -268,7 +372,7 @@ class _Pydt(datetime.datetime):
         try:
             return utils.dt_fr_us(us, tz, cls)
         except Exception as err:
-            errors.raise_argument_error(cls, "fromicroseconds(us, ...)", None, err)
+            errors.raise_argument_error(cls, "frommicroseconds(us, ...)", None, err)
 
     @classmethod
     def fromtimestamp(
@@ -281,9 +385,9 @@ class _Pydt(datetime.datetime):
         POSIX timestamps are interpreted as seconds since the Unix epoch (1970-01-01 00:00:00 UTC).
 
         :param ts `<'int/float'>`: POSIX timestamp.
-        :param tz `<'tzinfo/str/None'>`: Target timezone.
+        :param tz `<'tzinfo/str/None'>`: Target timezone. Defaults to `None`.
 
-            - `<'None'>` naive `local` time.
+            - `<'None'>` naive `local` time (assumes local timezone).
             - `<'str'>` Timezone name; or `'local'` for local timezone.
             - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
 
@@ -298,10 +402,13 @@ class _Pydt(datetime.datetime):
 
     @classmethod
     def utcfromtimestamp(cls, ts: int | float) -> Self:
-        """Construct a UTC-aware datetime from a POSIX timestamp `<'Pydt'>`.
+        """Construct a UTC-aware datetime from a POSIX timestamp (timezone-aware) `<'Pydt'>`.
 
         :param ts `<'int/float'>`: POSIX timestamp.
         :returns `<'Pydt'>`: A UTC-aware datetime.
+
+        ## Equivalent
+        >>> Pydt.fromtimestamp(ts, tz='UTC')
         """
         try:
             return utils.dt_fr_ts(float(ts), utils.UTC, cls)
@@ -397,12 +504,37 @@ class _Pydt(datetime.datetime):
         return utils.dt_fr_date(date, tz, cls)
 
     @classmethod
-    def fromdatetime(cls, dt: datetime.datetime) -> Self:
+    def fromdatetime(
+        cls,
+        dt: datetime.datetime,
+        tz: datetime.tzinfo | str | None = None,
+    ) -> Self:
         """Construct a datetime from another datetime `<'Pydt'>`.
 
         :param dt `<'datetime.datetime'>`: An instance or subclass of `datetime.datetime`.
-        :returns `<'Pydt'>`: The resulting datetime with the same fields and timezone info.
+        :param tz `<'tzinfo/str/None'>`: The optional timezone to `attach`. Defaults to `None`.
+
+            - `<'None'>` Timezone-naive (when `dt` has no timezone info, see `Notes`).
+            - `<'str'>` Timezone name; or `'local'` for local timezone.
+            - `<'datetime.tzinfo'>` A subclass of `datetime.tzinfo`.
+
+        :returns `<'Pydt'>`: The resulting datetime with the same fields
+            and optional replaced timezone info.
+
+        ## Notes
+        - If `tz` is `None`, but `dt` contains timezone information, the
+          resulting datetime will be timezone-aware using `dt`'s timezone.
+        - If `tz` is specified (not `None`), it `overrides` any timezone
+          information in `dt`.
         """
+        tz = utils.tz_parse(tz)
+        if tz is not None:
+            # fmt: off
+            return utils.dt_new(
+                dt.year, dt.month, dt.day, dt.hour, dt.minute,
+                dt.second, dt.microsecond, tz, 1, cls,
+            )
+            # fmt: on
         return utils.dt_fr_dt(dt, cls)
 
     @classmethod
@@ -454,7 +586,7 @@ class _Pydt(datetime.datetime):
 
     @cython.ccall
     def strftime(self, fmt: str) -> str:
-        """Format to string according to the given `fmt` `<'str'>`.
+        """Format to string according to the given format `<'str'>`.
 
         :param fmt `<'str'>`: The format, e.g.: `'%d/%m/%Y, %H:%M:%S'`.
         :returns `<'str'>`: The formatted string.
@@ -483,7 +615,7 @@ class _Pydt(datetime.datetime):
 
     @cython.ccall
     def timedict(self) -> dict[str, int]:
-        """Return local time dictionary compatible with `time.localtime()` `<'dict'>`.
+        """Return `local` time dictionary compatible with `time.localtime()` `<'dict'>`.
 
         ## Example
         >>> dt.timedict()
@@ -514,7 +646,7 @@ class _Pydt(datetime.datetime):
 
     @cython.ccall
     def utctimedict(self) -> dict[str, int]:
-        """Return UTC time dictionary compatible with `time.gmtime()` `<'dict'>`.
+        """Return `UTC` time dictionary compatible with `time.gmtime()` `<'dict'>`.
 
         ## Example
         >>> dt.utctimedict()
@@ -545,7 +677,7 @@ class _Pydt(datetime.datetime):
 
     @cython.ccall
     def timetuple(self) -> object:
-        """Return local time tuple compatible with `time.localtime()` `<'struct_time'>`.
+        """Return `local` time tuple compatible with `time.localtime()` `<'struct_time'>`.
 
         ## Example
         >>> dt.timetuple()
@@ -578,7 +710,7 @@ class _Pydt(datetime.datetime):
 
     @cython.ccall
     def utctimetuple(self) -> object:
-        """Return UTC time tuple compatible with `time.gmtime()` `<'struct_time'>`.
+        """Return `UTC` time tuple compatible with `time.gmtime()` `<'struct_time'>`.
 
         ## Example
         >>> dt.utctimetuple()
@@ -631,7 +763,7 @@ class _Pydt(datetime.datetime):
             - When `True` and the datetime is `timezone-aware`, subtract the UTC
               offset first (i.e., normalize to UTC) before computing the epoch
               difference.
-            - For `naive` datetimes this flag is ignored.
+            - For `naive` datetime this flag is ignored.
 
         :returns `<'float'>`: Seconds since epoch, where fractional part represents the microseconds.
 
@@ -704,72 +836,6 @@ class _Pydt(datetime.datetime):
             self.__cls = self.__class__
         return self.__cls
 
-    @cython.cfunc
-    @cython.inline(True)
-    @cython.exceptval(-2, check=False)
-    def _parse_unit_factor(self, unit: str) -> cython.longlong:
-        """(internal) Parse the datetime 'unit' to the corresponding
-        conversion factor to microsecond `<'int'>`.
-
-        :param unit `<'str'>`: The datetime unit: 'D', 'h', 'm', 's', 'ms', 'us'.
-        :return `<'int'>`: The corresponding microsecond conversion factor.
-        """
-        # Guard
-        if unit is None:
-            errors.raise_argument_error(
-                self._cls(),
-                "round/ceil/floor(unit)",
-                "Supports: 'D', 'h', 'm', 's', 'ms' or 'us'; got None.",
-            )
-
-        # Unit: 's', 'm', 'h', 'D'
-        unit_len: cython.Py_ssize_t = str_len(unit)
-        if unit_len == 1:
-            unit_ch: cython.Py_UCS4 = str_read(unit, 0)
-            if unit_ch == "s":
-                return utils.US_SECOND
-            if unit_ch == "m":
-                return utils.US_MINUTE
-            if unit_ch == "h":
-                return utils.US_HOUR
-            if unit_ch == "D":
-                return utils.US_DAY
-
-        # Unit: 'ms', 'us', 'ns'
-        elif unit_len == 2 and str_read(unit, 1) == "s":
-            unit_ch: cython.Py_UCS4 = str_read(unit, 0)
-            if unit_ch == "m":
-                return utils.US_MILLISECOND
-            if unit_ch in ("u", "n"):
-                return 1
-
-        # Unit: 'min' for pandas compatibility
-        elif unit_len == 3 and unit == "min":
-            return utils.US_MINUTE
-
-        # Unsupported unit
-        errors.raise_argument_error(
-            self._cls(),
-            "round/ceil/floor(unit)",
-            "Supports: 'D', 'h', 'm', 's', 'ms' or 'us'; got '%s'." % unit,
-        )
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _to_curr_weekday(self, weekday: cython.int) -> _Pydt:
-        """(internal) Adjust the date to the specific weekday of the current week `<'Pydt'>`.
-
-        :param weekday `<'int'>`: Weekday number (0=Mon...6=Sun).
-            Automatically clamped to [0..6]. If negative, no adjustment is made.
-        :returns `<'Pydt'>`: The adjusted datetime in the current week.
-        """
-        # Fast-path: no adjustment
-        if weekday < 0:
-            return self  # exit
-
-        # New instance
-        return self.to_day(min(weekday, 6) - self.access_weekday())
-
     # Manipulator --------------------------------------------------------------------------
     @cython.ccall
     def replace(
@@ -791,7 +857,7 @@ class _Pydt(datetime.datetime):
         :param month `<'int'>`: Absolute month. Defaults to `SENTINEL` (no change).
             If specified (greater than `0`), clamps to [1..12].
         :param day `<'int'>`: Absolute day. Defaults to `SENTINEL` (no change).
-            If specified (greater than `0`), clamps to [1..maximum days in year/month].
+            If specified (greater than `0`), clamps to [1..maximum days the resulting month].
         :param hour `<'int'>`: Absolute hour. Defaults to `SENTINEL` (no change).
             If specified (greater than or equal to `0`), clamps to [0..23].
         :param minute `<'int'>`: Absolute minute. Defaults to `SENTINEL` (no change).
@@ -938,12 +1004,14 @@ class _Pydt(datetime.datetime):
         :param offset `<'int'>`: The year offset (+/-).
 
         :param month `<'int/str/None'>`: Month value. Defaults to `None`.
+
             - `<'int'>` Month number (1=Jan...12=Dec).
             - `<'str'>` Month name (case-insensitive), e.g., 'Jan', 'februar', '三月'.
             - `<'None'>` Retains the original month.
 
         :param day `<'int'>`: Day value (1-31). Defaults to `SENTINEL` (no change).
             The final day value is automatically clamped to the maximum days in the month.
+
         :returns `<'Pydt'>`: The adjusted datetime.
 
         ## Example
@@ -999,7 +1067,7 @@ class _Pydt(datetime.datetime):
         ## Example
         >>> dt.to_curr_quarter(month=1, day=31) # The last day of the 1st quarter month in the current quarter
         >>> dt.to_curr_quarter(month=2)         # The same day of the 2nd quarter month in the current quarter
-        >>> dt.to_curr_quarter(day=1)           # The 1st day of the current quarter month in the current quarter
+        >>> dt.to_curr_quarter(day=1)           # The 1st day of the current month-of-quarter in the current quarter
         """
         # Fast-path: no adjustment
         if month < 1:
@@ -1051,7 +1119,7 @@ class _Pydt(datetime.datetime):
         ## Example
         >>> dt.to_prev_quarter(month=1, day=31) # The last day of the 1st quarter month in the previous quarter
         >>> dt.to_prev_quarter(month=2)         # The same day of the 2nd quarter month in the previous quarter
-        >>> dt.to_prev_quarter(day=1)           # The 1st day of the current quarter month in the previous quarter
+        >>> dt.to_prev_quarter(day=1)           # The 1st day of the current month-of-quarter in the previous quarter
         """
         return self.to_quarter(-1, month, day)
 
@@ -1072,7 +1140,7 @@ class _Pydt(datetime.datetime):
         ## Example
         >>> dt.to_next_quarter(month=1, day=31) # The last day of the 1st quarter month in the next quarter
         >>> dt.to_next_quarter(month=2)         # The same day of the 2nd quarter month in the next quarter
-        >>> dt.to_next_quarter(day=1)           # The 1st day of the current quarter month in the next quarter
+        >>> dt.to_next_quarter(day=1)           # The 1st day of the current month-of-quarter in the next quarter
         """
         return self.to_quarter(1, month, day)
 
@@ -1095,7 +1163,7 @@ class _Pydt(datetime.datetime):
         ## Example
         >>> dt.to_quarter(-2, 1, 31)  # The last day of the 1st quarter month, two quarters ago
         >>> dt.to_quarter(2, 2)       # The same day of the 2nd quarter month, two quarters later
-        >>> dt.to_quarter(2, day=1)   # The 1st day of the current quarter month, two quarters later
+        >>> dt.to_quarter(2, day=1)   # The 1st day of the current month-of-quarter, two quarters later
         """
         # Fast-path: no offset
         if offset == 0:
@@ -1365,6 +1433,22 @@ class _Pydt(datetime.datetime):
         # New instance
         return self.to_day(days)
 
+    @cython.cfunc
+    @cython.inline(True)
+    def _to_curr_weekday(self, weekday: cython.int) -> _Pydt:
+        """(internal) Adjust the date to the specific weekday of the current week `<'Pydt'>`.
+
+        :param weekday `<'int'>`: Weekday number (0=Mon...6=Sun).
+            Automatically clamped to [0..6]. If negative, no adjustment is made.
+        :returns `<'Pydt'>`: The adjusted datetime in the current week.
+        """
+        # Fast-path: no adjustment
+        if weekday < 0:
+            return self  # exit
+
+        # New instance
+        return self.to_day(min(weekday, 6) - self.access_weekday())
+
     # . day
     @cython.ccall
     def to_yesterday(self) -> _Pydt:
@@ -1426,7 +1510,7 @@ class _Pydt(datetime.datetime):
         :param month `<'int'>`: Absolute month. Defaults to `SENTINEL` (no change).
             If specified (greater than `0`), clamps to [1..12].
         :param day `<'int'>`: Absolute day. Defaults to `SENTINEL` (no change).
-            If specified (greater than `0`), clamps to [1..maximum days in year/month].
+            If specified (greater than `0`), clamps to [1..maximum days the resulting month].
         :param hour `<'int'>`: Absolute hour. Defaults to `SENTINEL` (no change).
             If specified (greater than or equal to `0`), clamps to [0..23].
         :param minute `<'int'>`: Absolute minute. Defaults to `SENTINEL` (no change).
@@ -1472,7 +1556,7 @@ class _Pydt(datetime.datetime):
         :param month `<'int'>`: Absolute month. Defaults to `SENTINEL` (no change).
             If specified (greater than `0`), clamps to [1..12].
         :param day `<'int'>`: Absolute day. Defaults to `SENTINEL` (no change).
-            If specified (greater than `0`), clamps to [1..maximum days in year/month].
+            If specified (greater than `0`), clamps to [1..maximum days the resulting month].
         :returns `<'Pydt'>`: The resulting datetime with new specified date field values.
 
         ## Equivalent
@@ -1521,6 +1605,52 @@ class _Pydt(datetime.datetime):
             errors.raise_argument_error(self._cls(), "to_time(...)", None, err)
 
     @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def is_first_of(self, unit: str) -> cython.bint:
+        """Check whether the date fields are on the first day of the specified datetime unit `<'bool'>`.
+
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'` → First day of the year: `YYYY-01-01`
+            - `'Q'` → First day of the quarter: `YYYY-MM-01`
+            - `'M'` → First day of the month: `YYYY-MM-01`
+            - `'W'` → First day (Monday) of the week: `YYYY-MM-DD`
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                    → First day of the specifed month: `YYYY-MM-01`
+
+        :return `<'bool'>`: True if the instance is on the first day
+            of the specified datetime unit; Otherwise False.
+        """
+        # Guard
+        if unit is None:
+            return False
+
+        # Unit: 'W', 'M', 'Q', 'Y'
+        unit_len: cython.Py_ssize_t = str_len(unit)
+        if unit_len == 1:
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
+            # . weekday
+            if ch0 == "W":
+                return self.access_weekday() == 0
+            # . month
+            if ch0 == "M":
+                return utils.dt_is_first_dom(self)
+            # . quarter
+            if ch0 == "Q":
+                return utils.dt_is_first_doq(self)
+            # . year
+            if ch0 == "Y":
+                return utils.dt_is_first_doy(self)
+
+        # Month name
+        val: cython.int = _parse_month(unit, None, False)
+        if val != -1:
+            return self.access_month() == val and utils.dt_is_first_dom(self)
+
+        # Invalid
+        return False
+
+    @cython.ccall
     def to_first_of(self, unit: str) -> _Pydt:
         """Adjust the date fields to the first day of the specified datetime unit,
         without affecting the time fields `<'Pydt'>`.
@@ -1547,18 +1677,18 @@ class _Pydt(datetime.datetime):
         # Unit: 'W', 'M', 'Q', 'Y'
         unit_len: cython.Py_ssize_t = str_len(unit)
         if unit_len == 1:
-            unit_ch: cython.Py_UCS4 = str_read(unit, 0)
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
             # . weekday
-            if unit_ch == "W":
+            if ch0 == "W":
                 return self._to_curr_weekday(0)
             # . month
-            if unit_ch == "M":
+            if ch0 == "M":
                 return self.to_curr_month(1)
             # . quarter
-            if unit_ch == "Q":
+            if ch0 == "Q":
                 return self.to_curr_quarter(1, 1)
             # . year
-            if unit_ch == "Y":
+            if ch0 == "Y":
                 return self.to_date(-1, 1, 1)
 
         # Month name
@@ -1572,6 +1702,52 @@ class _Pydt(datetime.datetime):
             "to_first_of(unit)",
             "Supports: 'Y', 'Q', 'M', 'W' or Month name; got '%s'." % unit,
         )
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def is_last_of(self, unit: str) -> cython.bint:
+        """Check whether the date fields are on the last day of the specified datetime unit `<'bool'>`.
+
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'` → Last day of the year: `YYYY-12-31`
+            - `'Q'` → Last day of the quarter: `YYYY-MM-(30..31)`
+            - `'M'` → Last day of the month: `YYYY-MM-(28..31)`
+            - `'W'` → Last day (Sunday) of the week: `YYYY-MM-DD`
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                    → Last day of the specifed month: `YYYY-MM-(28..31)`
+
+        :return `<'bool'>`: True if the instance is on the last day
+            of the specified datetime unit; Otherwise False.
+        """
+        # Guard
+        if unit is None:
+            return False
+
+        # Unit: 'W', 'M', 'Q', 'Y'
+        unit_len: cython.Py_ssize_t = str_len(unit)
+        if unit_len == 1:
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
+            # . weekday
+            if ch0 == "W":
+                return self.access_weekday() == 6
+            # . month
+            if ch0 == "M":
+                return utils.dt_is_last_dom(self)
+            # . quarter
+            if ch0 == "Q":
+                return utils.dt_is_last_doq(self)
+            # . year
+            if ch0 == "Y":
+                return utils.dt_is_last_doy(self)
+
+        # Month name
+        val: cython.int = _parse_month(unit, None, False)
+        if val != -1:
+            return self.access_month() == val and utils.dt_is_last_dom(self)
+
+        # Invalid
+        return False
 
     @cython.ccall
     def to_last_of(self, unit: str) -> _Pydt:
@@ -1600,18 +1776,18 @@ class _Pydt(datetime.datetime):
         # Unit: 'W', 'M', 'Q', 'Y'
         unit_len: cython.Py_ssize_t = str_len(unit)
         if unit_len == 1:
-            unit_ch: cython.Py_UCS4 = str_read(unit, 0)
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
             # . weekday
-            if unit_ch == "W":
+            if ch0 == "W":
                 return self._to_curr_weekday(6)
             # . month
-            if unit_ch == "M":
+            if ch0 == "M":
                 return self.to_curr_month(31)
             # . quarter
-            if unit_ch == "Q":
+            if ch0 == "Q":
                 return self.to_curr_quarter(3, 31)
             # . year
-            if unit_ch == "Y":
+            if ch0 == "Y":
                 return self.to_date(-1, 12, 31)
 
         # Month name
@@ -1627,6 +1803,102 @@ class _Pydt(datetime.datetime):
         )
 
     @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def is_start_of(self, unit: str) -> cython.bint:
+        """Check whether date & time fileds are the start of the specified datetime unit `<'bool'>`.
+
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'`  → Start of year: `YYYY-01-01 00:00:00`
+            - `'Q'`  → Start of quarter: `YYYY-MM-01 00:00:00`
+            - `'M'`  → Start of month: `YYYY-MM-01 00:00:00`
+            - `'W'`  → Start of week (Monday): `YYYY-MM-DD 00:00:00`
+            - `'D'`  → Start of day: `YYYY-MM-DD 00:00:00`
+            - `'h'`  → Start of hour: `YYYY-MM-DD hh:00:00`
+            - `'m'`  → Start of minute: `YYYY-MM-DD hh:mm:00`
+            - `'s'`  → Start of second: `YYYY-MM-DD hh:mm:ss.000000`
+            - `'ms'` → Start of millisecond: `YYYY-MM-DD hh:mm:ss.uuu000`
+            - `'us'` → Return the instance `as-is`.
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                     → Start of the specifed month: `YYYY-MM-01 00:00:00`
+            - `Weekday` (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`)
+                     → Start of the specifed weekday: `YYYY-MM-DD 00:00:00`
+
+        :return `<'bool'>`: True if the instance is at the start
+            of the specified datetime unit; Otherwise False.
+        """
+        # Guard
+        if unit is None:
+            return False
+
+        # Unit: 's', 'm', 'h', 'D', 'W', 'M', 'Q', 'Y'
+        unit_len: cython.Py_ssize_t = str_len(unit)
+        if unit_len == 1:
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
+            # . second
+            if ch0 == "s":
+                return self.access_microsecond() == 0
+            # . minute
+            if ch0 == "m":
+                return self.access_second() == 0 and self.access_microsecond() == 0
+            # . hour
+            if ch0 == "h":
+                return (
+                    self.access_minute() == 0
+                    and self.access_second() == 0
+                    and self.access_microsecond() == 0
+                )
+            # Start of time - - - - - - - - - - - - - - - - - - - - - - - -
+            if not utils.dt_is_start_of_time(self):
+                return False
+            # . day
+            if ch0 == "D":
+                return True
+            # . week
+            if ch0 == "W":
+                return self.access_weekday() == 0
+            # . month
+            if ch0 == "M":
+                return utils.dt_is_first_dom(self)
+            # . quarter
+            if ch0 == "Q":
+                return utils.dt_is_first_doq(self)
+            # . year
+            if ch0 == "Y":
+                return utils.dt_is_first_doy(self)
+
+        # Unit: 'ms', 'us', 'ns'
+        elif unit_len == 2 and str_read(unit, 1) == "s":
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
+            # . millisecond
+            if ch0 == "m":
+                return self.access_microsecond() % 1000 == 0
+            # . microsecond / nanosecond
+            if ch0 in ("u", "n"):
+                return True
+
+        # Unit: 'min' for pandas compatibility
+        elif unit_len == 3 and unit == "min":
+            return self.access_second() == 0 and self.access_microsecond() == 0
+
+        # Start of time - - - - - - - - - - - - - - - - - - - - - - - -
+        if not utils.dt_is_start_of_time(self):
+            return False
+
+        # Month name
+        val: cython.int = _parse_month(unit, None, False)
+        if val != -1:
+            return self.access_month() == val and utils.dt_is_first_dom(self)
+
+        # Weekday name
+        val: cython.int = _parse_weekday(unit, None, False)
+        if val != -1:
+            return self.access_weekday() == val
+
+        # Invalid
+        return False
+
+    @cython.ccall
     def to_start_of(self, unit: str) -> _Pydt:
         """Adjust the date & time fields to the start of the specified datetime unit `<'Pydt'>`.
 
@@ -1640,7 +1912,7 @@ class _Pydt(datetime.datetime):
             - `'h'`  → Start of hour: `YYYY-MM-DD hh:00:00`
             - `'m'`  → Start of minute: `YYYY-MM-DD hh:mm:00`
             - `'s'`  → Start of second: `YYYY-MM-DD hh:mm:ss.000000`
-            - `'ms'` → Start of millisecond: `YYYY-MM-DD hh:mm:ss.fff000`
+            - `'ms'` → Start of millisecond: `YYYY-MM-DD hh:mm:ss.uuu000`
             - `'us'` → Return the instance `as-is`.
             - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
                      → Start of the specifed month: `YYYY-MM-01 00:00:00`
@@ -1661,21 +1933,21 @@ class _Pydt(datetime.datetime):
         # Unit: 's', 'm', 'h', 'D', 'W', 'M', 'Q', 'Y'
         unit_len: cython.Py_ssize_t = str_len(unit)
         if unit_len == 1:
-            unit_ch: cython.Py_UCS4 = str_read(unit, 0)
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
             # . second
-            if unit_ch == "s":
+            if ch0 == "s":
                 return self.to_time(-1, -1, -1, 0)
             # . minute
-            if unit_ch == "m":
+            if ch0 == "m":
                 return self.to_time(-1, -1, 0, 0)
             # . hour
-            if unit_ch == "h":
+            if ch0 == "h":
                 return self.to_time(-1, 0, 0, 0)
             # . day
-            if unit_ch == "D":
+            if ch0 == "D":
                 return self.to_time(0, 0, 0, 0)
             # . week
-            if unit_ch == "W":
+            if ch0 == "W":
                 # fmt: off
                 return self.add(
                     0, 0, 0, 0,
@@ -1688,25 +1960,25 @@ class _Pydt(datetime.datetime):
                 )
                 # fmt: on
             # . month
-            if unit_ch == "M":
+            if ch0 == "M":
                 return self.to_datetime(-1, -1, 1, 0, 0, 0, 0)
             # . quarter
-            if unit_ch == "Q":
+            if ch0 == "Q":
                 mm: cython.int = self.access_month()
                 mm = utils.quarter_of_month(mm) * 3 - 2
                 return self.to_datetime(-1, mm, 1, 0, 0, 0, 0)
             # . year
-            if unit_ch == "Y":
+            if ch0 == "Y":
                 return self.to_datetime(-1, 1, 1, 0, 0, 0, 0)
 
         # Unit: 'ms', 'us', 'ns'
         elif unit_len == 2 and str_read(unit, 1) == "s":
-            unit_ch: cython.Py_UCS4 = str_read(unit, 0)
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
             # . millisecond
-            if unit_ch == "m":
+            if ch0 == "m":
                 return self.to_time(-1, -1, -1, self.access_millisecond() * 1000)
             # . microsecond / nanosecond
-            if unit_ch in ("u", "n"):
+            if ch0 in ("u", "n"):
                 return self
 
         # Unit: 'min' for pandas compatibility
@@ -1742,6 +2014,103 @@ class _Pydt(datetime.datetime):
         )
 
     @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def is_end_of(self, unit: str) -> cython.bint:
+        """Check whether date & time fileds are the end of the specified datetime unit `<'bool'>`.
+
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'`  → End of year: `YYYY-12-31 23:59:59.999999`
+            - `'Q'`  → End of quarter: `YYYY-MM-(30..31) 23:59:59.999999`
+            - `'M'`  → End of month: `YYYY-MM-(28..31) 23:59:59.999999`
+            - `'W'`  → End of week (Sunday): `YYYY-MM-DD 23:59:59.999999`
+            - `'D'`  → End of day: `YYYY-MM-DD 23:59:59.999999`
+            - `'h'`  → End of hour: `YYYY-MM-DD hh:59:59.999999`
+            - `'m'`  → End of minute: `YYYY-MM-DD hh:mm:59.999999`
+            - `'s'`  → End of second: `YYYY-MM-DD hh:mm:ss.999999`
+            - `'ms'` → End of millisecond: `YYYY-MM-DD hh:mm:ss.uuu999`
+            - `'us'` → Return the instance `as-is`.
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                     → End of the specifed month: `YYYY-MM-(28..31) 23:59:59.999999`
+            - `Weekday` (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`)
+                     → End of the specifed weekday: `YYYY-MM-DD 23:59:59.999999`
+
+        :return `<'bool'>`: True if the instance is at the end
+            of the specified datetime unit; Otherwise False.
+        """
+        if unit is None:
+            return False
+
+        # Unit: 's', 'm', 'h', 'D', 'W', 'M', 'Q', 'Y'
+        unit_len: cython.Py_ssize_t = str_len(unit)
+        if unit_len == 1:
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
+            # . second
+            if ch0 == "s":
+                return self.access_microsecond() == 999_999
+            # . minute
+            if ch0 == "m":
+                return (
+                    self.access_second() == 59 and self.access_microsecond() == 999_999
+                )
+            # . hour
+            if ch0 == "h":
+                return (
+                    self.access_minute() == 59
+                    and self.access_second() == 59
+                    and self.access_microsecond() == 999_999
+                )
+            # End of time - - - - - - - - - - - - - - - - - - - - - - - - -
+            if not utils.dt_is_end_of_time(self):
+                return False
+            # . day
+            if ch0 == "D":
+                return True
+            # . week
+            if ch0 == "W":
+                return self.access_weekday() == 6
+            # . month
+            if ch0 == "M":
+                return utils.dt_is_last_dom(self)
+            # . quarter
+            if ch0 == "Q":
+                return utils.dt_is_last_doq(self)
+            # . year
+            if ch0 == "Y":
+                return utils.dt_is_last_doy(self)
+
+        # Unit: 'ms', 'us', 'ns'
+        elif unit_len == 2 and str_read(unit, 1) == "s":
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
+            # . millisecond
+            if ch0 == "m":
+                return self.access_microsecond() % 1000 == 999
+            # . microsecond / nanosecond
+            if ch0 in ("u", "n"):
+                return True
+
+        # Unit: 'min' for pandas compatibility
+        elif unit_len == 3 and unit == "min":
+            return self.access_second() == 59 and self.access_microsecond() == 999_999
+
+        # End of time - - - - - - - - - - - - - - - - - - - - - - - - -
+        if not utils.dt_is_end_of_time(self):
+            return False
+
+        # Month name
+        val: cython.int = _parse_month(unit, None, False)
+        if val != -1:
+            return self.access_month() == val and utils.dt_is_last_dom(self)
+
+        # Weekday name
+        val: cython.int = _parse_weekday(unit, None, False)
+        if val != -1:
+            return self.access_weekday() == val
+
+        # Invalid
+        return False
+
+    @cython.ccall
     def to_end_of(self, unit: str) -> _Pydt:
         """Adjust the date & time fields to the end of the specified datetime unit `<'Pydt'>`.
 
@@ -1755,7 +2124,7 @@ class _Pydt(datetime.datetime):
             - `'h'`  → End of hour: `YYYY-MM-DD hh:59:59.999999`
             - `'m'`  → End of minute: `YYYY-MM-DD hh:mm:59.999999`
             - `'s'`  → End of second: `YYYY-MM-DD hh:mm:ss.999999`
-            - `'ms'` → End of millisecond: `YYYY-MM-DD hh:mm:ss.fff999`
+            - `'ms'` → End of millisecond: `YYYY-MM-DD hh:mm:ss.uuu999`
             - `'us'` → Return the instance `as-is`.
             - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
                      → End of the specifed month: `YYYY-MM-(28..31) 23:59:59.999999`
@@ -1776,21 +2145,21 @@ class _Pydt(datetime.datetime):
         # Unit: 's', 'm', 'h', 'D', 'W', 'M', 'Q', 'Y'
         unit_len: cython.Py_ssize_t = str_len(unit)
         if unit_len == 1:
-            unit_ch: cython.Py_UCS4 = str_read(unit, 0)
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
             # . second
-            if unit_ch == "s":
+            if ch0 == "s":
                 return self.to_time(-1, -1, -1, 999999)
             # . minute
-            if unit_ch == "m":
+            if ch0 == "m":
                 return self.to_time(-1, -1, 59, 999999)
             # . hour
-            if unit_ch == "h":
+            if ch0 == "h":
                 return self.to_time(-1, 59, 59, 999999)
             # . day
-            if unit_ch == "D":
+            if ch0 == "D":
                 return self.to_time(23, 59, 59, 999999)
             # . week
-            if unit_ch == "W":
+            if ch0 == "W":
                 # fmt: off
                 return self.add(
                     0, 0, 0, 0,
@@ -1803,25 +2172,25 @@ class _Pydt(datetime.datetime):
                 )
                 # fmt: on
             # . month
-            if unit_ch == "M":
+            if ch0 == "M":
                 return self.to_datetime(-1, -1, 31, 23, 59, 59, 999999)
             # . quarter
-            if unit_ch == "Q":
+            if ch0 == "Q":
                 mm: cython.int = self.access_month()
                 mm = utils.quarter_of_month(mm) * 3
                 return self.to_datetime(-1, mm, 31, 23, 59, 59, 999999)
             # . year
-            if unit_ch == "Y":
+            if ch0 == "Y":
                 return self.to_datetime(-1, 12, 31, 23, 59, 59, 999999)
 
         # Unit: 'ms', 'us', 'ns'
         elif unit_len == 2 and str_read(unit, 1) == "s":
-            unit_ch: cython.Py_UCS4 = str_read(unit, 0)
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
             # . millisecond
-            if unit_ch == "m":
+            if ch0 == "m":
                 return self.to_time(-1, -1, -1, self.access_millisecond() * 1000 + 999)
             # . microsecond / nanosecond
-            if unit_ch in ("u", "n"):
+            if ch0 in ("u", "n"):
                 return self
 
         # Unit: 'min' for pandas compatibility
@@ -1862,14 +2231,22 @@ class _Pydt(datetime.datetime):
         """Perform round operation to the specified datetime unit `<'Pydt'>`.
 
         :param unit `<'str'>`: The datetime unit to round to, supports:
-            'D', 'h', 'm', 's', 'ms', 'us', 'ns'.
-        :returns `<'Pydt'>`: The rounded datetime.
+            `'D', 'h', 'm', 's', 'ms', 'us'`.
+        :returns `<'Pydt'>`: The resulting datetime.
 
         ## Equivalent
         >>> pd.Timestamp.round()
         """
+        # Guard
+        if unit is None:
+            errors.raise_argument_error(
+                self.__class__,
+                "round(unit)",
+                "Supports: 'D', 'h', 'm', 's', 'ms' or 'us'; got None.",
+            )
+
         # Parse unit factor
-        f: cython.longlong = self._parse_unit_factor(unit)
+        f: cython.longlong = _parse_unit_factor(self._cls(), unit)
         if f == 1:
             return self  # exit: no change
 
@@ -1890,14 +2267,14 @@ class _Pydt(datetime.datetime):
         """Perform ceil operation to the specified datetime unit `<'Pydt'>`.
 
         :param unit `<'str'>`: The datetime unit to ceil to, supports:
-            'D', 'h', 'm', 's', 'ms', 'us', 'ns'.
-        :returns `<'Pydt'>`: The ceiled datetime.
+            `'D', 'h', 'm', 's', 'ms', 'us'`.
+        :returns `<'Pydt'>`: The resulting datetime.
 
         ## Equivalent
         >>> pandas.Timestamp.ceil()
         """
         # Parse unit factor
-        f: cython.longlong = self._parse_unit_factor(unit)
+        f: cython.longlong = _parse_unit_factor(self._cls(), unit)
         if f == 1:
             return self  # exit: no change
 
@@ -1918,14 +2295,14 @@ class _Pydt(datetime.datetime):
         """Perform floor operation to the specified datetime unit `<'Pydt'>`.
 
         :param unit `<'str'>`: The datetime unit to floor to, supports:
-            'D', 'h', 'm', 's', 'ms', 'us', 'ns'.
-        :returns `<'Pydt'>`: The floored datetime.
+            `'D', 'h', 'm', 's', 'ms', 'us'`.
+        :returns `<'Pydt'>`: The resulting datetime.
 
         ## Equivalent
         >>> pandas.Timestamp.floor()
         """
         # Parse unit factor
-        f: cython.longlong = self._parse_unit_factor(unit)
+        f: cython.longlong = _parse_unit_factor(self._cls(), unit)
         if f == 1:
             return self  # exit: no change
 
@@ -1946,7 +2323,7 @@ class _Pydt(datetime.datetime):
     def fsp(self, precision: cython.int) -> _Pydt:
         """Adjust to the specified fractional seconds precision `<'Pydt'>`.
 
-        :param precision `<'int'>`: The fractional seconds precision (0-6).
+        :param precision `<'int'>`: The target fractional seconds precision (0-6).
         :returns `<'Pydt'>`: The datetime with adjusted fractional seconds precision.
 
         ## Example
@@ -2135,7 +2512,7 @@ class _Pydt(datetime.datetime):
             - `<'int'>`  Month number (1=Jan...12=Dec).
             - `<'str'>`  Month name in lowercase, uppercase or titlecase (e.g., 'Jan', 'februar', '三月').
 
-        :return `<'bool'>`: True if `match` is recognized and matched
+        :return `<'bool'>`: True if `month` is recognized and matched
             with the instance's month; Otherwise False.
         """
         return self.access_month() == _parse_month(month, None, False)
@@ -2171,7 +2548,7 @@ class _Pydt(datetime.datetime):
         :param locale `<'str/None'>`: The locale to use for month name. Defaults to `None`.
 
             - Locale determining the language in which to return the month name.
-              If `None` uses English locale ('en_US').
+              If `None` uses English locale (`'en_US'`).
             - Use the command `locale -a` on Unix systems terminal to
               find locale language code.
 
@@ -2220,7 +2597,7 @@ class _Pydt(datetime.datetime):
         :param locale `<'str/None'>`: The locale to use for weekday name. Defaults to `None`.
 
             - Locale determining the language in which to return the weekday name.
-              If `None` uses English locale ('en_US').
+              If `None` uses English locale (`'en_US'`).
             - Use the command `locale -a` on Unix systems terminal to
               find locale language code.
 
@@ -2307,292 +2684,6 @@ class _Pydt(datetime.datetime):
         """Return the microsecond (0-999999) `<'int'>`."""
         return datetime.datetime_microsecond(self)
 
-    # . date&time
-    @cython.ccall
-    @cython.exceptval(-1, check=False)
-    def is_first_of(self, unit: str) -> cython.bint:
-        """Check whether the date fields are on the first day of the specified datetime unit `<'bool'>`.
-
-        :param unit `<'str'>`: The datetime unit:
-
-            - `'Y'` → First day of the year: `YYYY-01-01`
-            - `'Q'` → First day of the quarter: `YYYY-MM-01`
-            - `'M'` → First day of the month: `YYYY-MM-01`
-            - `'W'` → First day (Monday) of the week: `YYYY-MM-DD`
-            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
-                    → First day of the specifed month: `YYYY-MM-01`
-
-        :return `<'bool'>`: True if the instance is on the first day
-            of the specified datetime unit; Otherwise False.
-        """
-        # Guard
-        if unit is None:
-            return False
-
-        # Unit: 'W', 'M', 'Q', 'Y'
-        unit_len: cython.Py_ssize_t = str_len(unit)
-        if unit_len == 1:
-            unit_ch: cython.Py_UCS4 = str_read(unit, 0)
-            # . weekday
-            if unit_ch == "W":
-                return self.access_weekday() == 0
-            # . month
-            if unit_ch == "M":
-                return utils.dt_is_first_dom(self)
-            # . quarter
-            if unit_ch == "Q":
-                return utils.dt_is_first_doq(self)
-            # . year
-            if unit_ch == "Y":
-                return utils.dt_is_first_doy(self)
-
-        # Month name
-        val: cython.int = _parse_month(unit, None, False)
-        if val != -1:
-            return self.access_month() == val and utils.dt_is_first_dom(self)
-
-        # Invalid
-        return False
-
-    @cython.ccall
-    @cython.exceptval(-1, check=False)
-    def is_last_of(self, unit: str) -> cython.bint:
-        """Check whether the date fields are on the last day of the specified datetime unit `<'bool'>`.
-
-        :param unit `<'str'>`: The datetime unit:
-
-            - `'Y'` → Last day of the year: `YYYY-12-31`
-            - `'Q'` → Last day of the quarter: `YYYY-MM-(30..31)`
-            - `'M'` → Last day of the month: `YYYY-MM-(28..31)`
-            - `'W'` → Last day (Sunday) of the week: `YYYY-MM-DD`
-            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
-                    → Last day of the specifed month: `YYYY-MM-(28..31)`
-
-        :return `<'bool'>`: True if the instance is on the last day
-            of the specified datetime unit; Otherwise False.
-        """
-        # Guard
-        if unit is None:
-            return False
-
-        # Unit: 'W', 'M', 'Q', 'Y'
-        unit_len: cython.Py_ssize_t = str_len(unit)
-        if unit_len == 1:
-            unit_ch: cython.Py_UCS4 = str_read(unit, 0)
-            # . weekday
-            if unit_ch == "W":
-                return self.access_weekday() == 6
-            # . month
-            if unit_ch == "M":
-                return utils.dt_is_last_dom(self)
-            # . quarter
-            if unit_ch == "Q":
-                return utils.dt_is_last_doq(self)
-            # . year
-            if unit_ch == "Y":
-                return utils.dt_is_last_doy(self)
-
-        # Month name
-        val: cython.int = _parse_month(unit, None, False)
-        if val != -1:
-            return self.access_month() == val and utils.dt_is_last_dom(self)
-
-        # Invalid
-        return False
-
-    @cython.ccall
-    @cython.exceptval(-1, check=False)
-    def is_start_of(self, unit: str) -> cython.bint:
-        """Check whether date & time fileds are the start of the specified datetime unit `<'bool'>`.
-
-        :param unit `<'str'>`: The datetime unit:
-
-            - `'Y'`  → Start of year: `YYYY-01-01 00:00:00`
-            - `'Q'`  → Start of quarter: `YYYY-MM-01 00:00:00`
-            - `'M'`  → Start of month: `YYYY-MM-01 00:00:00`
-            - `'W'`  → Start of week (Monday): `YYYY-MM-DD 00:00:00`
-            - `'D'`  → Start of day: `YYYY-MM-DD 00:00:00`
-            - `'h'`  → Start of hour: `YYYY-MM-DD hh:00:00`
-            - `'m'`  → Start of minute: `YYYY-MM-DD hh:mm:00`
-            - `'s'`  → Start of second: `YYYY-MM-DD hh:mm:ss.000000`
-            - `'ms'` → Start of millisecond: `YYYY-MM-DD hh:mm:ss.fff000`
-            - `'us'` → Return the instance `as-is`.
-            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
-                     → Start of the specifed month: `YYYY-MM-01 00:00:00`
-            - `Weekday` (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`)
-                     → Start of the specifed weekday: `YYYY-MM-DD 00:00:00`
-
-        :return `<'bool'>`: True if the instance is at the start
-            of the specified datetime unit; Otherwise False.
-        """
-        # Guard
-        if unit is None:
-            return False
-
-        # Unit: 's', 'm', 'h', 'D', 'W', 'M', 'Q', 'Y'
-        unit_len: cython.Py_ssize_t = str_len(unit)
-        if unit_len == 1:
-            unit_ch: cython.Py_UCS4 = str_read(unit, 0)
-            # . second
-            if unit_ch == "s":
-                return self.access_microsecond() == 0
-            # . minute
-            if unit_ch == "m":
-                return self.access_second() == 0 and self.access_microsecond() == 0
-            # . hour
-            if unit_ch == "h":
-                return (
-                    self.access_minute() == 0
-                    and self.access_second() == 0
-                    and self.access_microsecond() == 0
-                )
-            # Start of time - - - - - - - - - - - - - - - - - - - - - - - -
-            if not utils.dt_is_start_of_time(self):
-                return False
-            # . day
-            if unit_ch == "D":
-                return True
-            # . week
-            if unit_ch == "W":
-                return self.access_weekday() == 0
-            # . month
-            if unit_ch == "M":
-                return utils.dt_is_first_dom(self)
-            # . quarter
-            if unit_ch == "Q":
-                return utils.dt_is_first_doq(self)
-            # . year
-            if unit_ch == "Y":
-                return utils.dt_is_first_doy(self)
-
-        # Unit: 'ms', 'us', 'ns'
-        elif unit_len == 2 and str_read(unit, 1) == "s":
-            unit_ch: cython.Py_UCS4 = str_read(unit, 0)
-            # . millisecond
-            if unit_ch == "m":
-                return self.access_microsecond() % 1000 == 0
-            # . microsecond / nanosecond
-            if unit_ch in ("u", "n"):
-                return True
-
-        # Unit: 'min' for pandas compatibility
-        elif unit_len == 3 and unit == "min":
-            return self.access_second() == 0 and self.access_microsecond() == 0
-
-        # Start of time - - - - - - - - - - - - - - - - - - - - - - - -
-        if not utils.dt_is_start_of_time(self):
-            return False
-
-        # Month name
-        val: cython.int = _parse_month(unit, None, False)
-        if val != -1:
-            return self.access_month() == val and utils.dt_is_first_dom(self)
-
-        # Weekday name
-        val: cython.int = _parse_weekday(unit, None, False)
-        if val != -1:
-            return self.access_weekday() == val
-
-        # Invalid
-        return False
-
-    @cython.ccall
-    @cython.exceptval(-1, check=False)
-    def is_end_of(self, unit: str) -> cython.bint:
-        """Check whether date & time fileds are the end of the specified datetime unit `<'bool'>`.
-
-        :param unit `<'str'>`: The datetime unit:
-
-            - `'Y'`  → End of year: `YYYY-12-31 23:59:59.999999`
-            - `'Q'`  → End of quarter: `YYYY-MM-(30..31) 23:59:59.999999`
-            - `'M'`  → End of month: `YYYY-MM-(28..31) 23:59:59.999999`
-            - `'W'`  → End of week (Sunday): `YYYY-MM-DD 23:59:59.999999`
-            - `'D'`  → End of day: `YYYY-MM-DD 23:59:59.999999`
-            - `'h'`  → End of hour: `YYYY-MM-DD hh:59:59.999999`
-            - `'m'`  → End of minute: `YYYY-MM-DD hh:mm:59.999999`
-            - `'s'`  → End of second: `YYYY-MM-DD hh:mm:ss.999999`
-            - `'ms'` → End of millisecond: `YYYY-MM-DD hh:mm:ss.fff999`
-            - `'us'` → Return the instance `as-is`.
-            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
-                     → End of the specifed month: `YYYY-MM-(28..31) 23:59:59.999999`
-            - `Weekday` (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`)
-                     → End of the specifed weekday: `YYYY-MM-DD 23:59:59.999999`
-
-        :return `<'bool'>`: True if the instance is at the end
-            of the specified datetime unit; Otherwise False.
-        """
-        if unit is None:
-            return False
-
-        # Unit: 's', 'm', 'h', 'D', 'W', 'M', 'Q', 'Y'
-        unit_len: cython.Py_ssize_t = str_len(unit)
-        if unit_len == 1:
-            unit_ch: cython.Py_UCS4 = str_read(unit, 0)
-            # . second
-            if unit_ch == "s":
-                return self.access_microsecond() == 999_999
-            # . minute
-            if unit_ch == "m":
-                return (
-                    self.access_second() == 59 and self.access_microsecond() == 999_999
-                )
-            # . hour
-            if unit_ch == "h":
-                return (
-                    self.access_minute() == 59
-                    and self.access_second() == 59
-                    and self.access_microsecond() == 999_999
-                )
-            # End of time - - - - - - - - - - - - - - - - - - - - - - - - -
-            if not utils.dt_is_end_of_time(self):
-                return False
-            # . day
-            if unit_ch == "D":
-                return True
-            # . week
-            if unit_ch == "W":
-                return self.access_weekday() == 6
-            # . month
-            if unit_ch == "M":
-                return utils.dt_is_last_dom(self)
-            # . quarter
-            if unit_ch == "Q":
-                return utils.dt_is_last_doq(self)
-            # . year
-            if unit_ch == "Y":
-                return utils.dt_is_last_doy(self)
-
-        # Unit: 'ms', 'us', 'ns'
-        elif unit_len == 2 and str_read(unit, 1) == "s":
-            unit_ch: cython.Py_UCS4 = str_read(unit, 0)
-            # . millisecond
-            if unit_ch == "m":
-                return self.access_microsecond() % 1000 == 999
-            # . microsecond / nanosecond
-            if unit_ch in ("u", "n"):
-                return True
-
-        # Unit: 'min' for pandas compatibility
-        elif unit_len == 3 and unit == "min":
-            return self.access_second() == 59 and self.access_microsecond() == 999_999
-
-        # End of time - - - - - - - - - - - - - - - - - - - - - - - - -
-        if not utils.dt_is_end_of_time(self):
-            return False
-
-        # Month name
-        val: cython.int = _parse_month(unit, None, False)
-        if val != -1:
-            return self.access_month() == val and utils.dt_is_last_dom(self)
-
-        # Weekday name
-        val: cython.int = _parse_weekday(unit, None, False)
-        if val != -1:
-            return self.access_weekday() == val
-
-        # Invalid
-        return False
-
     # Timezone -----------------------------------------------------------------------------
     @property
     def tz_available(self) -> set[str]:
@@ -2647,7 +2738,7 @@ class _Pydt(datetime.datetime):
 
         - Naive datetime always return `False`.
         """
-        return self.access_tzinfo() is utils.tz_local(None)
+        return self.access_tzinfo() is utils.tz_local()
 
     @cython.ccall
     @cython.exceptval(-1, check=False)
@@ -2733,7 +2824,7 @@ class _Pydt(datetime.datetime):
     def tz_localize(self, tz: datetime.tzinfo | str | None) -> _Pydt:
         """Localize timezone-naive datetime to the target timezone;
         or timezone-aware datetime to timezone naive (without moving
-        the time fields) `<'Pydt'>`.
+        the date & time fields) `<'Pydt'>`.
 
         :param tz `<'tzinfo/str/None'>`: Target timezone. Defaults to `None`.
 
@@ -2748,15 +2839,15 @@ class _Pydt(datetime.datetime):
         """
         # Timezone-aware
         tz = utils.tz_parse(tz)
-        mytz = self.access_tzinfo()
-        if mytz is not None:
+        my_tz = self.access_tzinfo()
+        if my_tz is not None:
             if tz is not None:
                 errors.raise_argument_error(
                     self._cls(),
                     "tz_localize(tz)",
                     "Datetime '%s' is already timezone-aware.\n"
                     "Use 'tz_convert()' or 'tz_switch()' method "
-                    "to convert to another timezone." % self,
+                    "to convert to the target timezone." % self,
                 )
             # . localize: aware => naive
             return utils.dt_replace_tz(self, None, self._cls())
@@ -2769,7 +2860,7 @@ class _Pydt(datetime.datetime):
 
     @cython.ccall
     def tz_convert(self, tz: datetime.tzinfo | str | None) -> _Pydt:
-        """Convert timezone-aware instance to another timezone `<'Pydt'>`.
+        """Convert timezone-aware datetime to another timezone `<'Pydt'>`.
 
         :param tz `<'tzinfo/str/None'>`: Target timezone. Defaults to `None`.
 
@@ -2830,31 +2921,31 @@ class _Pydt(datetime.datetime):
             expressed in the target timezone; optionally timezone-naive.
         """
         # Timezone-aware
-        targ_tz = utils.tz_parse(targ_tz)
-        mytz = self.access_tzinfo()
-        if mytz is not None:
+        to_tz = utils.tz_parse(targ_tz)
+        my_tz = self.access_tzinfo()
+        if my_tz is not None:
             # . target timezone is None
-            if targ_tz is None:
+            if to_tz is None:
                 return utils.dt_replace_tz(self, None, self._cls())
-            # . target timezone is mytz
-            elif targ_tz is mytz:
+            # . target timezone is my_tz
+            elif to_tz is my_tz:
                 if naive:
                     return utils.dt_replace_tz(self, None, self._cls())
                 else:
                     return self  # exit
-            # . mytz => target timezone
+            # . my_tz => target timezone
             else:
                 if naive:
-                    dt = utils.dt_astimezone(self, targ_tz, None)
+                    dt = utils.dt_astimezone(self, to_tz, None)
                     return utils.dt_replace_tz(dt, None, self._cls())
                 else:
-                    return utils.dt_astimezone(self, targ_tz, self._cls())
+                    return utils.dt_astimezone(self, to_tz, self._cls())
 
         # Timezone-naive
         # . target timezone is None
-        if targ_tz is None:
+        if to_tz is None:
             return self  # exit
-        # . base is target timezone
+        # . base is None
         base_tz = utils.tz_parse(base_tz)
         if base_tz is None:
             errors.raise_argument_error(
@@ -2864,19 +2955,20 @@ class _Pydt(datetime.datetime):
                 "Cannot convert timezone-naive datetime to the "
                 "target timezone without a base timezone (base_tz)." % self,
             )
-        if base_tz is targ_tz:
+        # . base timezone is target timezone
+        if base_tz is to_tz:
             if naive:
                 return self  # exit
             else:
-                return utils.dt_replace_tz(self, targ_tz, self._cls())
+                return utils.dt_replace_tz(self, to_tz, self._cls())
         # . localize to base, then convert to target timezone
         else:
             dt = utils.dt_replace_tz(self, base_tz, None)
             if naive:
-                dt = utils.dt_astimezone(dt, targ_tz, None)
+                dt = utils.dt_astimezone(dt, to_tz, None)
                 return utils.dt_replace_tz(dt, None, self._cls())
             else:
-                return utils.dt_astimezone(dt, targ_tz, self._cls())
+                return utils.dt_astimezone(dt, to_tz, self._cls())
 
     # Arithmetic ---------------------------------------------------------------------------
     @cython.ccall
@@ -2963,13 +3055,13 @@ class _Pydt(datetime.datetime):
         dtobj: object,
         unit: str,
         absolute: cython.bint = False,
-        inclusive: str = "both",
+        inclusive: str = "one",
     ) -> cython.longlong:
         """Compute the delta difference between the instance and another datetime `<'int'>`.
 
-        The difference is computed in the specified datetime 'unit'
-        and adjusted based on the `inclusive` argument to determine
-        the inclusivity of the start and end times.
+        The delta is computed in the specified datetime 'unit' and
+        adjusted based on the `inclusive` argument to determine the
+        inclusivity of the start and end times.
 
         :param dtobj `<'object'>`: A datetime-like object, supports:
 
@@ -2985,28 +3077,31 @@ class _Pydt(datetime.datetime):
 
         :param absolute `<'bool'>`: If 'True', compute the absolute difference. Defaults to `False`.
 
-        :param inclusive `<'str'>`: Specifies the inclusivity of the start and end times. Defaults to `'both'`.
+        :param inclusive `<'str'>`: Specifies the inclusivity of the start and end times. Defaults to `'one'`.
 
-            - `'one'`     → Include either the start or end time.
-            - `'both'`:   → Include both the start and end times.
-            - `'neither'` → Exclude both the start and end times.
+            - `'one'`     → Include either the start or end time → `(a - b)`
+            - `'both'`:   → Include both the start and end times → `(a - b) + 1 (offset)`
+            - `'neither'` → Exclude both the start and end times → `(a - b) - 1 (offset)`
 
         :returns `<'int'>`: The delta difference between the instance and `dtobj`
             in the specified `unit`, adjusted for inclusivity.
         """
-        # Parse & check timezone parity
-        my_tz = self.access_tzinfo()
+        # Parse 'dtobj' to datetime
         try:
             dt: datetime.datetime = _parse_obj(
                 dtobj, None, True, False, False, True, None, None
             )
         except Exception as err:
             errors.raise_argument_error(self._cls(), "diff(dtobj, ...)", None, err)
+
+        # Check timezone parity
+        my_tz = self.access_tzinfo()
         dt_tz = dt.tzinfo
         my_aware: cython.bint = my_tz is not None
         dt_aware: cython.bint = dt_tz is not None
         if my_aware != dt_aware:
-            errors.raise_argument_error(
+            errors.raise_error(
+                errors.MixedTimezoneError,
                 self._cls(),
                 "diff(dtobj, ...)",
                 "Cannot compare naive and aware datetimes:\n"
@@ -3025,26 +3120,50 @@ class _Pydt(datetime.datetime):
             errors.raise_argument_error(
                 self._cls(),
                 "diff(..., inclusive)",
-                "Supports: 'one', 'both' or 'neither'.",
+                "Supports: 'one', 'both' or 'neither'; got '%s'." % inclusive,
+            )
+            return 0  # unreachable: suppress compiler warning
+
+        # Validate delta 'unit'
+        if unit is None:
+            errors.raise_argument_error(
+                self.__class__,
+                "diff(..., unit)",
+                "Delta 'unit' cannot be None.",
+            )
+        unit_len: cython.Py_ssize_t = str_len(unit)
+        if unit_len == 0:
+            errors.raise_argument_error(
+                self.__class__,
+                "diff(..., unit)",
+                "Delta 'unit' cannot be an empty string.",
             )
 
         # Compute difference
         try:
-            if unit == "W":
+            # . convert to int64[W] on monday
+            if unit_len == 1 and str_read(unit, 0) == "W":
                 my_val: cython.longlong = utils.dt_as_epoch_W_iso(self, 1, my_aware)
                 dt_val: cython.longlong = utils.dt_as_epoch_W_iso(dt, 1, dt_aware)
+            # . convert to int64[unit]
             else:
                 my_val: cython.longlong = utils.dt_as_epoch(self, unit, my_aware)
                 dt_val: cython.longlong = utils.dt_as_epoch(dt, unit, dt_aware)
-            delta: cython.longlong = my_val - dt_val
         except Exception as err:
             errors.raise_argument_error(self._cls(), "diff(..., unit)", None, err)
+            return 0  # unreachable: suppress compiler warning
+        # . compute relative delta
+        delta: cython.longlong = my_val - dt_val
+
+        # Adjust for inclusivity
         # . absolute = True
         if absolute:
             delta = (-delta if delta < 0 else delta) + incl_off
-        # . absolute = False | adj offset
+        # . absolute = False & inclusive offset
         elif incl_off != 0:
             delta = delta - incl_off if delta < 0 else delta + incl_off
+
+        # Finished
         return delta
 
     def __add__(self, o: object) -> _Pydt:
@@ -3139,7 +3258,10 @@ class _Pydt(datetime.datetime):
         m_aware: cython.bint = m_tz is not None
         o_aware: cython.bint = o_tz is not None
         if m_aware != o_aware:
-            raise TypeError(
+            errors.raise_error(
+                errors.MixedTimezoneError,
+                self._cls(),
+                "diff(dtobj, ...)",
                 "Cannot subtract naive and aware datetimes:\n"
                 "  - datetime1: '%s' %s\n"
                 "  - datetime2: '%s' %s" % (self, type(self), o, type(o)),
@@ -3193,7 +3315,7 @@ class _Pydt(datetime.datetime):
         if fd == 1:
             r += ", fold=1"
 
-        return "<'%s' (%s)>" % (self._cls().__name__, r)
+        return "%s(%s)" % (self._cls().__name__, r)
 
     def __str__(self) -> str:
         return self.isoformat(" ")
@@ -3255,16 +3377,16 @@ class Pydt(_Pydt):
 
     def __new__(
         cls,
-        year: cython.int = 1,
-        month: cython.int = 1,
-        day: cython.int = 1,
-        hour: cython.int = 0,
-        minute: cython.int = 0,
-        second: cython.int = 0,
-        microsecond: cython.int = 0,
+        year: int = 1,
+        month: int = 1,
+        day: int = 1,
+        hour: int = 0,
+        minute: int = 0,
+        second: int = 0,
+        microsecond: int = 0,
         tzinfo: datetime.tzinfo | str | None = None,
         *,
-        fold: cython.int = 1,
+        fold: int = 1,
     ) -> Pydt:
         """A drop-in replacement for the standard `<'datetime.datetime'>`
         class, providing additional functionalities for more convenient
@@ -3289,34 +3411,14 @@ class Pydt(_Pydt):
 
         :param fold `<'int'>`: Fold value (0 or 1) for ambiguous times. Defaults to `1`.
         """
-        # Normalize non-fixed timezone
-        tzinfo = utils.tz_parse(tzinfo)
-        if tzinfo is not None and type(tzinfo) is not utils.T_TIMEZONE:
-            dt: datetime.datetime = datetime.datetime_new(
-                year, month, day, hour, minute, second, microsecond, tzinfo, fold
-            )
-            try:
-                dt_norm: datetime.datetime = utils.dt_normalize_tz(dt, None)
-            except Exception as err:
-                raise errors.AmbiguousTimeError(err) from err
-            if dt is not dt_norm:
-                year = dt_norm.year
-                month = dt_norm.month
-                day = dt_norm.day
-                hour = dt_norm.hour
-                minute = dt_norm.minute
-                second = dt_norm.second
-                microsecond = dt_norm.microsecond
-                fold = 0
-
-        # Construct datetime
-        if fold == 1:
-            pt: _Pydt = _Pydt.__new__(
-                cls, year, month, day, hour, minute, second, microsecond, tzinfo, fold=1
-            )
-        else:
-            pt: _Pydt = _Pydt.__new__(
-                cls, year, month, day, hour, minute, second, microsecond, tzinfo
-            )
-        pt.__cls = cls
-        return pt
+        return cls._new(
+            year=year,
+            month=month,
+            day=day,
+            hour=hour,
+            minute=minute,
+            second=second,
+            microsecond=microsecond,
+            tzinfo=tzinfo,
+            fold=fold,
+        )

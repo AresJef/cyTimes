@@ -23,8 +23,6 @@ cdef class _Pydt(datetime.datetime):
     cpdef datetime.time timetz(self)
     # Internal
     cdef inline object _cls(self)
-    cdef inline long long _parse_unit_factor(self, str unit) except -2
-    cdef inline _Pydt _to_curr_weekday(self, int weekday)
     # Manipulator
     cpdef _Pydt replace(
         self, int year=?, int month=?, int day=?,
@@ -58,6 +56,7 @@ cdef class _Pydt(datetime.datetime):
     cpdef _Pydt to_prev_weekday(self, object weekday=?)
     cpdef _Pydt to_next_weekday(self, object weekday=?)
     cpdef _Pydt to_weekday(self, int offset, object weekday=?)
+    cdef inline _Pydt _to_curr_weekday(self, int weekday)
     # . day
     cpdef _Pydt to_yesterday(self)
     cpdef _Pydt to_tomorrow(self)
@@ -70,9 +69,13 @@ cdef class _Pydt(datetime.datetime):
     )
     cpdef _Pydt to_date(self, int year=?, int month=?, int day=?)
     cpdef _Pydt to_time(self, int hour=?, int minute=?, int second=?, int microsecond=?)
+    cpdef bint is_first_of(self, str unit) except -1
     cpdef _Pydt to_first_of(self, str unit)
+    cpdef bint is_last_of(self, str unit) except -1
     cpdef _Pydt to_last_of(self, str unit)
+    cpdef bint is_start_of(self, str unit) except -1
     cpdef _Pydt to_start_of(self, str unit)
+    cpdef bint is_end_of(self, str unit) except -1
     cpdef _Pydt to_end_of(self, str unit)
     # . round / ceil / floor
     cpdef _Pydt round(self, str unit)
@@ -121,11 +124,6 @@ cdef class _Pydt(datetime.datetime):
     cpdef int access_second(self) noexcept
     cpdef int access_millisecond(self) noexcept
     cpdef int access_microsecond(self) noexcept
-    # . date&time
-    cpdef bint is_first_of(self, str unit) except -1
-    cpdef bint is_last_of(self, str unit) except -1
-    cpdef bint is_start_of(self, str unit) except -1
-    cpdef bint is_end_of(self, str unit) except -1
     # Timezone
     cpdef object access_tzinfo(self)
     cpdef int access_fold(self) noexcept

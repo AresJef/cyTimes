@@ -50,7 +50,7 @@ class _Pydt(datetime.datetime):
         tz: datetime.tzinfo | str | None = None,
     ) -> Self: ...
     @classmethod
-    def fromicroseconds(
+    def frommicroseconds(
         cls,
         us: int,
         tz: datetime.tzinfo | str | None = None,
@@ -202,12 +202,22 @@ class _Pydt(datetime.datetime):
         second: int = SENTINEL,
         microsecond: int = SENTINEL,
     ) -> Self: ...
+    def is_first_of(self, unit: str | Literal["Y", "Q", "M", "W"]) -> bool: ...
     def to_first_of(self, unit: str | Literal["Y", "Q", "M", "W"]) -> Self: ...
+    def is_last_of(self, unit: str | Literal["Y", "Q", "M", "W"]) -> bool: ...
     def to_last_of(self, unit: str | Literal["Y", "Q", "M", "W"]) -> Self: ...
+    def is_start_of(
+        self,
+        unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us"],
+    ) -> bool: ...
     def to_start_of(
         self,
         unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us"],
     ) -> Self: ...
+    def is_end_of(
+        self,
+        unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us"],
+    ) -> bool: ...
     def to_end_of(
         self,
         unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us"],
@@ -279,17 +289,6 @@ class _Pydt(datetime.datetime):
     @property
     def microsecond(self) -> int: ...
     def access_microsecond(self) -> int: ...
-    # . date&time
-    def is_first_of(self, unit: str | Literal["Y", "Q", "M", "W"]) -> bool: ...
-    def is_last_of(self, unit: str | Literal["Y", "Q", "M", "W"]) -> bool: ...
-    def is_start_of(
-        self,
-        unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us"],
-    ) -> bool: ...
-    def is_end_of(
-        self,
-        unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us"],
-    ) -> bool: ...
     # Timezone ---------------------------------------------------------
     @property
     def tz_available(self) -> set[str]: ...
@@ -349,7 +348,7 @@ class _Pydt(datetime.datetime):
         dtobj: object,
         unit: Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us"],
         absolute: bool = False,
-        inclusive: Literal["one", "both", "neither"] = "both",
+        inclusive: Literal["one", "both", "neither"] = "one",
     ) -> int: ...
     # . addition
     @overload
