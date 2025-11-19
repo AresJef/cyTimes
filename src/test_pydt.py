@@ -1164,6 +1164,3 @@ class TestPydt(TestCase):
 
 if __name__ == "__main__":
     TestPydt().test_all()
-
-    
-
