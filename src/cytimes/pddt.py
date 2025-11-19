@@ -848,7 +848,6 @@ class Pddt(DatetimeIndex):
                 date = _parse_obj(date, None, True, False, True, True, None, None)
             except Exception as err:
                 errors.raise_argument_error(cls, "combine(date, ...)", None, err)
-                return  # unreachable: suppress compiler warning
             date = utils.date_fr_dt(date, None)
 
         # Prase time
@@ -859,7 +858,6 @@ class Pddt(DatetimeIndex):
                 )
             except Exception as err:
                 errors.raise_argument_error(cls, "combine(time, ...)", None, err)
-                return  # unreachable: suppress compiler warning
             time = utils.time_fr_dt(time, None)
 
         # Combine datetime
