@@ -163,7 +163,7 @@ class _Pydt(datetime.datetime):
     ) -> Self:
         """Parse a datetime-like object into a datetime `<'Pydt'>`.
 
-        :param dtobj `<'object'>`: A datetime-like object, supports:
+        :param dtobj `<'Datetime-Like'>`: A datetime-like object, supports:
 
             - `<'str'>`                 → parses into datetime, honoring `default`, `yearfirst`, `dayfirst`,
                                           `ignoretz`, `isoformat` and `cfg`.
@@ -3169,7 +3169,7 @@ class _Pydt(datetime.datetime):
         # Finished
         return delta
 
-    def __add__(self, o: object) -> _Pydt:
+    def __add__(self, o: object) -> Self:
         # timedelta
         if utils.is_td(o):
             return utils.dt_add(
@@ -3192,7 +3192,7 @@ class _Pydt(datetime.datetime):
         # unsupported
         return NotImplemented
 
-    def __radd__(self, o: object) -> _Pydt:
+    def __radd__(self, o: object) -> Self:
         # timedelta
         if utils.is_td(o):
             return utils.dt_add(
@@ -3215,7 +3215,7 @@ class _Pydt(datetime.datetime):
         # unsupported
         return NotImplemented
 
-    def __sub__(self, o: object) -> _Pydt | datetime.timedelta:
+    def __sub__(self, o: object) -> Self | datetime.timedelta:
         # timedelta
         if utils.is_td(o):
             return utils.dt_add(
@@ -3332,7 +3332,7 @@ class _Pydt(datetime.datetime):
     def __hash__(self) -> int:
         return datetime.datetime.__hash__(self)
 
-    def __copy__(self) -> _Pydt:
+    def __copy__(self) -> Self:
         return utils.dt_new(
             self.access_year(),
             self.access_month(),
@@ -3346,7 +3346,7 @@ class _Pydt(datetime.datetime):
             self._cls(),
         )
 
-    def __deepcopy__(self, _: dict) -> _Pydt:
+    def __deepcopy__(self, _: dict) -> Self:
         return utils.dt_new(
             self.access_year(),
             self.access_month(),

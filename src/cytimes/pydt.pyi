@@ -1,7 +1,9 @@
 from typing import Literal, SupportsIndex
-import datetime, numpy as np
-from zoneinfo import ZoneInfo
 from typing_extensions import overload, Self, TypeVar
+import datetime
+import numpy as np
+from time import struct_time
+from zoneinfo import ZoneInfo
 from cytimes.parser import Configs
 from cytimes.utils import SENTINEL
 
@@ -9,6 +11,9 @@ from cytimes.utils import SENTINEL
 _DateT = TypeVar("_DateT", bound=datetime.date)
 _DatetimeT = TypeVar("_DatetimeT", bound=datetime.datetime)
 _TimedeltaT = TypeVar("_TimedeltaT", bound=datetime.timedelta)
+DatetimeLike = TypeVar(
+    "DatetimeLike", str, datetime.date, datetime.datetime, np.datetime64
+)
 
 # Pydt
 class _Pydt(datetime.datetime):
@@ -16,7 +21,7 @@ class _Pydt(datetime.datetime):
     @classmethod
     def parse(
         cls,
-        dtobj: object,
+        dtobj: DatetimeLike,
         default: object | None = None,
         yearfirst: bool | None = None,
         dayfirst: bool | None = None,
@@ -87,7 +92,11 @@ class _Pydt(datetime.datetime):
         tz: datetime.tzinfo | str | None = None,
     ) -> Self: ...
     @classmethod
-    def fromdatetime(cls, dt: datetime.datetime) -> Self: ...
+    def fromdatetime(
+        cls,
+        dt: datetime.datetime,
+        tz: datetime.tzinfo | str | None = None,
+    ) -> Self: ...
     @classmethod
     def fromdatetime64(
         cls,
@@ -102,8 +111,8 @@ class _Pydt(datetime.datetime):
     def isoformat(self, sep: str = "T") -> str: ...
     def timedict(self) -> dict[str, int]: ...
     def utctimedict(self) -> dict[str, int]: ...
-    def timetuple(self) -> tuple[int, ...]: ...
-    def utctimetuple(self) -> tuple[int, ...]: ...
+    def timetuple(self) -> struct_time: ...
+    def utctimetuple(self) -> struct_time: ...
     def toordinal(self) -> int: ...
     def toseconds(self, utc: bool = False) -> float: ...
     def tomicroseconds(self, utc: bool = False) -> int: ...
