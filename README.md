@@ -24,24 +24,23 @@ Supports Python 3.10 and above.
 
 `cyTimes` introduces two classes that simplify and enhance working with datetimes:
 
-- `Pydt` (Python datetime.datetime)
-- `Pddt` (Pandas DatetimeIndex)
+- `Pydt` (Python `datetime.datetime`)
+- `Pddt` (Pandas `DatetimeIndex`)
 
 Both provide similar functionalities:
 
 - Direct drop-in replacements (subclasses) for standard Python `datetime` and Pandas `DatetimeIndex`.
-- Cython-optimized for high-performance parsing, creation, and manipulation.
-- Well-documented methods with type annotations.
+- Cython-optimized for high-performance parsing, creation, and calendar manipulation (shifting & replacing).
 - Flexible constructors accepting multiple input formats (strings, datetime objects, timestamps, etc.).
 - Rich conversion options (ISO strings, ordinals, timestamps, and more).
 - Comprehensive manipulation for precise datetime fields adjustments (years, quarters, months, days, time).
 - Direct calendar information insights (e.g., days in month, leap years).
 - Extended timezone-related capabilities.
-- Supports adding or subtracting deltas, and compute deltas against datetime-like object(s).
+- Supports adding or subtracting deltas, and compute delta difference against datetime-like object(s).
 
 ## `Pydt` Usage
 
-The `Pydt` class operates similarly to Python’s native `datetime.datetime`, with added methods and improvements.
+The `Pydt` class is drop-in replacement for Python’s native `datetime.datetime`, with additional functionalities.
 
 ### Construction
 
@@ -63,7 +62,7 @@ Pydt.fromordinal(1)
 >>> 0001-01-01 00:00:00
 Pydt.fromseconds(1)
 >>> 1970-01-01 00:00:01
-Pydt.fromicroseconds(1)
+Pydt.frommicroseconds(1)
 >>> 1970-01-01 00:00:00.000001
 Pydt.fromtimestamp(1, datetime.UTC)
 >>> 1970-01-01 00:00:01+0000
@@ -72,6 +71,8 @@ Pydt.utcfromtimestamp(1)
 Pydt.fromisoformat("1970-01-01T00:00:01")
 >>> 1970-01-01 00:00:01
 Pydt.fromisocalendar(1970, 1, 4)
+>>> 1970-01-01 00:00:00
+Pydt.fromdayofyear(1970, 1)
 >>> 1970-01-01 00:00:00
 Pydt.fromdate(datetime.date(1970, 1, 1))
 >>> 1970-01-01 00:00:00
@@ -100,9 +101,9 @@ dt.timetuple()
 >>> (1970, 1, 1, 0, 0, 0, 3, 1, 0)
 dt.toordinal()
 >>>  719163
-dt.seconds()
+dt.toseconds()
 >>>  0.0
-dt.microseconds()
+dt.tomicroseconds()
 >>>  0
 dt.timestamp()
 >>>  -3600.0
@@ -186,6 +187,14 @@ dt.to_start_of("M")
 >>> 1970-02-01 00:00:00+0100
 dt.to_end_of("W")
 >>> 1970-02-08 23:59:59.999999+0100
+dt.to_first_of("Y").is_first_of("Y")
+>>> True
+dt.to_last_of("Q").is_last_of("Q")
+>>> True
+dt.to_start_of("M").is_start_of("M")
+>>> True
+dt.to_end_of("W").is_end_of("W")
+>>> True
 
 # . round / ceil / floor
 dt.round("h")
@@ -254,22 +263,12 @@ dt.month_name("es")
 # . weekday
 dt.is_weekday("Monday")
 >>> True
+dt.weekday_name("fr")
+>>> "lundi"
 
 # . day
 dt.is_day(2)
 >>> True
-dt.day_name("fr")
->>> "lundi"
-
-# . date&time
-dt.is_first_of("Y")
->>> False
-dt.is_last_of("Q")
->>> False
-dt.is_start_of("M")
->>> False
-dt.is_end_of("W")
->>> False
 ```
 
 ### Timezone Operation
@@ -329,19 +328,15 @@ dt.is_past()
 >>> True
 dt.is_future()
 >>> False
-dt.closest("1970-01-02", "2007-01-01")
->>> 1970-01-02 00:00:00
-dt.farthest("1970-01-02", "2007-01-01")
->>> 2007-01-01 00:00:00
 ```
 
 ## `Pddt` Usage
 
-`Pddt` extends similar functionalities to Pandas `DatetimeIndex`, making it behave more like native Python `datetime.datetime`, but for arrays of datetime values. It supports:
+`Pddt` extends similar functionalities to Pandas `DatetimeIndex`, making it behave more like native Python `datetime.datetime` and `Pydt`, but for arrays of datetime values. It supports:
 
-- Vectorized parsing, creation, and manipulation.
-- Most of the same methods and properties as `Pydt` (see examples above), adapted for datetime-arrays.
-- Automatic handling of out-of-range datetimes in nanoseconds by downcasting to microsecond precision `'us'` to avoid overflow.
+- Vectorized parsing, creation, and calendar manipulation (shifting & replacing).
+- Provides the same functionalities as `Pydt` (see examples above), but for datetime index.
+- `Pddt` is `datetime64[us]` focused. It will try to retain nanosecond resolution when possible, but will automatically downcast to microsecond resolution if the value exceeds the bounds of `datetime64[ns]`. This behavior applies to all `Pddt` methods.
 
 ### Handling Nanosecond Overflow
 
@@ -350,19 +345,28 @@ By default, `DatetimeIndex` uses nanosecond precision `'ns'`, which cannot repre
 ```python
 from cytimes import Pddt
 
+# 1970-01-01: datetime64[ns]
+Pddt(["1970-01-01 00:00:00+00:00", "1970-01-02 00:00:00+00:00"])
+>>> Pddt(['1970-01-01 00:00:00+00:00', '1970-01-02 00:00:00+00:00'],
+       dtype='datetime64[ns, UTC]', freq=None)
+
+# 9999-01-01: datetime64[us]
 Pddt(["9999-01-01 00:00:00+00:00", "9999-01-02 00:00:00+00:00"])
 >>> Pddt(['9999-01-01 00:00:00+00:00', '9999-01-02 00:00:00+00:00'],
         dtype='datetime64[us, UTC]', freq=None)
 ```
 
-Downcasting mechanism also automacially applies to all methods that modify the datetimes, resulting values out of the `'ns'` range:
+Downcasting mechanism also automacially applies to all methods that modifies the date & time when the resulting values are out of the `'ns'` range:
 
 ```python
 from cytimes import Pddt
 
+# 1970-01-01: datetime64[ns]
 pt = Pddt(["1970-01-01 00:00:00+00:00", "1970-01-02 00:00:00+00:00"])
-# Pddt(['1970-01-01 00:00:00+00:00', '1970-01-02 00:00:00+00:00'],
-#       dtype='datetime64[ns, UTC]', freq=None)
+>>> Pddt(['1970-01-01 00:00:00+00:00', '1970-01-02 00:00:00+00:00'],
+       dtype='datetime64[ns, UTC]', freq=None)
+
+# add 1000 years: datetime64[us]
 pt.to_year(1000, "Feb", 30)
 >>> Pddt(['2970-02-28 00:00:00+00:00', '2970-02-28 00:00:00+00:00'],
         dtype='datetime64[us, UTC]', freq=None)
@@ -380,4 +384,4 @@ cyTimes is built on the following open-source repositories:
 
 - [dateutil](https://github.com/dateutil/dateutil)
 
-  Class <'Parser'> and <'Delta'> in this package are the cythonized version of <'dateutil.parser'> and <'dateutil.relativedelta'>. Credit and thanks go to the original authors and contributors of the `dateutil` library.
+  Class `<'Parser'>` and `<'Delta'>` in this package are the cythonized version of `<'dateutil.parser'>` and `<'dateutil.relativedelta'>`. Credit and thanks go to the original authors and contributors of the `dateutil` library.
