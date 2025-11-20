@@ -320,38 +320,38 @@ class Pddt(pd.DatetimeIndex):
         microsecond: int = SENTINEL,
         nanosecond: int = SENTINEL,
     ) -> Self: ...
-    def is_first_of(
-        self,
-        unit: str | Literal["Y", "Q", "M", "W"],
-    ) -> pd.Index[bool]: ...
     def to_first_of(
         self,
         unit: str | Literal["Y", "Q", "M", "W"],
     ) -> Self: ...
-    def is_last_of(
-        self,
-        unit: str | Literal["Y", "Q", "M", "W"],
-    ) -> pd.Index[bool]: ...
     def to_last_of(
         self,
         unit: str | Literal["Y", "Q", "M", "W"],
     ) -> Self: ...
-    def is_start_of(
-        self,
-        unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us", "ns"],
-    ) -> pd.Index[bool]: ...
     def to_start_of(
         self,
         unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us", "ns"],
     ) -> Self: ...
-    def is_end_of(
-        self,
-        unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us", "ns"],
-    ) -> pd.Index[bool]: ...
     def to_end_of(
         self,
         unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us", "ns"],
     ) -> Self: ...
+    def is_first_of(
+        self,
+        unit: str | Literal["Y", "Q", "M", "W"],
+    ) -> pd.Index[bool]: ...
+    def is_last_of(
+        self,
+        unit: str | Literal["Y", "Q", "M", "W"],
+    ) -> pd.Index[bool]: ...
+    def is_start_of(
+        self,
+        unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us", "ns"],
+    ) -> pd.Index[bool]: ...
+    def is_end_of(
+        self,
+        unit: str | Literal["Y", "Q", "M", "W", "D", "h", "m", "s", "ms", "us", "ns"],
+    ) -> pd.Index[bool]: ...
     # . round / ceil / floor
     def round(self, unit: Literal["D", "h", "m", "s", "ms", "us", "ns"]) -> Self: ...
     def ceil(self, unit: Literal["D", "h", "m", "s", "ms", "us", "ns"]) -> Self: ...

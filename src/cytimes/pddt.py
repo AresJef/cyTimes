@@ -3281,30 +3281,6 @@ class Pddt(DatetimeIndex):
         # New instance
         return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
 
-    def is_first_of(self, unit: str) -> pd.Index[bool]:
-        """Element-wise check whether the date fields are on the first day
-        of the specified datetime unit `<'Index[bool]'>`.
-
-        :param unit `<'str'>`: The datetime unit:
-
-            - `'Y'` → First day of the year: `YYYY-01-01`
-            - `'Q'` → First day of the quarter: `YYYY-MM-01`
-            - `'M'` → First day of the month: `YYYY-MM-01`
-            - `'W'` → First day (Monday) of the week: `YYYY-MM-DD`
-            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
-                    → First day of the specifed month: `YYYY-MM-01`
-
-        :return `<'Index[bool]'>`: True if the element is on the first day
-            of the specified datetime unit; Otherwise False.
-        """
-        # To first of
-        pt = self.to_first_of(unit)
-
-        # Compare dates
-        pt_dateD = utils.dt64arr_as_int64_D(pt.values, -1, True)
-        my_dateD = utils.dt64arr_as_int64_D(self.values, -1, True)
-        return pd.Index(utils.arr_eq_arr(my_dateD, pt_dateD), name="is_first_of")
-
     def to_first_of(self, unit: str) -> Self:
         """Adjust the date fields to the first day of the specified datetime unit,
         without affecting the time fields `<'Pddt'>`.
@@ -3402,30 +3378,6 @@ class Pddt(DatetimeIndex):
 
         # New instance
         return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
-
-    def is_last_of(self, unit: str) -> pd.Index[bool]:
-        """Element-wise check whether the date fields are on the last day
-        of the specified datetime unit `<'Index[bool]'>`.
-
-        :param unit `<'str'>`: The datetime unit:
-
-            - `'Y'` → Last day of the year: `YYYY-12-31`
-            - `'Q'` → Last day of the quarter: `YYYY-MM-(30..31)`
-            - `'M'` → Last day of the month: `YYYY-MM-(28..31)`
-            - `'W'` → Last day (Sunday) of the week: `YYYY-MM-DD`
-            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
-                    → Last day of the specifed month: `YYYY-MM-(28..31)`
-
-        :return `<'Index[bool]'>`: True if the element is on the last day
-            of the specified datetime unit; Otherwise False.
-        """
-        # To last of
-        pt = self.to_last_of(unit)
-
-        # Compare dates
-        pt_dateD = utils.dt64arr_as_int64_D(pt.values, -1, True)
-        my_dateD = utils.dt64arr_as_int64_D(self.values, -1, True)
-        return pd.Index(utils.arr_eq_arr(my_dateD, pt_dateD), name="is_last_of")
 
     def to_last_of(self, unit: str) -> Self:
         """Adjust the date fields to the last day of the specified datetime unit,
@@ -3525,46 +3477,6 @@ class Pddt(DatetimeIndex):
 
         # New instance
         return self._new(arr.astype(dtype), tz=self.tz, name=self.name)
-
-    def is_start_of(self, unit: str) -> pd.Index[bool]:
-        """Element-wise check whether date & time fileds are the
-        start of the specified datetime unit `<'Index[bool]'>`.
-
-        :param unit `<'str'>`: The datetime unit:
-
-            - `'Y'`  → Start of year: `YYYY-01-01 00:00:00`
-            - `'Q'`  → Start of quarter: `YYYY-MM-01 00:00:00`
-            - `'M'`  → Start of month: `YYYY-MM-01 00:00:00`
-            - `'W'`  → Start of week (Monday): `YYYY-MM-DD 00:00:00`
-            - `'D'`  → Start of day: `YYYY-MM-DD 00:00:00`
-            - `'h'`  → Start of hour: `YYYY-MM-DD hh:00:00`
-            - `'m'`  → Start of minute: `YYYY-MM-DD hh:mm:00`
-            - `'s'`  → Start of second: `YYYY-MM-DD hh:mm:ss.000000`
-            - `'ms'` → Start of millisecond: `YYYY-MM-DD hh:mm:ss.uuu000`
-            - `'us'` → Return the instance `as-is`.
-            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
-                     → Start of the specifed month: `YYYY-MM-01 00:00:00`
-            - `Weekday` (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`)
-                     → Start of the specifed weekday: `YYYY-MM-DD 00:00:00`
-
-        :return `<'Index[bool]'>`: True if the element is at the start
-            of the specified datetime unit; Otherwise False.
-        """
-        # To start of
-        pt = self.to_start_of(unit)
-
-        # Compare values
-        pt_unit: str = pt.unit
-        pt_reso: cython.int = utils.nptime_unit_str2int(pt_unit)
-        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
-        if pt_reso == my_reso:
-            arr = utils.arr_eq_arr(self.values, pt.values)
-        else:
-            arr = utils.arr_eq_arr(
-                utils.dt64arr_as_unit(self.values, pt_unit, my_reso, True, True),
-                pt.values,
-            )
-        return pd.Index(arr, name="is_start_of")
 
     def to_start_of(self, unit: str) -> Self:
         """Adjust the date & time fields to the start of the specified datetime unit `<'Pddt'>`.
@@ -3682,46 +3594,6 @@ class Pddt(DatetimeIndex):
         # New instance
         arr = utils.dt64arr_as_unit(dates, my_unit, to_reso, False, False)
         return self._new(arr, tz=self.tz, name=self.name)
-
-    def is_end_of(self, unit: str) -> pd.Index[bool]:
-        """Element-wise check whether date & time fileds are the
-        end of the specified datetime unit `<'Index[bool]'>`.
-
-        :param unit `<'str'>`: The datetime unit:
-
-            - `'Y'`  → End of year: `YYYY-12-31 23:59:59.999999`
-            - `'Q'`  → End of quarter: `YYYY-MM-(30..31) 23:59:59.999999`
-            - `'M'`  → End of month: `YYYY-MM-(28..31) 23:59:59.999999`
-            - `'W'`  → End of week (Sunday): `YYYY-MM-DD 23:59:59.999999`
-            - `'D'`  → End of day: `YYYY-MM-DD 23:59:59.999999`
-            - `'h'`  → End of hour: `YYYY-MM-DD hh:59:59.999999`
-            - `'m'`  → End of minute: `YYYY-MM-DD hh:mm:59.999999`
-            - `'s'`  → End of second: `YYYY-MM-DD hh:mm:ss.999999`
-            - `'ms'` → End of millisecond: `YYYY-MM-DD hh:mm:ss.uuu999`
-            - `'us'` → Return the instance `as-is`.
-            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
-                     → End of the specifed month: `YYYY-MM-(28..31) 23:59:59.999999`
-            - `Weekday` (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`)
-                     → End of the specifed weekday: `YYYY-MM-DD 23:59:59.999999`
-
-        :return `<'Index[bool]'>`: True if the element is at the end
-            of the specified datetime unit; Otherwise False.
-        """
-        # To end of
-        pt = self.to_end_of(unit)
-
-        # Compare values
-        pt_unit: str = pt.unit
-        pt_reso: cython.int = utils.nptime_unit_str2int(pt_unit)
-        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
-        if pt_reso == my_reso:
-            arr = utils.arr_eq_arr(self.values, pt.values)
-        else:
-            arr = utils.arr_eq_arr(
-                utils.dt64arr_as_unit(self.values, pt_unit, my_reso, True, True),
-                pt.values,
-            )
-        return pd.Index(arr, name="is_end_of")
 
     def to_end_of(self, unit: str) -> Self:
         """Adjust the date & time fields to the end of the specified datetime unit `<'Pddt'>`.
@@ -3843,6 +3715,134 @@ class Pddt(DatetimeIndex):
         arr = utils.dt64arr_as_unit(dates, my_unit, to_reso, False, False)
         arr = utils.arr_add(arr, -1, False)  # -1 -> jump to the end
         return self._new(arr, tz=self.tz, name=self.name)
+
+    def is_first_of(self, unit: str) -> pd.Index[bool]:
+        """Element-wise check whether the date fields are on the first day
+        of the specified datetime unit `<'Index[bool]'>`.
+
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'` → First day of the year: `YYYY-01-01`
+            - `'Q'` → First day of the quarter: `YYYY-MM-01`
+            - `'M'` → First day of the month: `YYYY-MM-01`
+            - `'W'` → First day (Monday) of the week: `YYYY-MM-DD`
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                    → First day of the specifed month: `YYYY-MM-01`
+
+        :return `<'Index[bool]'>`: True if the element is on the first day
+            of the specified datetime unit; Otherwise False.
+        """
+        # To first of
+        pt = self.to_first_of(unit)
+
+        # Compare dates
+        pt_dateD = utils.dt64arr_as_int64_D(pt.values, -1, True)
+        my_dateD = utils.dt64arr_as_int64_D(self.values, -1, True)
+        return pd.Index(utils.arr_eq_arr(my_dateD, pt_dateD), name="is_first_of")
+
+    def is_last_of(self, unit: str) -> pd.Index[bool]:
+        """Element-wise check whether the date fields are on the last day
+        of the specified datetime unit `<'Index[bool]'>`.
+
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'` → Last day of the year: `YYYY-12-31`
+            - `'Q'` → Last day of the quarter: `YYYY-MM-(30..31)`
+            - `'M'` → Last day of the month: `YYYY-MM-(28..31)`
+            - `'W'` → Last day (Sunday) of the week: `YYYY-MM-DD`
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                    → Last day of the specifed month: `YYYY-MM-(28..31)`
+
+        :return `<'Index[bool]'>`: True if the element is on the last day
+            of the specified datetime unit; Otherwise False.
+        """
+        # To last of
+        pt = self.to_last_of(unit)
+
+        # Compare dates
+        pt_dateD = utils.dt64arr_as_int64_D(pt.values, -1, True)
+        my_dateD = utils.dt64arr_as_int64_D(self.values, -1, True)
+        return pd.Index(utils.arr_eq_arr(my_dateD, pt_dateD), name="is_last_of")
+
+    def is_start_of(self, unit: str) -> pd.Index[bool]:
+        """Element-wise check whether date & time fileds are the
+        start of the specified datetime unit `<'Index[bool]'>`.
+
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'`  → Start of year: `YYYY-01-01 00:00:00`
+            - `'Q'`  → Start of quarter: `YYYY-MM-01 00:00:00`
+            - `'M'`  → Start of month: `YYYY-MM-01 00:00:00`
+            - `'W'`  → Start of week (Monday): `YYYY-MM-DD 00:00:00`
+            - `'D'`  → Start of day: `YYYY-MM-DD 00:00:00`
+            - `'h'`  → Start of hour: `YYYY-MM-DD hh:00:00`
+            - `'m'`  → Start of minute: `YYYY-MM-DD hh:mm:00`
+            - `'s'`  → Start of second: `YYYY-MM-DD hh:mm:ss.000000`
+            - `'ms'` → Start of millisecond: `YYYY-MM-DD hh:mm:ss.uuu000`
+            - `'us'` → Return the instance `as-is`.
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                     → Start of the specifed month: `YYYY-MM-01 00:00:00`
+            - `Weekday` (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`)
+                     → Start of the specifed weekday: `YYYY-MM-DD 00:00:00`
+
+        :return `<'Index[bool]'>`: True if the element is at the start
+            of the specified datetime unit; Otherwise False.
+        """
+        # To start of
+        pt = self.to_start_of(unit)
+
+        # Compare values
+        pt_unit: str = pt.unit
+        pt_reso: cython.int = utils.nptime_unit_str2int(pt_unit)
+        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
+        if pt_reso == my_reso:
+            arr = utils.arr_eq_arr(self.values, pt.values)
+        else:
+            arr = utils.arr_eq_arr(
+                utils.dt64arr_as_unit(self.values, pt_unit, my_reso, True, True),
+                pt.values,
+            )
+        return pd.Index(arr, name="is_start_of")
+
+    def is_end_of(self, unit: str) -> pd.Index[bool]:
+        """Element-wise check whether date & time fileds are the
+        end of the specified datetime unit `<'Index[bool]'>`.
+
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'`  → End of year: `YYYY-12-31 23:59:59.999999`
+            - `'Q'`  → End of quarter: `YYYY-MM-(30..31) 23:59:59.999999`
+            - `'M'`  → End of month: `YYYY-MM-(28..31) 23:59:59.999999`
+            - `'W'`  → End of week (Sunday): `YYYY-MM-DD 23:59:59.999999`
+            - `'D'`  → End of day: `YYYY-MM-DD 23:59:59.999999`
+            - `'h'`  → End of hour: `YYYY-MM-DD hh:59:59.999999`
+            - `'m'`  → End of minute: `YYYY-MM-DD hh:mm:59.999999`
+            - `'s'`  → End of second: `YYYY-MM-DD hh:mm:ss.999999`
+            - `'ms'` → End of millisecond: `YYYY-MM-DD hh:mm:ss.uuu999`
+            - `'us'` → Return the instance `as-is`.
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                     → End of the specifed month: `YYYY-MM-(28..31) 23:59:59.999999`
+            - `Weekday` (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`)
+                     → End of the specifed weekday: `YYYY-MM-DD 23:59:59.999999`
+
+        :return `<'Index[bool]'>`: True if the element is at the end
+            of the specified datetime unit; Otherwise False.
+        """
+        # To end of
+        pt = self.to_end_of(unit)
+
+        # Compare values
+        pt_unit: str = pt.unit
+        pt_reso: cython.int = utils.nptime_unit_str2int(pt_unit)
+        my_reso: cython.int = utils.nptime_unit_str2int(self.unit)
+        if pt_reso == my_reso:
+            arr = utils.arr_eq_arr(self.values, pt.values)
+        else:
+            arr = utils.arr_eq_arr(
+                utils.dt64arr_as_unit(self.values, pt_unit, my_reso, True, True),
+                pt.values,
+            )
+        return pd.Index(arr, name="is_end_of")
 
     # . round / ceil / floor
     def round(self, unit: str) -> Self:
