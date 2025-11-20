@@ -5226,8 +5226,9 @@ def assure_td64arr(arr: np.ndarray) -> bool:
 # . conversion
 def td64arr_as_int64_us(
     arr: np.ndarray,
-    unit: int = -1,
+    arr_unit: int = -1,
     offset: int = 0,
+    copy: bool = True,
 ) -> np.ndarray[np.int64]:
     """(cfunc) Convert a 1-D ndarray[timedelta64[*]] to int64 microsecond ticks (us) `<'ndarray[int64]'>`.
 
