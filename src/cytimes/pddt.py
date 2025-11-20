@@ -234,9 +234,9 @@ class Pddt(DatetimeIndex):
     - High-performance datetime arithmetic (`add`, `sub`).
 
     ## Important Note
-    `Pddt` is datetime64[us] focused. It will try to retain nanosecond resolution
+    `Pddt` is `datetime64[us]` focused. It will try to retain nanosecond resolution
     when possible, but will automatically downcast to microsecond resolution
-    if the value exceeds the bounds of datetime64[ns]. This behavior applies
+    if the value exceeds the bounds of `datetime64[ns]`. This behavior applies
     to all `Pddt` methods.
     """
 
@@ -264,9 +264,9 @@ class Pddt(DatetimeIndex):
         - High-performance datetime arithmetic (`add`, `sub`).
 
         ## Important Note
-        `Pddt` is datetime64[us] focused. It will try to retain nanosecond resolution
+        `Pddt` is `datetime64[us]` focused. It will try to retain nanosecond resolution
         when possible, but will automatically downcast to microsecond resolution
-        if the value exceeds the bounds of datetime64[ns]. This behavior applies
+        if the value exceeds the bounds of `datetime64[ns]`. This behavior applies
         to all `Pddt` methods.
 
         :param data `<'Array-Like'>`: An array-like (1-dimensional) data containing datetime information.
