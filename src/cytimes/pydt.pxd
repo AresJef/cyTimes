@@ -69,14 +69,14 @@ cdef class _Pydt(datetime.datetime):
     )
     cpdef _Pydt to_date(self, int year=?, int month=?, int day=?)
     cpdef _Pydt to_time(self, int hour=?, int minute=?, int second=?, int microsecond=?)
-    cpdef bint is_first_of(self, str unit) except -1
     cpdef _Pydt to_first_of(self, str unit)
-    cpdef bint is_last_of(self, str unit) except -1
     cpdef _Pydt to_last_of(self, str unit)
-    cpdef bint is_start_of(self, str unit) except -1
     cpdef _Pydt to_start_of(self, str unit)
-    cpdef bint is_end_of(self, str unit) except -1
     cpdef _Pydt to_end_of(self, str unit)
+    cpdef bint is_first_of(self, str unit) except -1
+    cpdef bint is_last_of(self, str unit) except -1
+    cpdef bint is_start_of(self, str unit) except -1
+    cpdef bint is_end_of(self, str unit) except -1
     # . round / ceil / floor
     cpdef _Pydt round(self, str unit)
     cpdef _Pydt ceil(self, str unit)

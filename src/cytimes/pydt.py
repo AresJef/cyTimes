@@ -1607,52 +1607,6 @@ class _Pydt(datetime.datetime):
             errors.raise_argument_error(self._cls(), "to_time(...)", None, err)
 
     @cython.ccall
-    @cython.exceptval(-1, check=False)
-    def is_first_of(self, unit: str) -> cython.bint:
-        """Check whether the date fields are on the first day of the specified datetime unit `<'bool'>`.
-
-        :param unit `<'str'>`: The datetime unit:
-
-            - `'Y'` → First day of the year: `YYYY-01-01`
-            - `'Q'` → First day of the quarter: `YYYY-MM-01`
-            - `'M'` → First day of the month: `YYYY-MM-01`
-            - `'W'` → First day (Monday) of the week: `YYYY-MM-DD`
-            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
-                    → First day of the specifed month: `YYYY-MM-01`
-
-        :return `<'bool'>`: True if the instance is on the first day
-            of the specified datetime unit; Otherwise False.
-        """
-        # Guard
-        if unit is None:
-            return False
-
-        # Unit: 'W', 'M', 'Q', 'Y'
-        unit_len: cython.Py_ssize_t = str_len(unit)
-        if unit_len == 1:
-            ch0: cython.Py_UCS4 = str_read(unit, 0)
-            # . weekday
-            if ch0 == "W":
-                return self.access_weekday() == 0
-            # . month
-            if ch0 == "M":
-                return utils.dt_is_first_dom(self)
-            # . quarter
-            if ch0 == "Q":
-                return utils.dt_is_first_doq(self)
-            # . year
-            if ch0 == "Y":
-                return utils.dt_is_first_doy(self)
-
-        # Month name
-        val: cython.int = _parse_month(unit, None, False)
-        if val != -1:
-            return self.access_month() == val and utils.dt_is_first_dom(self)
-
-        # Invalid
-        return False
-
-    @cython.ccall
     def to_first_of(self, unit: str) -> _Pydt:
         """Adjust the date fields to the first day of the specified datetime unit,
         without affecting the time fields `<'Pydt'>`.
@@ -1706,52 +1660,6 @@ class _Pydt(datetime.datetime):
         )
 
     @cython.ccall
-    @cython.exceptval(-1, check=False)
-    def is_last_of(self, unit: str) -> cython.bint:
-        """Check whether the date fields are on the last day of the specified datetime unit `<'bool'>`.
-
-        :param unit `<'str'>`: The datetime unit:
-
-            - `'Y'` → Last day of the year: `YYYY-12-31`
-            - `'Q'` → Last day of the quarter: `YYYY-MM-(30..31)`
-            - `'M'` → Last day of the month: `YYYY-MM-(28..31)`
-            - `'W'` → Last day (Sunday) of the week: `YYYY-MM-DD`
-            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
-                    → Last day of the specifed month: `YYYY-MM-(28..31)`
-
-        :return `<'bool'>`: True if the instance is on the last day
-            of the specified datetime unit; Otherwise False.
-        """
-        # Guard
-        if unit is None:
-            return False
-
-        # Unit: 'W', 'M', 'Q', 'Y'
-        unit_len: cython.Py_ssize_t = str_len(unit)
-        if unit_len == 1:
-            ch0: cython.Py_UCS4 = str_read(unit, 0)
-            # . weekday
-            if ch0 == "W":
-                return self.access_weekday() == 6
-            # . month
-            if ch0 == "M":
-                return utils.dt_is_last_dom(self)
-            # . quarter
-            if ch0 == "Q":
-                return utils.dt_is_last_doq(self)
-            # . year
-            if ch0 == "Y":
-                return utils.dt_is_last_doy(self)
-
-        # Month name
-        val: cython.int = _parse_month(unit, None, False)
-        if val != -1:
-            return self.access_month() == val and utils.dt_is_last_dom(self)
-
-        # Invalid
-        return False
-
-    @cython.ccall
     def to_last_of(self, unit: str) -> _Pydt:
         """Adjust the date fields to the last day of the specified datetime unit,
         without affecting the time fields `<'Pydt'>`.
@@ -1803,102 +1711,6 @@ class _Pydt(datetime.datetime):
             "to_last_of(unit)",
             "Supports: 'Y', 'Q', 'M', 'W' or Month name; got '%s'." % unit,
         )
-
-    @cython.ccall
-    @cython.exceptval(-1, check=False)
-    def is_start_of(self, unit: str) -> cython.bint:
-        """Check whether date & time fileds are the start of the specified datetime unit `<'bool'>`.
-
-        :param unit `<'str'>`: The datetime unit:
-
-            - `'Y'`  → Start of year: `YYYY-01-01 00:00:00`
-            - `'Q'`  → Start of quarter: `YYYY-MM-01 00:00:00`
-            - `'M'`  → Start of month: `YYYY-MM-01 00:00:00`
-            - `'W'`  → Start of week (Monday): `YYYY-MM-DD 00:00:00`
-            - `'D'`  → Start of day: `YYYY-MM-DD 00:00:00`
-            - `'h'`  → Start of hour: `YYYY-MM-DD hh:00:00`
-            - `'m'`  → Start of minute: `YYYY-MM-DD hh:mm:00`
-            - `'s'`  → Start of second: `YYYY-MM-DD hh:mm:ss.000000`
-            - `'ms'` → Start of millisecond: `YYYY-MM-DD hh:mm:ss.uuu000`
-            - `'us'` → Return the instance `as-is`.
-            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
-                     → Start of the specifed month: `YYYY-MM-01 00:00:00`
-            - `Weekday` (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`)
-                     → Start of the specifed weekday: `YYYY-MM-DD 00:00:00`
-
-        :return `<'bool'>`: True if the instance is at the start
-            of the specified datetime unit; Otherwise False.
-        """
-        # Guard
-        if unit is None:
-            return False
-
-        # Unit: 's', 'm', 'h', 'D', 'W', 'M', 'Q', 'Y'
-        unit_len: cython.Py_ssize_t = str_len(unit)
-        if unit_len == 1:
-            ch0: cython.Py_UCS4 = str_read(unit, 0)
-            # . second
-            if ch0 == "s":
-                return self.access_microsecond() == 0
-            # . minute
-            if ch0 == "m":
-                return self.access_second() == 0 and self.access_microsecond() == 0
-            # . hour
-            if ch0 == "h":
-                return (
-                    self.access_minute() == 0
-                    and self.access_second() == 0
-                    and self.access_microsecond() == 0
-                )
-            # Start of time - - - - - - - - - - - - - - - - - - - - - - - -
-            if not utils.dt_is_start_of_time(self):
-                return False
-            # . day
-            if ch0 == "D":
-                return True
-            # . week
-            if ch0 == "W":
-                return self.access_weekday() == 0
-            # . month
-            if ch0 == "M":
-                return utils.dt_is_first_dom(self)
-            # . quarter
-            if ch0 == "Q":
-                return utils.dt_is_first_doq(self)
-            # . year
-            if ch0 == "Y":
-                return utils.dt_is_first_doy(self)
-
-        # Unit: 'ms', 'us', 'ns'
-        elif unit_len == 2 and str_read(unit, 1) == "s":
-            ch0: cython.Py_UCS4 = str_read(unit, 0)
-            # . millisecond
-            if ch0 == "m":
-                return self.access_microsecond() % 1000 == 0
-            # . microsecond / nanosecond
-            if ch0 in ("u", "n"):
-                return True
-
-        # Unit: 'min' for pandas compatibility
-        elif unit_len == 3 and unit == "min":
-            return self.access_second() == 0 and self.access_microsecond() == 0
-
-        # Start of time - - - - - - - - - - - - - - - - - - - - - - - -
-        if not utils.dt_is_start_of_time(self):
-            return False
-
-        # Month name
-        val: cython.int = _parse_month(unit, None, False)
-        if val != -1:
-            return self.access_month() == val and utils.dt_is_first_dom(self)
-
-        # Weekday name
-        val: cython.int = _parse_weekday(unit, None, False)
-        if val != -1:
-            return self.access_weekday() == val
-
-        # Invalid
-        return False
 
     @cython.ccall
     def to_start_of(self, unit: str) -> _Pydt:
@@ -2016,103 +1828,6 @@ class _Pydt(datetime.datetime):
         )
 
     @cython.ccall
-    @cython.exceptval(-1, check=False)
-    def is_end_of(self, unit: str) -> cython.bint:
-        """Check whether date & time fileds are the end of the specified datetime unit `<'bool'>`.
-
-        :param unit `<'str'>`: The datetime unit:
-
-            - `'Y'`  → End of year: `YYYY-12-31 23:59:59.999999`
-            - `'Q'`  → End of quarter: `YYYY-MM-(30..31) 23:59:59.999999`
-            - `'M'`  → End of month: `YYYY-MM-(28..31) 23:59:59.999999`
-            - `'W'`  → End of week (Sunday): `YYYY-MM-DD 23:59:59.999999`
-            - `'D'`  → End of day: `YYYY-MM-DD 23:59:59.999999`
-            - `'h'`  → End of hour: `YYYY-MM-DD hh:59:59.999999`
-            - `'m'`  → End of minute: `YYYY-MM-DD hh:mm:59.999999`
-            - `'s'`  → End of second: `YYYY-MM-DD hh:mm:ss.999999`
-            - `'ms'` → End of millisecond: `YYYY-MM-DD hh:mm:ss.uuu999`
-            - `'us'` → Return the instance `as-is`.
-            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
-                     → End of the specifed month: `YYYY-MM-(28..31) 23:59:59.999999`
-            - `Weekday` (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`)
-                     → End of the specifed weekday: `YYYY-MM-DD 23:59:59.999999`
-
-        :return `<'bool'>`: True if the instance is at the end
-            of the specified datetime unit; Otherwise False.
-        """
-        if unit is None:
-            return False
-
-        # Unit: 's', 'm', 'h', 'D', 'W', 'M', 'Q', 'Y'
-        unit_len: cython.Py_ssize_t = str_len(unit)
-        if unit_len == 1:
-            ch0: cython.Py_UCS4 = str_read(unit, 0)
-            # . second
-            if ch0 == "s":
-                return self.access_microsecond() == 999_999
-            # . minute
-            if ch0 == "m":
-                return (
-                    self.access_second() == 59 and self.access_microsecond() == 999_999
-                )
-            # . hour
-            if ch0 == "h":
-                return (
-                    self.access_minute() == 59
-                    and self.access_second() == 59
-                    and self.access_microsecond() == 999_999
-                )
-            # End of time - - - - - - - - - - - - - - - - - - - - - - - - -
-            if not utils.dt_is_end_of_time(self):
-                return False
-            # . day
-            if ch0 == "D":
-                return True
-            # . week
-            if ch0 == "W":
-                return self.access_weekday() == 6
-            # . month
-            if ch0 == "M":
-                return utils.dt_is_last_dom(self)
-            # . quarter
-            if ch0 == "Q":
-                return utils.dt_is_last_doq(self)
-            # . year
-            if ch0 == "Y":
-                return utils.dt_is_last_doy(self)
-
-        # Unit: 'ms', 'us', 'ns'
-        elif unit_len == 2 and str_read(unit, 1) == "s":
-            ch0: cython.Py_UCS4 = str_read(unit, 0)
-            # . millisecond
-            if ch0 == "m":
-                return self.access_microsecond() % 1000 == 999
-            # . microsecond / nanosecond
-            if ch0 in ("u", "n"):
-                return True
-
-        # Unit: 'min' for pandas compatibility
-        elif unit_len == 3 and unit == "min":
-            return self.access_second() == 59 and self.access_microsecond() == 999_999
-
-        # End of time - - - - - - - - - - - - - - - - - - - - - - - - -
-        if not utils.dt_is_end_of_time(self):
-            return False
-
-        # Month name
-        val: cython.int = _parse_month(unit, None, False)
-        if val != -1:
-            return self.access_month() == val and utils.dt_is_last_dom(self)
-
-        # Weekday name
-        val: cython.int = _parse_weekday(unit, None, False)
-        if val != -1:
-            return self.access_weekday() == val
-
-        # Invalid
-        return False
-
-    @cython.ccall
     def to_end_of(self, unit: str) -> _Pydt:
         """Adjust the date & time fields to the end of the specified datetime unit `<'Pydt'>`.
 
@@ -2226,6 +1941,291 @@ class _Pydt(datetime.datetime):
             "Supports: 'Y', 'Q', 'M', 'W', 'D', 'h', 'm', 's', 'ms', 'us' "
             "or Month/Weekday name; got '%s'." % unit,
         )
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def is_first_of(self, unit: str) -> cython.bint:
+        """Check whether the date fields are on the first day of the specified datetime unit `<'bool'>`.
+
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'` → First day of the year: `YYYY-01-01`
+            - `'Q'` → First day of the quarter: `YYYY-MM-01`
+            - `'M'` → First day of the month: `YYYY-MM-01`
+            - `'W'` → First day (Monday) of the week: `YYYY-MM-DD`
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                    → First day of the specifed month: `YYYY-MM-01`
+
+        :return `<'bool'>`: True if the instance is on the first day
+            of the specified datetime unit; Otherwise False.
+        """
+        # Guard
+        if unit is None:
+            return False
+
+        # Unit: 'W', 'M', 'Q', 'Y'
+        unit_len: cython.Py_ssize_t = str_len(unit)
+        if unit_len == 1:
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
+            # . weekday
+            if ch0 == "W":
+                return self.access_weekday() == 0
+            # . month
+            if ch0 == "M":
+                return utils.dt_is_first_dom(self)
+            # . quarter
+            if ch0 == "Q":
+                return utils.dt_is_first_doq(self)
+            # . year
+            if ch0 == "Y":
+                return utils.dt_is_first_doy(self)
+
+        # Month name
+        val: cython.int = _parse_month(unit, None, False)
+        if val != -1:
+            return self.access_month() == val and utils.dt_is_first_dom(self)
+
+        # Invalid
+        return False
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def is_last_of(self, unit: str) -> cython.bint:
+        """Check whether the date fields are on the last day of the specified datetime unit `<'bool'>`.
+
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'` → Last day of the year: `YYYY-12-31`
+            - `'Q'` → Last day of the quarter: `YYYY-MM-(30..31)`
+            - `'M'` → Last day of the month: `YYYY-MM-(28..31)`
+            - `'W'` → Last day (Sunday) of the week: `YYYY-MM-DD`
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                    → Last day of the specifed month: `YYYY-MM-(28..31)`
+
+        :return `<'bool'>`: True if the instance is on the last day
+            of the specified datetime unit; Otherwise False.
+        """
+        # Guard
+        if unit is None:
+            return False
+
+        # Unit: 'W', 'M', 'Q', 'Y'
+        unit_len: cython.Py_ssize_t = str_len(unit)
+        if unit_len == 1:
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
+            # . weekday
+            if ch0 == "W":
+                return self.access_weekday() == 6
+            # . month
+            if ch0 == "M":
+                return utils.dt_is_last_dom(self)
+            # . quarter
+            if ch0 == "Q":
+                return utils.dt_is_last_doq(self)
+            # . year
+            if ch0 == "Y":
+                return utils.dt_is_last_doy(self)
+
+        # Month name
+        val: cython.int = _parse_month(unit, None, False)
+        if val != -1:
+            return self.access_month() == val and utils.dt_is_last_dom(self)
+
+        # Invalid
+        return False
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def is_start_of(self, unit: str) -> cython.bint:
+        """Check whether date & time fileds are the start of the specified datetime unit `<'bool'>`.
+
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'`  → Start of year: `YYYY-01-01 00:00:00`
+            - `'Q'`  → Start of quarter: `YYYY-MM-01 00:00:00`
+            - `'M'`  → Start of month: `YYYY-MM-01 00:00:00`
+            - `'W'`  → Start of week (Monday): `YYYY-MM-DD 00:00:00`
+            - `'D'`  → Start of day: `YYYY-MM-DD 00:00:00`
+            - `'h'`  → Start of hour: `YYYY-MM-DD hh:00:00`
+            - `'m'`  → Start of minute: `YYYY-MM-DD hh:mm:00`
+            - `'s'`  → Start of second: `YYYY-MM-DD hh:mm:ss.000000`
+            - `'ms'` → Start of millisecond: `YYYY-MM-DD hh:mm:ss.uuu000`
+            - `'us'` → Return the instance `as-is`.
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                     → Start of the specifed month: `YYYY-MM-01 00:00:00`
+            - `Weekday` (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`)
+                     → Start of the specifed weekday: `YYYY-MM-DD 00:00:00`
+
+        :return `<'bool'>`: True if the instance is at the start
+            of the specified datetime unit; Otherwise False.
+        """
+        # Guard
+        if unit is None:
+            return False
+
+        # Unit: 's', 'm', 'h', 'D', 'W', 'M', 'Q', 'Y'
+        unit_len: cython.Py_ssize_t = str_len(unit)
+        if unit_len == 1:
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
+            # . second
+            if ch0 == "s":
+                return self.access_microsecond() == 0
+            # . minute
+            if ch0 == "m":
+                return self.access_second() == 0 and self.access_microsecond() == 0
+            # . hour
+            if ch0 == "h":
+                return (
+                    self.access_minute() == 0
+                    and self.access_second() == 0
+                    and self.access_microsecond() == 0
+                )
+            # Start of time - - - - - - - - - - - - - - - - - - - - - - - -
+            if not utils.dt_is_start_of_time(self):
+                return False
+            # . day
+            if ch0 == "D":
+                return True
+            # . week
+            if ch0 == "W":
+                return self.access_weekday() == 0
+            # . month
+            if ch0 == "M":
+                return utils.dt_is_first_dom(self)
+            # . quarter
+            if ch0 == "Q":
+                return utils.dt_is_first_doq(self)
+            # . year
+            if ch0 == "Y":
+                return utils.dt_is_first_doy(self)
+
+        # Unit: 'ms', 'us', 'ns'
+        elif unit_len == 2 and str_read(unit, 1) == "s":
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
+            # . millisecond
+            if ch0 == "m":
+                return self.access_microsecond() % 1000 == 0
+            # . microsecond / nanosecond
+            if ch0 in ("u", "n"):
+                return True
+
+        # Unit: 'min' for pandas compatibility
+        elif unit_len == 3 and unit == "min":
+            return self.access_second() == 0 and self.access_microsecond() == 0
+
+        # Start of time - - - - - - - - - - - - - - - - - - - - - - - -
+        if not utils.dt_is_start_of_time(self):
+            return False
+
+        # Month name
+        val: cython.int = _parse_month(unit, None, False)
+        if val != -1:
+            return self.access_month() == val and utils.dt_is_first_dom(self)
+
+        # Weekday name
+        val: cython.int = _parse_weekday(unit, None, False)
+        if val != -1:
+            return self.access_weekday() == val
+
+        # Invalid
+        return False
+
+    @cython.ccall
+    @cython.exceptval(-1, check=False)
+    def is_end_of(self, unit: str) -> cython.bint:
+        """Check whether date & time fileds are the end of the specified datetime unit `<'bool'>`.
+
+        :param unit `<'str'>`: The datetime unit:
+
+            - `'Y'`  → End of year: `YYYY-12-31 23:59:59.999999`
+            - `'Q'`  → End of quarter: `YYYY-MM-(30..31) 23:59:59.999999`
+            - `'M'`  → End of month: `YYYY-MM-(28..31) 23:59:59.999999`
+            - `'W'`  → End of week (Sunday): `YYYY-MM-DD 23:59:59.999999`
+            - `'D'`  → End of day: `YYYY-MM-DD 23:59:59.999999`
+            - `'h'`  → End of hour: `YYYY-MM-DD hh:59:59.999999`
+            - `'m'`  → End of minute: `YYYY-MM-DD hh:mm:59.999999`
+            - `'s'`  → End of second: `YYYY-MM-DD hh:mm:ss.999999`
+            - `'ms'` → End of millisecond: `YYYY-MM-DD hh:mm:ss.uuu999`
+            - `'us'` → Return the instance `as-is`.
+            - `Month` (e.g., `'Jan'`, `'February'`, `'三月'`)
+                     → End of the specifed month: `YYYY-MM-(28..31) 23:59:59.999999`
+            - `Weekday` (e.g., `'Mon'`, `'Tuesday'`, `'星期三'`)
+                     → End of the specifed weekday: `YYYY-MM-DD 23:59:59.999999`
+
+        :return `<'bool'>`: True if the instance is at the end
+            of the specified datetime unit; Otherwise False.
+        """
+        if unit is None:
+            return False
+
+        # Unit: 's', 'm', 'h', 'D', 'W', 'M', 'Q', 'Y'
+        unit_len: cython.Py_ssize_t = str_len(unit)
+        if unit_len == 1:
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
+            # . second
+            if ch0 == "s":
+                return self.access_microsecond() == 999_999
+            # . minute
+            if ch0 == "m":
+                return (
+                    self.access_second() == 59 and self.access_microsecond() == 999_999
+                )
+            # . hour
+            if ch0 == "h":
+                return (
+                    self.access_minute() == 59
+                    and self.access_second() == 59
+                    and self.access_microsecond() == 999_999
+                )
+            # End of time - - - - - - - - - - - - - - - - - - - - - - - - -
+            if not utils.dt_is_end_of_time(self):
+                return False
+            # . day
+            if ch0 == "D":
+                return True
+            # . week
+            if ch0 == "W":
+                return self.access_weekday() == 6
+            # . month
+            if ch0 == "M":
+                return utils.dt_is_last_dom(self)
+            # . quarter
+            if ch0 == "Q":
+                return utils.dt_is_last_doq(self)
+            # . year
+            if ch0 == "Y":
+                return utils.dt_is_last_doy(self)
+
+        # Unit: 'ms', 'us', 'ns'
+        elif unit_len == 2 and str_read(unit, 1) == "s":
+            ch0: cython.Py_UCS4 = str_read(unit, 0)
+            # . millisecond
+            if ch0 == "m":
+                return self.access_microsecond() % 1000 == 999
+            # . microsecond / nanosecond
+            if ch0 in ("u", "n"):
+                return True
+
+        # Unit: 'min' for pandas compatibility
+        elif unit_len == 3 and unit == "min":
+            return self.access_second() == 59 and self.access_microsecond() == 999_999
+
+        # End of time - - - - - - - - - - - - - - - - - - - - - - - - -
+        if not utils.dt_is_end_of_time(self):
+            return False
+
+        # Month name
+        val: cython.int = _parse_month(unit, None, False)
+        if val != -1:
+            return self.access_month() == val and utils.dt_is_last_dom(self)
+
+        # Weekday name
+        val: cython.int = _parse_weekday(unit, None, False)
+        if val != -1:
+            return self.access_weekday() == val
+
+        # Invalid
+        return False
 
     # . round / ceil / floor
     @cython.ccall
