@@ -15,6 +15,7 @@ dt = Pydt.fromtimestamp(1, datetime.UTC)  # 1970-01-01 00:00:01+0000
 dt = Pydt.utcfromtimestamp(1)  # 1970-01-01 00:00:01+0000
 dt = Pydt.fromisoformat("1970-01-01T00:00:01")  # 1970-01-01 00:00:01
 dt = Pydt.fromisocalendar(1970, 1, 4)  # 1970-01-01 00:00:00
+dt = Pydt.fromdayofyear(1970, 1)  # 1970-01-01 00:00:00
 dt = Pydt.fromdate(datetime.date(1970, 1, 1))  # 1970-01-01 00:00:00
 dt = Pydt.fromdatetime(datetime.datetime(1970, 1, 1))  # 1970-01-01 00:00:00
 dt = Pydt.fromdatetime64(np.datetime64(1, "s"))  # 1970-01-01 00:00:01
@@ -71,6 +72,10 @@ res = dt.to_first_of("Y")  # 1970-01-01 02:02:02.000002+0100
 res = dt.to_last_of("Q")  # 1970-03-31 02:02:02.000002+0100
 res = dt.to_start_of("M")  # 1970-02-01 00:00:00+0100
 res = dt.to_end_of("W")  # 1970-02-08 23:59:59.999999+0100
+res = dt.to_first_of("Y").is_first_of("Y")  # True
+res = dt.to_last_of("Q").is_last_of("Q")  # True
+res = dt.to_start_of("M").is_start_of("M")  # True
+res = dt.to_end_of("W").is_end_of("W")  # True
 # . round / ceil / floor
 res = dt.round("h")  # 1970-02-02 02:00:00+0100
 res = dt.ceil("m")  # 1970-02-02 02:03:00+0100
@@ -86,39 +91,33 @@ res = dt.isoweek()  # 6
 res = dt.isoweekday()  # 1
 
 # . year
+res = dt.is_year(1970)  # True
 res = dt.is_leap_year()  # False
 res = dt.is_long_year()  # True
 res = dt.leap_bt_year(2007)  # 9
 res = dt.days_in_year()  # 365
 res = dt.days_bf_year()  # 719162
 res = dt.day_of_year()  # 33
-res = dt.is_year(1970)  # True
 
 # . quarter
+res = dt.is_quarter(1)  # True
 res = dt.days_in_quarter()  # 90
 res = dt.days_bf_quarter()  # 0
 res = dt.day_of_quarter()  # 33
-res = dt.is_quarter(1)  # True
 
 # . month
+res = dt.is_month("Feb")  # True
 res = dt.days_in_month()  # 28
 res = dt.days_bf_month()  # 31
 res = dt.day_of_month()  # 2
-res = dt.is_month("Feb")  # True
 res = dt.month_name("es")  # "febrero"
 
 # . weekday
 res = dt.is_weekday("Monday")  # True
+res = dt.weekday_name("fr")  # "lundi"
 
 # . day
 res = dt.is_day(2)  # True
-res = dt.weekday_name("fr")  # "lundi"
-
-# . date&time
-res = dt.is_first_of("Y")  # False
-res = dt.is_last_of("Q")  # False
-res = dt.is_start_of("M")  # False
-res = dt.is_end_of("W")  # False
 
 # Timezone ----------------------------------------------------------
 dt = Pydt(1970, 1, 1, tzinfo="UTC")  # 1970-01-01 00:00:00+0000
@@ -149,7 +148,7 @@ res = dt.is_past()  # True
 res = dt.is_future()  # False
 
 # Pddt ==============================================================
+# datetime64[us, UTC]
 pt = Pddt(["9999-01-01 00:00:00+00:00", "9999-01-02 00:00:00+00:00"])
-
+# datetime64[ns, UTC]
 pt = Pddt(["1970-01-01 00:00:00+00:00", "1970-01-02 00:00:00+00:00"])
-pt = pt.to_year(1000, "Feb", 30)
