@@ -1329,7 +1329,7 @@ cdef inline unsigned long long slice_to_uint(str token, Py_ssize_t start, Py_ssi
     """
     # Validate
     if token is None:
-        raise ValueError("slice_to_uint: 'data' cannot be None")
+        raise ValueError("slice_to_uint: 'token' cannot be None")
     if start < 0:
         raise ValueError("slice_to_uint: 'start' must be >= 0, instead got %d" % start)
     if size <= 0:
@@ -1351,7 +1351,7 @@ cdef inline unsigned long long slice_to_uint(str token, Py_ssize_t start, Py_ssi
         if not is_ascii_digit(ch):
             raise ValueError(
                 "Cannot convert '%s' to unsigned integer. Contains invalid character '%s' "
-                "(non-ASCII digit)." % (token[start: end], str_chr(ch))
+                "at position %d." % (token[start: end], str_chr(ch), i)
             )
         out = out * 10 + (ord(ch) - 48)
     return out
@@ -1381,7 +1381,7 @@ cdef inline double slice_to_ufloat(str token, Py_ssize_t start, Py_ssize_t size,
     """
     # Validate
     if token is None:
-        raise ValueError("slice_to_ufloat: 'data' cannot be None")
+        raise ValueError("slice_to_ufloat: 'token' cannot be None")
     if start < 0:
         raise ValueError("slice_to_ufloat: 'start' must be >= 0, instead got %d" % start)
     if size <= 0:
@@ -1421,7 +1421,7 @@ cdef inline double slice_to_ufloat(str token, Py_ssize_t start, Py_ssize_t size,
         else:
             raise ValueError(
                 "Cannot convert '%s' to non-negative float: contains invalid character '%s' "
-                "(non-ASCII digit)." % (token[start: end], str_chr(ch))
+                "at position %d." % (token[start: end], str_chr(ch), i)
             )
 
     if not has_digit:
@@ -1433,6 +1433,216 @@ cdef inline double slice_to_ufloat(str token, Py_ssize_t start, Py_ssize_t size,
         return (<double> i_part)
     else:
         return (<double> i_part) + (<double> f_part) * f_scale
+
+# . parse and convert
+cpdef inline long long parse_to_int(str token) except *:
+    """Parse the first numeric token from a string into a `long long` `<'int'>`.
+
+    The parser scans `token` left-to-right and **ignores any characters before the
+    first digit**. Once the first ASCII digit is encountered, it parses a base-10
+    integer consisting of:
+
+    - an optional sign (`+` or `-`) **that must appear before any digits**, and
+    - ASCII digits (`0`-`9`) for the integer part.
+
+    After at least one digit has been consumed, any non-digit character is considered
+    invalid and raises an error.
+
+    Notice overflow is not checked for the integer accumulator and may lead to
+    undefined behavior for large inputs.
+
+    :param token `<'str'>`: Input string to parse. Must not be `None`.
+    :return `<'int'>`: Parsed integer value, or `0` for empty strings.
+    :raises `<'ValueError'>`: When the input cannot be parsed as a valid integer.
+    """
+    # Validate
+    if token is None:
+        raise ValueError("parse_to_int: 'token' cannot be None")
+    cdef Py_ssize_t token_len = str_len(token)
+    if token_len <= 0:
+        return 0  # empty string → 0
+
+    # Slice and convert
+    cdef: 
+        long long out = 0
+        bint has_digit = False
+        bint has_pos = False
+        bint neg = False
+        Py_ssize_t i
+        Py_UCS4 ch
+
+    for i in range(token_len):
+        ch = str_read(token, i)
+        if is_ascii_digit(ch):
+            out = out * 10 + (ord(ch) - 48)
+            has_digit = True
+        elif ch == 45:  # '-'
+            if has_digit:
+                raise ValueError(
+                    "Cannot parse '%s' to integer: "
+                    "negative sign found after digits." % token
+                )
+            if neg:
+                raise ValueError(
+                    "Cannot parse '%s' to integer: "
+                    "contains more than one negative sign." % token
+                )
+            if has_pos:
+                raise ValueError(
+                    "Cannot parse '%s' to integer: "
+                    "contains mixed positive and negative sign." % token
+                )
+            neg = True
+        elif ch == 43:  # '+'
+            if has_digit:
+                raise ValueError(
+                    "Cannot parse '%s' to integer: "
+                    "positive sign found after digits." % token
+                )
+            if has_pos:
+                raise ValueError(
+                    "Cannot parse '%s' to integer: "
+                    "contains more than one positive sign." % token
+                )
+            if neg:
+                raise ValueError(
+                    "Cannot parse '%s' to integer: "
+                    "contains mixed positive and negative sign." % token
+                )
+            has_pos = True
+        elif not has_digit:
+            continue
+        else:
+            raise ValueError(
+                "Cannot parse '%s' to integer. Contains invalid character '%s' "
+                "at position %d." % (token, str_chr(ch), i)
+            )
+
+    if not has_digit:
+        raise ValueError(
+            "Cannot parse '%s' to integer: no digits found." % token
+        )
+    return -out if neg else out
+
+cpdef inline double parse_to_float(str token) except *:
+    """Parse the first numeric token from a string into a `double` `<'float'>`.
+
+    The parser scans `token` left-to-right and **ignores any characters before the
+    first digit**. Once the first ASCII digit is encountered, it parses a decimal
+    number consisting of:
+
+    - an optional sign (`+` or `-`) **that must appear before any digits and before
+      the decimal point**, and
+    - an optional decimal point (`.`), and
+    - ASCII digits (`0`-`9`) for the integer and/or fractional part.
+
+    After at least one digit has been consumed, any non-digit character other than
+    a single decimal point is considered invalid and raises an error.
+
+    Notice overflow is not checked at both integer and fraction parts
+    and may lead to undefined behavior.
+
+    :param token `<'str'>`: Input string to parse. Must not be `None`.
+    :return `<'float'>`: Parsed floating-point value, or `0.0` for empty strings.
+    :raises `<'ValueError'>`: When the input cannot be parsed as a valid float.
+    """
+    # Validate
+    if token is None:
+        raise ValueError("parse_to_float: 'token' cannot be None")
+    cdef Py_ssize_t token_len = str_len(token)
+    if token_len <= 0:
+        return 0.0  # empty string → 0.0
+
+    # Slice and convert
+    cdef:
+        unsigned long long i_part = 0
+        unsigned long long f_part = 0
+        double f_scale = 1.0
+        bint has_dot = False
+        bint has_digit = False
+        bint has_pos = False
+        bint neg = False
+        Py_ssize_t i
+        Py_UCS4 ch
+        double out
+
+    for i in range(token_len):
+        ch = str_read(token, i)
+        if is_ascii_digit(ch):
+            if not has_dot:
+                i_part = i_part * 10 + (ord(ch) - 48)
+            else:
+                f_part = f_part * 10 + (ord(ch) - 48)
+                f_scale *= 0.1
+            has_digit = True
+        elif ch == 46:  # '.'
+            if has_dot:
+                raise ValueError(
+                    "Cannot parse '%s' to float: "
+                    "contains more than one decimal point." % token
+                )
+            has_dot = True
+        elif ch == 45:  # '-'
+            if has_digit:
+                raise ValueError(
+                    "Cannot parse '%s' to float: "
+                    "negative sign found after digits." % token
+                )
+            if has_dot:
+                raise ValueError(
+                    "Cannot parse '%s' to float: "
+                    "negative sign found after decimal point." % token
+                )
+            if neg:
+                raise ValueError(
+                    "Cannot parse '%s' to float: "
+                    "contains more than one negative sign." % token
+                )
+            if has_pos:
+                raise ValueError(
+                    "Cannot parse '%s' to float: "
+                    "contains mixed positive and negative sign." % token
+                )
+            neg = True
+        elif ch == 43:  # '+'
+            if has_digit:
+                raise ValueError(
+                    "Cannot parse '%s' to float: "
+                    "positive sign found after digits." % token
+                )
+            if has_dot:
+                raise ValueError(
+                    "Cannot parse '%s' to float: "
+                    "positive sign found after decimal point." % token
+                )
+            if has_pos:
+                raise ValueError(
+                    "Cannot parse '%s' to float: "
+                    "contains more than one positive sign." % token
+                )
+            if neg:
+                raise ValueError(
+                    "Cannot parse '%s' to float: "
+                    "contains mixed positive and negative sign." % token
+                )
+            has_pos = True
+        elif not has_digit:
+            continue
+        else:
+            raise ValueError(
+                "Cannot parse '%s' to float: contains invalid character '%s' "
+                "at position %d." % (token, str_chr(ch), i)
+            )
+
+    if not has_digit:
+        raise ValueError(
+            "Cannot parse '%s' to float: no digits found." % token
+        )
+    elif not has_dot:
+        out = (<double> i_part)
+    else:
+        out = (<double> i_part) + (<double> f_part) * f_scale
+    return -out if neg else out
 
 # Time -------------------------------------------------------------------------------------------------
 # . gmtime

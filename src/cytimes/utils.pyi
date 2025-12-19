@@ -749,6 +749,51 @@ def slice_to_ufloat(token: str, start: int, size: int, token_len=-1) -> int:
     >>> float(data[start:start+size])  # without '+/-' signs
     """
 
+# . parse and convert
+def parse_to_int(token: str) -> int:
+    """Parse the first numeric token from a string into a `long long` `<'int'>`.
+
+    The parser scans `token` left-to-right and **ignores any characters before the
+    first digit**. Once the first ASCII digit is encountered, it parses a base-10
+    integer consisting of:
+
+    - an optional sign (`+` or `-`) **that must appear before any digits**, and
+    - ASCII digits (`0`-`9`) for the integer part.
+
+    After at least one digit has been consumed, any non-digit character is considered
+    invalid and raises an error.
+
+    Notice overflow is not checked for the integer accumulator and may lead to
+    undefined behavior for large inputs.
+
+    :param token `<'str'>`: Input string to parse. Must not be `None`.
+    :return `<'int'>`: Parsed integer value, or `0` for empty strings.
+    :raises `<'ValueError'>`: When the input cannot be parsed as a valid integer.
+    """
+
+def parse_to_float(token: str) -> float:
+    """Parse the first numeric token from a string into a `double` `<'float'>`.
+
+    The parser scans `token` left-to-right and **ignores any characters before the
+    first digit**. Once the first ASCII digit is encountered, it parses a decimal
+    number consisting of:
+
+    - an optional sign (`+` or `-`) **that must appear before any digits and before
+      the decimal point**, and
+    - an optional decimal point (`.`), and
+    - ASCII digits (`0`-`9`) for the integer and/or fractional part.
+
+    After at least one digit has been consumed, any non-digit character other than
+    a single decimal point is considered invalid and raises an error.
+
+    Notice overflow is not checked at both integer and fraction parts
+    and may lead to undefined behavior.
+
+    :param token `<'str'>`: Input string to parse. Must not be `None`.
+    :return `<'float'>`: Parsed floating-point value, or `0.0` for empty strings.
+    :raises `<'ValueError'>`: When the input cannot be parsed as a valid float.
+    """
+
 # Time ----------------------------------------------------------------------------------------------
 # . gmtime
 def tm_gmtime(ts: float) -> dict:
