@@ -1519,7 +1519,7 @@ cpdef inline long long parse_to_int(str token) except *:
             )
 
     if not has_digit:
-        return 0.0  # no digits → 0.0
+        return 0  # no digits → 0
     return -out if neg else out
 
 cpdef inline double parse_to_float(str token) except *:
