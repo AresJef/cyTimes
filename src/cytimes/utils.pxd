@@ -1519,9 +1519,7 @@ cpdef inline long long parse_to_int(str token) except *:
             )
 
     if not has_digit:
-        raise ValueError(
-            "Cannot parse '%s' to integer: no digits found." % token
-        )
+        return 0.0  # no digits → 0.0
     return -out if neg else out
 
 cpdef inline double parse_to_float(str token) except *:
@@ -1635,9 +1633,7 @@ cpdef inline double parse_to_float(str token) except *:
             )
 
     if not has_digit:
-        raise ValueError(
-            "Cannot parse '%s' to float: no digits found." % token
-        )
+        return 0.0  # no digits → 0.0
     elif not has_dot:
         out = (<double> i_part)
     else:
